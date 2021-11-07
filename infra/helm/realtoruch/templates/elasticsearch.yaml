@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Service
+metadata: { name: elasticsearch }
+spec:
+  clusterIP: None
+  selector: { app: elasticsearch }
+  ports: [{ name: http, port: 9200, targetPort: 9200 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: elasticsearch }
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector:
+    matchLabels: { app: elasticsearch }
+  template:
+    metadata:
+      labels: { app: elasticsearch }
+    spec:
+      nodeSelector: { workload: core }
+      securityContext: { runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000 }
+      containers:
+        - name: elasticsearch
+          image: {{ .Values.elasticsearch.image }}
+          env:
+            - { name: discovery.type, value: single-node }
+            - { name: xpack.security.enabled, value: "true" }
+            - { name: xpack.security.http.ssl.enabled, value: "true" }
+            - { name: xpack.security.http.ssl.key, value: certs/tls.key }
+            - { name: xpack.security.http.ssl.certificate, value: certs/tls.crt }
+            - { name: node.store.allow_mmap, value: "false" }
+            - { name: ES_JAVA_OPTS, value: "-Xms1g -Xmx1g" }
+            - name: ELASTIC_PASSWORD
+              valueFrom: { secretKeyRef: { name: elasticsearch-bootstrap, key: password } }
+          ports: [{ name: http, containerPort: 9200 }]
+          readinessProbe: { tcpSocket: { port: 9200 }, initialDelaySeconds: 45, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 500m, memory: 2Gi }
+            limits: { cpu: "2", memory: 3Gi }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+          volumeMounts:
+            - { name: data, mountPath: /usr/share/elasticsearch/data }
+            - { name: tls, mountPath: /usr/share/elasticsearch/config/certs, readOnly: true }
+      volumes:
+        - name: tls
+          secret: { secretName: elasticsearch-tls, defaultMode: 0440 }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: standard-rwo
+        resources:
+          requests: { storage: {{ .Values.elasticsearch.storage }} }

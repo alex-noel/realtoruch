@@ -1,0 +1,56 @@
+{
+  "sources": [
+    {
+      "name": "otodom",
+      "enabled": false,
+      "mode": "feed",
+      "feed_url": "",
+      "allowed_hosts": [
+        "www.otodom.pl",
+        "otodom.pl"
+      ],
+      "token_env": "OTODOM_FEED_TOKEN",
+      "requests_per_minute": 6,
+      "listing_urls": []
+    },
+    {
+      "name": "olx",
+      "enabled": false,
+      "mode": "feed",
+      "feed_url": "",
+      "allowed_hosts": [
+        "www.olx.pl",
+        "olx.pl"
+      ],
+      "token_env": "OLX_FEED_TOKEN",
+      "requests_per_minute": 6,
+      "listing_urls": []
+    },
+    {
+      "name": "gratka",
+      "enabled": false,
+      "mode": "feed",
+      "feed_url": "",
+      "allowed_hosts": [
+        "gratka.pl",
+        "www.gratka.pl"
+      ],
+      "token_env": "GRATKA_FEED_TOKEN",
+      "requests_per_minute": 6,
+      "listing_urls": []
+    },
+    {
+      "name": "morizon",
+      "enabled": false,
+      "mode": "feed",
+      "feed_url": "",
+      "allowed_hosts": [
+        "www.morizon.pl",
+        "morizon.pl"
+      ],
+      "token_env": "MORIZON_FEED_TOKEN",
+      "requests_per_minute": 6,
+      "listing_urls": []
+    }
+  ]
+}

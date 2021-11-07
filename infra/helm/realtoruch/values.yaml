@@ -1,0 +1,22 @@
+projectId: your-existing-project
+image:
+  repository: europe-central2-docker.pkg.dev/your-existing-project/realtoruch/services
+  tag: replace-with-immutable-git-sha
+apiHost: api.rentals.example.com
+apiIpName: realtoruch-api
+securityPolicy: realtoruch-public-api
+replicas: 1
+services:
+  api: { module: realtoruch.api, memory: 384Mi, cpu: 150m }
+  auth: { module: realtoruch.auth, memory: 384Mi, cpu: 100m }
+  search: { module: realtoruch.search, memory: 256Mi, cpu: 100m }
+elasticsearch:
+  image: docker.elastic.co/elasticsearch/elasticsearch:8.19.6
+  storage: 20Gi
+collector:
+  schedule: "0 */6 * * *"
+  enabled: false
+retention:
+  schedule: "30 2 * * *"
+sources:
+  sources: []

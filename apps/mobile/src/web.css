@@ -1,0 +1,70 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #f6f6f1;
+}
+* {
+  box-sizing: border-box;
+}
+button,
+input {
+  font: inherit;
+}
+button,
+[role="button"] {
+  touch-action: manipulation;
+}
+:focus-visible {
+  outline: 2px solid #d77343 !important;
+  outline-offset: 3px;
+}
+input {
+  outline-offset: -2px;
+}
+.leaflet-container {
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  z-index: 0;
+}
+.leaflet-tile {
+  filter: saturate(0.5);
+}
+.price-marker {
+  border: 1px solid #234d3d;
+  border-radius: 0;
+  background: #fff;
+  color: #234d3d;
+  padding: 8px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 5px #15372a20;
+}
+.price-marker.selected,
+.price-marker:hover {
+  color: white;
+  background: #234d3d;
+}
+.leaflet-control-zoom,
+.leaflet-control-zoom a {
+  border-radius: 0 !important;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .price-marker {
+    transition: background 0.15s;
+  }
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c8d0c4;
+}

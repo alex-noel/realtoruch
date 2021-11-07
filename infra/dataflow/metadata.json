@@ -1,0 +1,9 @@
+{
+  "name": "Realtoruch observation normalization",
+  "description": "Idempotent rental observation processing into private PostgreSQL, with transactional search outbox and invalid-event quarantine.",
+  "parameters": [
+    {"name": "input_subscription", "label": "Input subscription", "helpText": "projects/PROJECT/subscriptions/rental-observations-dataflow"},
+    {"name": "dead_letter_topic", "label": "Invalid event topic", "helpText": "projects/PROJECT/topics/rental-observations-dead-letter"},
+    {"name": "config_secret", "label": "Runtime secret", "helpText": "projects/PROJECT/secrets/realtoruch-dataflow-config/versions/latest"}
+  ]
+}
