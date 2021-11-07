@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Realtoruch",
+    "slug": "realtoruch",
+    "version": "0.1.0",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "scheme": "realtoruch",
+    "ios": { "supportsTablet": true, "bundleIdentifier": "pl.realtoruch.app" },
+    "android": { "package": "pl.realtoruch.app" },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "name": "Realtoruch · A clearer way to rent"
+    },
+    "plugins": ["expo-secure-store"]
+  }
+}

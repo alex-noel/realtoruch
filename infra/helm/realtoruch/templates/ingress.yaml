@@ -1,0 +1,41 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata: { name: api }
+spec:
+  domains: [{{ .Values.apiHost | quote }}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: public-api
+  annotations:
+    kubernetes.io/ingress.class: gce
+    kubernetes.io/ingress.global-static-ip-name: {{ .Values.apiIpName }}
+    networking.gke.io/managed-certificates: api
+    kubernetes.io/ingress.allow-http: "false"
+spec:
+  rules:
+    - host: {{ .Values.apiHost }}
+      http:
+        paths:
+          - path: /v1/auth
+            pathType: Prefix
+            backend: { service: { name: auth, port: { number: 8000 } } }
+          - path: /v1/search
+            pathType: Prefix
+            backend: { service: { name: search, port: { number: 8000 } } }
+          - path: /v1
+            pathType: Prefix
+            backend: { service: { name: api, port: { number: 8000 } } }
+          - path: /docs
+            pathType: Exact
+            backend: { service: { name: api, port: { number: 8000 } } }
+          - path: /openapi.json
+            pathType: Exact
+            backend: { service: { name: api, port: { number: 8000 } } }
+          - path: /healthz
+            pathType: Exact
+            backend: { service: { name: api, port: { number: 8000 } } }
+          - path: /readyz
+            pathType: Exact
+            backend: { service: { name: api, port: { number: 8000 } } }

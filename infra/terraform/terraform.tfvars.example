@@ -1,0 +1,11 @@
+project_id = "your-existing-project"
+cdn_domain = "rentals.example.com"
+api_domain = "api.rentals.example.com"
+region     = "europe-central2"
+zone       = "europe-central2-a"
+# The control plane is private. Use a VPN/bastion attached to the VPC.
+admin_cidrs = ["10.40.0.0/20"]
+alert_emails = []
+enable_dataflow_job = false
+enable_uptime_monitoring = false
+dataflow_template_gcs_path = ""

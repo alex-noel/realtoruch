@@ -1,0 +1,115 @@
+{{- range $name := list "collector" "indexer" }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  annotations:
+    iam.gke.io/gcp-service-account: realtoruch-{{ $name }}@{{ $.Values.projectId }}.iam.gserviceaccount.com
+---
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: source-config }
+data:
+  sources.json: {{ .Values.sources | toJson | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: indexer }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: indexer }
+  template:
+    metadata:
+      labels: { app: indexer }
+    spec:
+      serviceAccountName: indexer
+      nodeSelector: { workload: core }
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: indexer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command: ["python", "-m", "realtoruch.runtime", "python", "-m", "realtoruch.worker", "index", "--loop"]
+          env:
+            - name: GCP_CONFIG_SECRET
+              value: "projects/{{ .Values.projectId }}/secrets/realtoruch-indexer-config/versions/latest"
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+          volumeMounts: [{ name: es-ca, mountPath: /etc/elasticsearch, readOnly: true }]
+      volumes:
+        - name: es-ca
+          secret:
+            secretName: elasticsearch-tls
+            items: [{ key: ca.crt, path: ca.crt }]
+---
+{{- if .Values.collector.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: collect-listings }
+spec:
+  schedule: {{ .Values.collector.schedule | quote }}
+  timeZone: Europe/Warsaw
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels: { app: collector }
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: collector
+          nodeSelector: { workload: collectors }
+          tolerations: [{ key: workload, operator: Equal, value: collectors, effect: NoSchedule }]
+          securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - name: collector
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              command: ["python", "-m", "realtoruch.runtime", "python", "-m", "realtoruch.worker", "collect", "--cloud"]
+              env:
+                - name: GCP_CONFIG_SECRET
+                  value: "projects/{{ .Values.projectId }}/secrets/realtoruch-collector-config/versions/latest"
+              resources:
+                requests: { cpu: 250m, memory: 256Mi }
+                limits: { cpu: "1", memory: 768Mi }
+              securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+              volumeMounts: [{ name: config, mountPath: /config, readOnly: true }]
+          volumes: [{ name: config, configMap: { name: source-config } }]
+---
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: retention }
+spec:
+  schedule: {{ .Values.retention.schedule | quote }}
+  timeZone: Europe/Warsaw
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels: { app: indexer }
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: indexer
+          nodeSelector: { workload: core }
+          securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+          containers:
+            - name: retention
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              command: ["python", "-m", "realtoruch.runtime", "python", "-m", "realtoruch.worker", "retention"]
+              env:
+                - name: GCP_CONFIG_SECRET
+                  value: "projects/{{ .Values.projectId }}/secrets/realtoruch-indexer-config/versions/latest"
+              resources:
+                requests: { cpu: 100m, memory: 256Mi }
+                limits: { cpu: "1", memory: 512Mi }

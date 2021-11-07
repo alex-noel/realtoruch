@@ -1,0 +1,87 @@
+name: realtoruch
+x-service: &service
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+    target: base
+  restart: unless-stopped
+  init: true
+  environment: &environment
+    DATABASE_URL: postgresql+psycopg://rentals:local-development-only@postgres:5432/rentals
+    AUTH_DATABASE_URL: postgresql+psycopg://rentals:local-development-only@postgres:5432/auth
+    DEMO_MODE: "true"
+    ELASTICSEARCH_URL: http://elasticsearch:9200
+    SEARCH_SERVICE_URL: http://search:8000
+    CONNECTORS_CONFIG: /config/sources.json
+    JWT_SECRET: ${JWT_SECRET:-local-demo-jwt-key-change-before-deployment-32-chars}
+    PHONE_HASH_KEY: ${PHONE_HASH_KEY:-local-demo-phone-key-change-before-deployment}
+    INTERNAL_API_KEY: ${INTERNAL_API_KEY:-local-demo-internal-key-change-before-deployment}
+  networks: [private]
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rentals
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: rentals
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./infra/local/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rentals -d rentals"]
+      interval: 5s
+      retries: 20
+    networks: [private]
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.6
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes: ["elasticsearch:/usr/share/elasticsearch/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health > /dev/null"]
+      interval: 10s
+      retries: 30
+    networks: [private]
+  migrate:
+    <<: *service
+    restart: "no"
+    command: ["sh", "-c", "python -m realtoruch.worker migrate && python -m realtoruch.seed"]
+    depends_on:
+      postgres: { condition: service_healthy }
+  api:
+    <<: *service
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+  auth:
+    <<: *service
+    ports: ["127.0.0.1:8001:8000"]
+    command: ["uvicorn", "realtoruch.auth:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+  search:
+    <<: *service
+    ports: ["127.0.0.1:8002:8000"]
+    command: ["uvicorn", "realtoruch.search:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+  indexer:
+    <<: *service
+    command: ["python", "-m", "realtoruch.worker", "index", "--loop"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      elasticsearch: { condition: service_healthy }
+  collector:
+    <<: *service
+    command: ["python", "-m", "realtoruch.worker", "collect", "--loop"]
+    volumes: ["./config/sources.json:/config/sources.json:ro"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+volumes:
+  postgres:
+  elasticsearch:
+networks:
+  private:
+    driver: bridge

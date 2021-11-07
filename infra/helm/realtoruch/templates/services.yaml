@@ -1,0 +1,92 @@
+{{- range $name, $config := .Values.services }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  annotations:
+    iam.gke.io/gcp-service-account: realtoruch-{{ $name }}@{{ $.Values.projectId }}.iam.gserviceaccount.com
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+spec:
+  replicas: {{ $.Values.replicas }}
+  strategy:
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: {{ $name }} }
+  template:
+    metadata:
+      labels: { app: {{ $name }} }
+    spec:
+      serviceAccountName: {{ $name }}
+      nodeSelector: { workload: core }
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: {{ $name }}
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          command: ["python", "-m", "realtoruch.runtime", "uvicorn", "{{ $config.module }}:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
+          ports: [{ containerPort: 8000 }]
+          env:
+            - name: GCP_CONFIG_SECRET
+              value: "projects/{{ $.Values.projectId }}/secrets/realtoruch-{{ $name }}-config/versions/latest"
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+          resources:
+            requests: { cpu: {{ $config.cpu }}, memory: {{ $config.memory }} }
+            limits: { cpu: "1", memory: 768Mi }
+          startupProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet: { path: {{ if eq $name "auth" }}/healthz{{ else }}/readyz{{ end }}, port: 8000 }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            periodSeconds: 30
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            {{- if eq $name "search" }}
+            - { name: es-ca, mountPath: /etc/elasticsearch, readOnly: true }
+            {{- end }}
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        {{- if eq $name "search" }}
+        - name: es-ca
+          secret:
+            secretName: elasticsearch-tls
+            items: [{ key: ca.crt, path: ca.crt }]
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "{{ $name }}"}'
+spec:
+  type: ClusterIP
+  selector: { app: {{ $name }} }
+  ports: [{ port: 8000, targetPort: 8000 }]
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: {{ $name }}
+spec:
+  securityPolicy: { name: {{ $.Values.securityPolicy }} }
+  healthCheck: { type: HTTP, requestPath: /healthz, port: 8000 }
+  timeoutSec: 30
+  logging: { enable: true, sampleRate: 0.1 }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: {{ $name }} }
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: {{ $name }} }
+---
+{{- end }}
