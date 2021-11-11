@@ -51,6 +51,14 @@ export default function PropertyMap(props: MapProps) {
     if (!shapes.current || !library.current) return;
     shapes.current.clearLayers();
     const { draw, props } = latest.current;
+    if (props.pin)
+      library.current
+        .circleMarker([props.pin[1], props.pin[0]], {
+          radius: 9,
+          color: "#17382D",
+          fillOpacity: 1,
+        })
+        .addTo(shapes.current);
     const points = (draw.drawing ? draw.points : readPoints(props.polygon)).map(
       ([lon, lat]) => [lat, lon] as [number, number],
     );
@@ -111,7 +119,12 @@ export default function PropertyMap(props: MapProps) {
       markers.current = L.layerGroup().addTo(map.current);
       shapes.current = L.layerGroup().addTo(map.current);
       map.current.on("click", (event) =>
-        latest.current.draw.add([event.latlng.lng, event.latlng.lat]),
+        latest.current.props.onPinChange
+          ? latest.current.props.onPinChange([
+              event.latlng.lng,
+              event.latlng.lat,
+            ])
+          : latest.current.draw.add([event.latlng.lng, event.latlng.lat]),
       );
       renderMarkers();
       renderShape();
@@ -127,11 +140,13 @@ export default function PropertyMap(props: MapProps) {
     };
   }, []);
   useEffect(renderMarkers, [homes, selected, draw.drawing]);
-  useEffect(renderShape, [polygon, draw.drawing, draw.points]);
+  useEffect(renderShape, [polygon, draw.drawing, draw.points, props.pin]);
   useEffect(focusArea, [city, polygon]);
   return (
     <View style={{ flex: 1, minHeight: 400 }}>
-      <DrawControls draw={draw} hasPolygon={!!polygon} />
+      {!props.onPinChange && (
+        <DrawControls draw={draw} hasPolygon={!!polygon} />
+      )}
       <div
         ref={node}
         role="region"

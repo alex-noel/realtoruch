@@ -36,7 +36,12 @@ def pg_engine():
     with admin.connect() as connection:
         connection.execute(text(f"CREATE SCHEMA {schema}"))
         connection.execute(text(f"SET search_path TO {schema}"))
-        for migration in ("001_rentals.sql", "002_alerts.sql", "003_email_alerts.sql"):
+        for migration in (
+            "001_rentals.sql",
+            "002_alerts.sql",
+            "003_email_alerts.sql",
+            "004_marketplace_rentals.sql",
+        ):
             connection.exec_driver_sql((root / "infra/sql" / migration).read_text())
     engine = create_engine(
         os.environ["TEST_POSTGRES_URL"], connect_args={"options": f"-csearch_path={schema}"}
@@ -55,14 +60,17 @@ def test_rental_journey_on_versioned_postgres_schema(pg_engine, record, auth_cli
 
     from realtoruch.api import app
     from realtoruch.db import get_session
+    from realtoruch.auth import validate_claims
 
     with Session(pg_engine, expire_on_commit=False) as session:
+        app.state.validate_claims = validate_claims
         app.dependency_overrides[get_session] = lambda: session
         try:
             with TestClient(app) as client:
                 _journey(session, record, client, auth_client)
         finally:
             app.dependency_overrides.clear()
+            del app.state.validate_claims
 
 
 @pytest.mark.skipif(
@@ -132,3 +140,61 @@ def test_index_update_is_not_lost_during_concurrent_ingestion(pg_engine, record,
         response = client.post(f"/{worker.INDEX}/_search", json=build_query(SearchFilters(**FILTERS)))
         response.raise_for_status()
         assert listing_id not in {hit["_id"] for hit in response.json()["hits"]["hits"]}
+
+
+def test_marketplace_on_versioned_postgres_schema(pg_engine, auth_client):
+    from fastapi.testclient import TestClient
+    from realtoruch.api import app
+    from realtoruch.auth import validate_claims
+    from realtoruch.db import get_session
+    from test_marketplace import test_draft_publish_edit_withdraw_and_relist_identity as flow
+
+    with Session(pg_engine, expire_on_commit=False) as session:
+        app.dependency_overrides[get_session] = lambda: session
+        app.state.validate_claims = validate_claims
+        try:
+            with TestClient(app) as client:
+                flow(client, auth_client, session)
+        finally:
+            app.dependency_overrides.clear()
+            del app.state.validate_claims
+
+
+def test_identity_review_on_versioned_postgres_schema(pg_engine, auth_client, record, monkeypatch):
+    from fastapi.testclient import TestClient
+    from realtoruch.api import app
+    from realtoruch.auth import validate_claims
+    from realtoruch.db import get_session
+    from test_identity_review import test_manual_merge_preserves_favorites_seen_history_and_old_links as flow
+
+    with Session(pg_engine, expire_on_commit=False) as session:
+        app.dependency_overrides[get_session] = lambda: session
+        app.state.validate_claims = validate_claims
+        try:
+            with TestClient(app) as client:
+                flow(client, auth_client, session, record, monkeypatch)
+        finally:
+            app.dependency_overrides.clear()
+            del app.state.validate_claims
+
+
+def test_auth_recovery_on_versioned_postgres_schema(pg_engine, monkeypatch):
+    from fastapi.testclient import TestClient
+    from realtoruch import auth, auth_jobs
+    from test_accounts import test_verification_reset_mail_retry_and_single_use as flow
+
+    root = Path(__file__).resolve().parents[2]
+    with pg_engine.connect() as connection:
+        for name in ("001_auth.sql", "004_accounts_auth.sql"):
+            connection.exec_driver_sql((root / "infra/sql" / name).read_text())
+        connection.commit()
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    monkeypatch.setattr(auth, "auth_engine", pg_engine)
+    monkeypatch.setattr(auth, "AuthSession", factory)
+    monkeypatch.setattr(auth_jobs, "AuthSession", factory)
+    # The reused behavioral test imports its factory directly.
+    import test_accounts
+
+    monkeypatch.setattr(test_accounts, "AuthSession", factory)
+    with TestClient(auth.app) as client:
+        flow(client, monkeypatch)

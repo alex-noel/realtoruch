@@ -1,6 +1,6 @@
 # Connecting listing sources
 
-The default demo profiles in `config/sources.json` remain disabled. The separate `config/sources.live.json` enables bounded public-page collection for Otodom, Gratka and Morizon in Warszawa. OLX stays disabled after an HTTP 403 response from its robots endpoint in the tested environment. No complete OLX portal parser is included. There is no claim of marketplace-wide coverage.
+The default demo profiles in `config/sources.json` remain disabled. The separate `config/sources.live.json` enables bounded public-page collection for Otodom, Gratka and Morizon in Kraków and Warszawa. OLX's public-page parser is verified, but its automatic HTTP transport stays disabled after 403 responses. There is no claim of marketplace-wide coverage.
 
 ## Portal mode
 
@@ -11,7 +11,7 @@ Run `make collect`, then `make live` to open real results. The collector uses no
 | Otodom | `__NEXT_DATA__` rental search items and pagination | `ad` state: identity/status, transaction, rent, fees, deposit, location, advertiser, photos | Public phone-reveal operations are not performed; absent numbers stay absent |
 | Gratka | Rental `AggregateOffer` JSON-LD and next-page link | Nuxt reference-table `propertyData` | The configured city must appear explicitly in the location hierarchy |
 | Morizon | Rental `AggregateOffer` JSON-LD and next-page link | Nuxt reference-table `propertyData` | Same city check; shared Morizon–Gratka listing identity supports cross-post matching |
-| OLX | Disabled | Generic feed/JSON-LD adapters only | Needs accessible source markup/feed and a verified source mapper |
+| OLX | Public rental-card links and next-page link; automatic transport disabled | Public JSON-LD offer + rendered property parameters + location breadcrumbs/map link | Verified on one browser-readable Kraków listing without login; scheduled HTTP/robots requests still return 403. No phone reveal or hidden API calls |
 
 Configuration fields for `mode: portal`:
 
@@ -37,7 +37,9 @@ Local collection queries stored active/unknown adverts in oldest-observation ord
 
 A verified 404/410 or explicit unavailable detail status emits an inactive observation only when a previous valid record exists. Timeouts, malformed pages, blocked requests and disappearance from search results never become inactive observations. Another active source keeps the canonical home active. Inactive adverts can reappear through discovery. In local loop mode partial runs are reported and the worker waits until the next six-hour interval; one-shot mode exits nonzero so CronJobs can retry.
 
-The JSON report records source, started/finished timestamps, search pages, discovered URLs, checked/emitted/ingested counts, skipped records, inactive observations, budget limits and error class/status. Error locations are URL hashes; raw payloads and contacts are not logged. `/v1/sources` exposes stored real-advert counts and latest observation timestamps, not an assertion that the latest collector run succeeded. Reports live in `.local/last-collection.json` locally and structured application logs in cloud jobs.
+The JSON report records source, started/finished timestamps, search pages, discovered URLs, checked/emitted/ingested counts, skipped records, inactive observations, budget limits and error class/status. Error locations are URL hashes; raw payloads and contacts are not logged. Reports live in `.local/last-collection.json` locally and structured application logs in cloud jobs.
+
+The local SQL collector records `collection_runs` and `source_poll_state`. A compare-and-set lease prevents two local jobs fetching the same provider at once. A lease expires after 30 minutes without a heartbeat; source failures back off from 15 minutes to six hours. `/v1/sources?city=Kraków` includes sanitized health/status and retry timing as well as stored counts/freshness. Run history expires after 90 days. These SQL coordination records are not yet wired into the cloud collector, which has no SQL identity; its CronJob and structured logs remain the cloud coordination/health boundary.
 
 ## Feed contract
 
@@ -103,4 +105,18 @@ The live configuration defaults to Kraków and includes explicit `search_urls_by
 
 The Bigtable queue key now includes the folded city before the observation timestamp. If upgrading an already populated older cloud queue, rebuild its recheck rows from the retained state payloads before relying on city-scoped scheduled rechecks. No such deployed queue exists in this local verification.
 
-On 11 November 2026, two bounded Kraków runs collected 18 adverts per provider (54 total), merged into 41 canonical homes. The second run skipped six fresh adverts per provider and fetched 12 new ones each, with no collection errors. OLX still failed public robots retrieval with 403; no account was created or used. An account's ability to remove that block has not been established, and a bulk-market feed is not inferred from partner account access.
+On 11 November 2026, the initial two bounded Kraków runs collected 18 adverts per provider. Three additional reliability cycles, each bounded to two new details per provider, all succeeded and added 18 observations; fresh results were skipped. The final live catalog contains 66 canonical homes, 89 source adverts and 112 observations across Kraków and Warszawa, including one manually imported OLX offer. These short checks are not multi-day reliability or exhaustive coverage evidence.
+
+## OLX browser snapshot import
+
+The ordinary public OLX search and listing page were readable in Chrome without an account. Its visible JSON-LD, parameters and map link supplied rent, fees, area, rooms, declared advertiser type, city/district and an approximate location. The parser requires explicit rental/PLN semantics and required fields; it does not invent unknown room counts, address or phone numbers. Its search/detail regression fixtures are synthetic shapes based on that observation.
+
+An operator can save a freshly viewed public detail page and import it without network requests:
+
+```sh
+.venv/bin/python scripts/import_html.py --source olx --city Kraków \
+  --url 'https://www.olx.pl/d/oferta/ACTUAL-LISTING.html' \
+  --html .local/olx-public-detail.html
+```
+
+The file must be at most 5 MB and less than 24 hours old. Its modification time becomes the observation timestamp; keep captures private and capture again before rechecking. This is a manual ingestion path, not a working scheduled scraper. Automatic robots/search requests still returned 403 on the same day. No OLX account, session cookies, proxy rotation or access-control bypass was used. Approved feeds or an accessible collection path are still needed for continuous OLX updates.

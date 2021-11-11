@@ -47,8 +47,12 @@ app = FastAPI(
 )
 install_http(app)
 from .email_alerts import router as email_router
+from .marketplace import router as marketplace_router
+from .identity_review import resolve_id, router as identity_router
 
 app.include_router(email_router)
+app.include_router(marketplace_router)
+app.include_router(identity_router)
 
 
 @app.get("/healthz", tags=["Operations"])
@@ -91,8 +95,9 @@ def listings(filters: SearchFilters = Query(), session=Depends(get_session)):
 
 @app.get("/v1/listings/{listing_id}", tags=["Public"])
 def listing_detail(listing_id: str, session=Depends(get_session)):
+    listing_id = resolve_id(session, listing_id)
     listing = session.get(Listing, listing_id)
-    if not listing:
+    if not listing or listing.hidden:
         raise HTTPException(404, "Home not found")
     result = serialize_many(session, [listing])[0]
     history = session.scalars(
@@ -155,7 +160,8 @@ def summary(city: str = "", session=Depends(get_session)):
 
 
 @app.get("/v1/sources", tags=["Public"])
-def sources(session=Depends(get_session)):
+def sources(city: str = Query("", max_length=100), session=Depends(get_session)):
+    from .collection_health import public_health
     from .connectors import load_sources
 
     observations = {
@@ -177,6 +183,7 @@ def sources(session=Depends(get_session)):
                 "name": s["name"],
                 "enabled": s.get("enabled", False),
                 "mode": s.get("mode", "feed"),
+                "health": public_health(session, s["name"], city=city),
                 "status": "configured" if s.get("enabled") else "disabled",
                 "disabled_reason": s.get("disabled_reason") if not s.get("enabled") else None,
                 "last_observed_at": observations[s["name"]].last_observed.isoformat() + "Z"
@@ -200,6 +207,7 @@ def favorites(user_id=Depends(require_user), session=Depends(get_session)):
 
 @app.put("/v1/me/favorites/{listing_id}", tags=["Account"])
 def save_favorite(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    listing_id = resolve_id(session, listing_id)
     home = session.get(Listing, listing_id)
     if not home:
         raise HTTPException(404, "Home not found")
@@ -216,6 +224,7 @@ def save_favorite(listing_id: str, user_id=Depends(require_user), session=Depend
 
 @app.delete("/v1/me/favorites/{listing_id}", tags=["Account"])
 def remove_favorite(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    listing_id = resolve_id(session, listing_id)
     favorite = session.get(Favorite, (user_id, listing_id))
     if favorite:
         session.delete(favorite)
@@ -286,6 +295,7 @@ def delete_search(search_id: str, user_id=Depends(require_user), session=Depends
 
 @app.put("/v1/me/seen/{listing_id}", tags=["Account"])
 def mark_seen(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    listing_id = resolve_id(session, listing_id)
     home = session.get(Listing, listing_id)
     if not home:
         raise HTTPException(404, "Home not found")
@@ -402,6 +412,7 @@ class ReportBody(BaseModel):
 
 @app.post("/v1/listings/{listing_id}/reports", status_code=201, tags=["Account"])
 def report(listing_id: str, body: ReportBody, user_id=Depends(require_user), session=Depends(get_session)):
+    listing_id = resolve_id(session, listing_id)
     if not session.get(Listing, listing_id):
         raise HTTPException(404, "Home not found")
     item = Report(listing_id=listing_id, user_id=user_id, reason=body.reason)
@@ -426,3 +437,57 @@ def observations(body: RawListing, session=Depends(get_session)):
     result = ingest(session, body)
     session.commit()
     return result
+
+
+@app.delete("/internal/accounts/{user_id}", dependencies=[Depends(internal_access)], include_in_schema=False)
+def erase_account_data(user_id: str, session=Depends(get_session)):
+    from sqlalchemy import delete
+    from .models import EmailDelivery, EmailSubscription, PushDelivery, SearchMatch
+    from .models import Advert, AdvertiserProfile, Conversation, Message
+    from .marketplace import publish_observation
+
+    conversations = select(Conversation.id).where(
+        (Conversation.renter_id == user_id) | (Conversation.owner_id == user_id)
+    )
+    session.execute(
+        delete(Message).where(Message.conversation_id.in_(conversations)),
+        execution_options={"synchronize_session": False},
+    )
+    session.execute(
+        delete(Conversation).where(Conversation.id.in_(conversations)),
+        execution_options={"synchronize_session": False},
+    )
+    for advert in session.scalars(select(Advert).where(Advert.user_id == user_id).with_for_update()):
+        if advert.listing_id:
+            advert.draft = {**advert.draft, "title": "Withdrawn listing", "description": "", "images": []}
+            publish_observation(session, advert, session.get(AdvertiserProfile, user_id), "inactive")
+        session.delete(advert)
+    session.flush()
+    session.execute(delete(AdvertiserProfile).where(AdvertiserProfile.user_id == user_id))
+
+    notifications = select(Notification.id).where(Notification.user_id == user_id)
+    subscriptions = select(PushSubscription.id).where(PushSubscription.user_id == user_id)
+    searches = select(SavedSearch.id).where(SavedSearch.user_id == user_id)
+    session.execute(
+        delete(PushDelivery).where(
+            PushDelivery.notification_id.in_(notifications) | PushDelivery.subscription_id.in_(subscriptions)
+        ),
+        execution_options={"synchronize_session": False},
+    )
+    session.execute(delete(EmailDelivery).where(EmailDelivery.user_id == user_id))
+    session.execute(
+        delete(SearchMatch).where(SearchMatch.search_id.in_(searches)),
+        execution_options={"synchronize_session": False},
+    )
+    for model in (
+        Notification,
+        PushSubscription,
+        EmailSubscription,
+        SavedSearch,
+        Favorite,
+        SeenPrice,
+        Report,
+    ):
+        session.execute(delete(model).where(model.user_id == user_id))
+    session.commit()
+    return {"erased": True}

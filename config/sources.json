@@ -24,7 +24,8 @@
       ],
       "token_env": "OLX_FEED_TOKEN",
       "requests_per_minute": 6,
-      "listing_urls": []
+      "listing_urls": [],
+      "disabled_reason": "Public HTML parser verified in Chrome; scheduled HTTP access to robots.txt and search still returns 403. Approved feed or permitted automated browser transport needed."
     },
     {
       "name": "gratka",

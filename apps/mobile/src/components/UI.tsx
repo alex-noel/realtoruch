@@ -86,6 +86,7 @@ export function Field({
   placeholder,
   secure = false,
   numeric = false,
+  multiline = false,
 }: {
   label: string;
   value: string;
@@ -93,6 +94,7 @@ export function Field({
   placeholder?: string;
   secure?: boolean;
   numeric?: boolean;
+  multiline?: boolean;
 }) {
   return (
     <View style={{ gap: 8, flex: 1 }}>
@@ -105,8 +107,12 @@ export function Field({
         placeholderTextColor={c.muted}
         secureTextEntry={secure}
         keyboardType={numeric ? "numeric" : "default"}
+        multiline={multiline}
         autoCapitalize="none"
-        style={s.input}
+        style={[
+          s.input,
+          multiline && { minHeight: 100, textAlignVertical: "top" },
+        ]}
       />
     </View>
   );

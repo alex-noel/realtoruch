@@ -53,6 +53,7 @@ class Listing(Base):
     risk_flags: Mapped[list] = mapped_column(JSON, default=list)
     risk_score: Mapped[int] = mapped_column(Integer, default=0)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=now)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
@@ -234,3 +235,102 @@ class EmailDelivery(Base):
     lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(100), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AdvertiserProfile(Base):
+    __tablename__ = "advertiser_profiles"
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(20))
+    description: Mapped[str] = mapped_column(String(2000), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class Advert(Base):
+    __tablename__ = "adverts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("advertiser_profiles.user_id"), index=True)
+    listing_id: Mapped[str | None] = mapped_column(ForeignKey("listings.id"), nullable=True, index=True)
+    draft: Mapped[dict] = mapped_column(JSON)
+    state: Mapped[str] = mapped_column(String(20), default="draft")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+    __table_args__ = (UniqueConstraint("advert_id", "renter_id"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    advert_id: Mapped[str] = mapped_column(ForeignKey("adverts.id"))
+    renter_id: Mapped[str] = mapped_column(String(36), index=True)
+    owner_id: Mapped[str] = mapped_column(String(36), index=True)
+    renter_read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    owner_read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    blocked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+
+
+class Message(Base):
+    __tablename__ = "messages"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "sender_id", "client_id"),
+        Index("ix_message_thread", "conversation_id", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
+    sender_id: Mapped[str] = mapped_column(String(36), index=True)
+    client_id: Mapped[str] = mapped_column(String(64))
+    body: Mapped[str] = mapped_column(String(4000))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class ModerationAction(Base):
+    __tablename__ = "moderation_actions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), index=True)
+    moderator_id: Mapped[str] = mapped_column(String(36))
+    action: Mapped[str] = mapped_column(String(20))
+    reason: Mapped[str] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class CollectionRun(Base):
+    __tablename__ = "collection_runs"
+    __table_args__ = (Index("ix_collection_source_time", "source", "started_at"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    source: Mapped[str] = mapped_column(String(40))
+    city: Mapped[str] = mapped_column(String(100), default="")
+    status: Mapped[str] = mapped_column(String(20))
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    report: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class SourcePollState(Base):
+    __tablename__ = "source_poll_state"
+    source: Mapped[str] = mapped_column(String(40), primary_key=True)
+    lease_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    retry_after: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ListingAlias(Base):
+    __tablename__ = "listing_aliases"
+    old_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), primary_key=True)
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), index=True)
+
+
+class IdentityDecision(Base):
+    __tablename__ = "identity_decisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    moderator_id: Mapped[str] = mapped_column(String(36))
+    from_listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"))
+    to_listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"))
+    source_ids: Mapped[list] = mapped_column(JSON)
+    action: Mapped[str] = mapped_column(String(20))
+    reason: Mapped[str] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)

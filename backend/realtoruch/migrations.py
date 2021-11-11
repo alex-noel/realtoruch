@@ -8,6 +8,7 @@ def upgrade_local(engine):
     inspector = inspect(engine)
     baseline_existing = "city_key" not in {c["name"] for c in inspector.get_columns("saved_searches")}
     additions = {
+        "listings": ("hidden", "BOOLEAN NOT NULL DEFAULT false"),
         "favorites": ("price_floor", "INTEGER"),
         "saved_searches": ("city_key", "VARCHAR(100) NOT NULL DEFAULT ''"),
     }

@@ -4,6 +4,7 @@ import json
 import os
 import secrets
 from pathlib import Path
+from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -15,6 +16,13 @@ def local_environment(*, live=False, journey=False):
         )
     local = ROOT / ".local"
     local.mkdir(exist_ok=True)
+    # Optional ignored mail settings; explicit shell variables take precedence.
+    environment = {
+        key: value
+        for key, value in dotenv_values(local / "mail.env").items()
+        if value is not None
+    }
+    environment.update(os.environ)
     secret_file = local / "development-secrets.json"
     if not secret_file.exists():
         with secret_file.open("x") as handle:
@@ -64,14 +72,14 @@ def local_environment(*, live=False, journey=False):
         secret_file.write_text(json.dumps(keys))
         secret_file.chmod(0o600)
     return {
-        **os.environ,
+        **environment,
         **keys,
         "DEMO_MODE": "false" if live else "true",
         "EXPO_NO_TELEMETRY": "1",
         "EXPO_OFFLINE": "1",
-        "EMAIL_DELIVERY_MODE": "file",
+        "EMAIL_DELIVERY_MODE": environment.get("EMAIL_DELIVERY_MODE", "file"),
         "EMAIL_PREVIEW_DIRECTORY": str(local / "mail"),
-        "PUBLIC_WEB_URL": "http://localhost:8081",
+        "PUBLIC_WEB_URL": environment.get("PUBLIC_WEB_URL", "http://localhost:8081"),
         "CONNECTORS_CONFIG": str(
             ROOT / "config" / ("sources.live.json" if live else "sources.json")
         ),

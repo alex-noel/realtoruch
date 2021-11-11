@@ -12,6 +12,8 @@ x-service: &service
     DEMO_MODE: "true"
     ELASTICSEARCH_URL: http://elasticsearch:9200
     SEARCH_SERVICE_URL: http://search:8000
+    AUTH_SERVICE_URL: http://auth:8000
+    API_BASE_URL: http://api:8000
     CONNECTORS_CONFIG: /config/sources.json
     JWT_SECRET: ${JWT_SECRET:-local-demo-jwt-key-change-before-deployment-32-chars}
     PHONE_HASH_KEY: ${PHONE_HASH_KEY:-local-demo-phone-key-change-before-deployment}
@@ -68,6 +70,18 @@ services:
     command: ["uvicorn", "realtoruch.auth:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
     depends_on:
       migrate: { condition: service_completed_successfully }
+  auth-worker:
+    <<: *service
+    environment:
+      <<: *environment
+      SERVICE_ROLE: auth
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    command: ["python", "-m", "realtoruch.auth_jobs", "--loop"]
+    depends_on:
+      auth: { condition: service_started }
   search:
     <<: *service
     ports: ["127.0.0.1:8002:8000"]

@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from .schemas import RawListing
 
 PORTAL_HOSTS = {
+    "olx": {"www.olx.pl", "olx.pl"},
     "otodom": {"www.otodom.pl", "otodom.pl"},
     "gratka": {"gratka.pl", "www.gratka.pl"},
     "morizon": {"www.morizon.pl", "morizon.pl"},
@@ -50,6 +51,7 @@ def listing_url(source: str, url: str) -> bool:
     return bool(
         re.search(
             {
+                "olx": r"^/d/oferta/[^/]+-CID\d+-ID[a-zA-Z0-9]+\.html$",
                 "otodom": r"^/pl/oferta/[^/]+-ID[a-zA-Z0-9]+$",
                 "gratka": r"^/nieruchomosci/[^/]+/ob/\d+$",
                 "morizon": r"^/oferta/[^/]+-mzn\d+$",
@@ -104,6 +106,20 @@ def discover(source: str, html: str, url: str) -> Discovery:
             query = dict(parse_qsl(parsed.query))
             query["page"] = str(current + 1)
             next_url = urlunparse(parsed._replace(query=urlencode(query), fragment=""))
+    elif source == "olx":
+        if "/wynajem/" not in urlparse(url).path:
+            raise NotRental("Search is not a rental search")
+        urls = [urljoin(url, a["href"]) for a in soup.select("a[href]")]
+        urls = [value for value in urls if listing_url(source, value)]
+        if not urls:
+            raise ParseError("Expected rendered OLX listing links are missing")
+        next_link = next((a for a in soup.select("a[href]") if a.get_text(" ", strip=True) == "Dalej"), None)
+        next_url = urljoin(url, next_link["href"]) if next_link else None
+        if next_url and (urlparse(next_url).netloc, urlparse(next_url).path) != (
+            urlparse(url).netloc,
+            urlparse(url).path,
+        ):
+            raise ParseError("Pagination leaves the configured search")
     elif source in ("gratka", "morizon"):
         aggregate = next(
             (
@@ -400,7 +416,13 @@ def parse_detail(source: str, html: str, url: str, *, city: str = "") -> RawList
         raise ParseError("Unsupported portal detail URL")
     soup = BeautifulSoup(html, "html.parser")
     try:
-        data = parse_otodom(soup, url) if source == "otodom" else parse_morizon_gratka(soup, url, city)
+        data = (
+            parse_olx(soup, city)
+            if source == "olx"
+            else parse_otodom(soup, url)
+            if source == "otodom"
+            else parse_morizon_gratka(soup, url, city)
+        )
         for key, value in description_costs(data.get("description", "")).items():
             if data.get(key) is None:
                 data[key] = value
@@ -409,3 +431,102 @@ def parse_detail(source: str, html: str, url: str, *, city: str = "") -> RawList
         raise
     except (KeyError, TypeError, ValueError, IndexError, AttributeError, RecursionError) as exc:
         raise ParseError("Source fields failed validation") from exc
+
+
+def parse_olx(soup, expected_city=""):
+    """Parse public rendered HTML/JSON-LD, never private phone or hidden APIs."""
+    from .normalization import fold
+
+    product = next(
+        (node for node in schema_nodes(soup) if isinstance(node, dict) and node.get("@type") == "Product"),
+        None,
+    )
+    if not product or not isinstance(product.get("offers"), dict):
+        raise ParseError("Expected OLX Product/Offer schema is missing")
+    category = str(product.get("category", ""))
+    if "/wynajem/" not in category:
+        raise NotRental("OLX advert is not a rental")
+    kind = (
+        "apartment"
+        if "/mieszkania/" in category
+        else "house"
+        if "/domy/" in category
+        else "room"
+        if "/stancje-pokoje/" in category
+        else None
+    )
+    if not kind:
+        raise NotRental("Unsupported OLX rental category")
+    offer = product["offers"]
+    if str(offer.get("availability", "")).endswith(("OutOfStock", "Discontinued")):
+        raise ListingUnavailable("OLX explicitly marks the advert unavailable")
+    if not str(offer.get("availability", "")).endswith("InStock"):
+        raise ParseError("OLX availability is not confirmed")
+    parameters = soup.select_one('[data-testid="ad-parameters-container"]')
+    if not parameters:
+        raise ParseError("Rendered OLX property parameters are missing")
+    values = {}
+    for node in parameters.select("p"):
+        label, _, value = node.get_text(" ", strip=True).partition(":")
+        values[label.strip()] = value.strip()
+    places = [
+        a.get_text(" ", strip=True).removeprefix("Wynajem - ")
+        for a in soup.select("nav a[href]")
+        if a.get_text(" ", strip=True).startswith("Wynajem - ")
+    ]
+    if len(places) < 2 or (expected_city and fold(places[1]) != fold(expected_city)):
+        raise ParseError("OLX city cannot be confirmed from breadcrumbs")
+    area = re.fullmatch(r"([\d\s.,]+)\s*m[²2]", values.get("Powierzchnia", ""))
+    rooms = values.get("Liczba pokoi", "")
+    if rooms == "Kawalerka":
+        count = 1
+    elif match := re.fullmatch(r"(\d+)\s+poko(?:je|i|j)", rooms):
+        count = int(match[1])
+    else:
+        raise ParseError("OLX room count is not exact")
+    if not area:
+        raise ParseError("OLX area is missing")
+    floor = values.get("Poziom", "")
+    floor = 0 if floor.lower() == "parter" else int(floor) if re.fullmatch(r"-?\d+", floor) else None
+
+    def fee(label):
+        value = values.get(label, "")
+        match = re.fullmatch(r"([\d\s.,]+)\s*(?:zł|PLN)", value)
+        return money(match[1]) if match else None
+
+    lat, lon = None, None
+    link = soup.select_one('a[href^="https://maps.google.com/maps?"]')
+    if link:
+        coordinates = dict(parse_qsl(urlparse(link["href"]).query)).get("ll", "")
+        if re.fullmatch(r"-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?", coordinates):
+            lat, lon = map(float, coordinates.split(","))
+    trader = soup.select_one('[data-testid="trader-title"]')
+    identity = fold(trader.get_text(" ", strip=True)) if trader else ""
+    private = "Prywatne" in values or "osoba prywatna" in identity
+    agency = "Firmowe" in values or "firma" in identity
+    return dict(
+        external_id=str(product["sku"]),
+        title=product["name"],
+        description=product.get("description", "")[:20000],
+        city=places[1],
+        region=places[0],
+        district=places[2] if len(places) > 2 else "",
+        address="",
+        lat=lat,
+        lon=lon,
+        area_m2=float(area[1].replace(" ", "").replace("\xa0", "").replace(",", ".")),
+        rooms=count,
+        floor=floor,
+        rent_pln=money(offer["price"], offer.get("priceCurrency")),
+        fees_pln=fee("Czynsz (dodatkowo)"),
+        deposit_pln=fee("Kaucja"),
+        commission_pln=fee("Prowizja"),
+        advertiser_type="agency" if agency else "private" if private else "unknown",
+        property_type=kind,
+        images=product.get("image", [])[:30],
+        amenities=[
+            tag
+            for label, tag in (("Winda", "lift"), ("Umeblowane", "furnished"), ("Zwierzęta", "pets"))
+            if values.get(label) == "Tak"
+        ],
+    )

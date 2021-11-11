@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     jwt_private_key: str = ""
     jwt_public_key: str = ""
     jwt_issuer: str = "realtoruch-auth"
+    auth_service_url: str = "http://localhost:8001"
     cors_origins: str = "http://localhost:8081,http://localhost:8082,http://localhost:19006"
     elasticsearch_url: str = ""
     elasticsearch_api_key: str = ""
@@ -25,7 +26,9 @@ class Settings(BaseSettings):
     api_base_url: str = "http://localhost:8000"
     connectors_config: str = "../config/sources.json"
     request_limit_per_minute: int = 120
+    auth_request_limit_per_minute: int = 30
     contact_retention_days: int = 90
+    moderator_user_ids: str = ""
     gcp_project: str = ""
     pubsub_topic: str = "rental-observations"
     bigtable_instance: str = "realtoruch-raw"
@@ -71,7 +74,7 @@ class Settings(BaseSettings):
             required_secrets = []
             if self.service_role in ("api", "collector", "dataflow"):
                 required_secrets.append("phone_hash_key")
-            if self.service_role == "api":
+            if self.service_role in ("api", "auth"):
                 required_secrets.append("internal_api_key")
             for field in required_secrets:
                 value = getattr(self, field)

@@ -199,6 +199,14 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
         if not config.get("enabled"):
             reports.append({"source": config["name"], "status": "disabled", "errors": []})
             continue
+        from .collection_health import claim, finish, heartbeat
+
+        run_id = None
+        if not cloud:
+            run_id, deferred = claim(Session, config)
+            if deferred:
+                reports.append(deferred)
+                continue
         connector = Connector(config)
         started = now().isoformat() + "Z"
         ingested = 0
@@ -219,6 +227,8 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
                         entries.append(entry)
                     connector.config = {**config, "listing_urls": entries}
             for raw in connector.records():
+                if run_id:
+                    heartbeat(Session, config["name"], run_id)
                 if cloud:
                     publish(raw)
                 else:
@@ -239,6 +249,8 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
             "finished_at": now().isoformat() + "Z",
         }
         report["status"] = ("partial" if ingested else "failed") if report["errors"] else "succeeded"
+        if run_id:
+            finish(Session, config["name"], run_id, report)
         reports.append(report)
         log.info("collection_report %s", json.dumps(report, sort_keys=True))
     if any(report["errors"] for report in reports):
@@ -323,7 +335,9 @@ def retention():
         # Stale sources are unknown, not claimed inactive; another active source keeps the home visible.
         for source in session.scalars(
             select(SourceListing).where(
-                SourceListing.observed_at < now() - timedelta(days=7), SourceListing.status == "active"
+                SourceListing.observed_at < now() - timedelta(days=7),
+                SourceListing.status == "active",
+                SourceListing.source != "realtoruch",
             )
         ):
             if source.phone_hash:
@@ -340,6 +354,9 @@ def retention():
             )
         for listing_id in affected:
             recompute_listing(session, session.get(Listing, listing_id))
+        from .models import CollectionRun
+
+        session.execute(delete(CollectionRun).where(CollectionRun.started_at < now() - timedelta(days=90)))
         session.execute(delete(EventReceipt).where(EventReceipt.received_at < cutoff))
         session.execute(delete(Outbox).where(Outbox.delivered_at < now() - timedelta(days=7)))
         from .models import AlertEvent
@@ -400,9 +417,9 @@ def main():
                 "Apply the versioned SQL migrations as an operator; application identities cannot create tables"
             )
         init_db()
-        from .auth import AuthBase, auth_engine
+        from .auth import init_auth_db
 
-        AuthBase.metadata.create_all(auth_engine)
+        init_auth_db()
         return
     while True:
         if args.command == "collect":

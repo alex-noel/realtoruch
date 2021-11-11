@@ -43,6 +43,12 @@ export type Listing = {
     severity: string;
   }[];
   sources: Source[];
+  contact_adverts?: {
+    id: string;
+    name: string;
+    kind: string;
+    profile_id: string;
+  }[];
   history?: {
     at: string;
     rent_pln: number;

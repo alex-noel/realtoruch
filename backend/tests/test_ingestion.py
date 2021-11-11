@@ -1,6 +1,7 @@
 from datetime import timedelta
 import json
 from sqlalchemy import func, select
+from pydantic import HttpUrl
 from realtoruch.ingest import ingest
 from realtoruch.models import Listing, SourceListing, Observation, Outbox
 from realtoruch.normalization import hash_phone, normalize
@@ -125,3 +126,32 @@ def test_agency_evidence_flags_private_offer_without_changing_claim(session, rec
     listing = session.get(Listing, result["listing_id"])
     assert listing.advertiser_type == "private"
     assert "mixed_identity" in [f["code"] for f in listing.risk_flags]
+
+
+def test_normalized_addresses_and_image_sizes_preserve_property_identity(session, record):
+    first = record.model_copy(
+        update={
+            "address": "ul. Dąbrowskiego 24 m. 8",
+            "images": [HttpUrl("https://photos.example.test/home.jpg?w=1200&id=one")],
+            "phone": None,
+        }
+    )
+    original = ingest(session, first)["listing_id"]
+    same = first.model_copy(
+        update={
+            "source": "gratka",
+            "external_id": "size-variant",
+            "address": "Dabrowskiego 24/8",
+            "images": [HttpUrl("https://photos.example.test/home.jpg?id=one&w=640")],
+        }
+    )
+    assert ingest(session, same)["listing_id"] == original
+    other = same.model_copy(update={"external_id": "different-flat", "address": "Dabrowskiego 24/9"})
+    assert ingest(session, other)["listing_id"] != original
+    different_photo = same.model_copy(
+        update={
+            "external_id": "different-photo",
+            "images": [HttpUrl("https://photos.example.test/home.jpg?id=two&w=640")],
+        }
+    )
+    assert ingest(session, different_photo)["listing_id"] != original

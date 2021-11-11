@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: auth-worker }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: auth-worker }
+  template:
+    metadata:
+      labels: { app: auth-worker }
+    spec:
+      serviceAccountName: auth
+      nodeSelector: { workload: core }
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: auth-worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command: ["python", "-m", "realtoruch.runtime", "python", "-m", "realtoruch.auth_jobs", "--loop"]
+          env:
+            - name: GCP_CONFIG_SECRET
+              value: "projects/{{ .Values.projectId }}/secrets/realtoruch-auth-config/versions/latest"
+          resources:
+            requests: { cpu: 50m, memory: 192Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: auth-cleanup-api }
+spec:
+  podSelector: { matchLabels: { app: api } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: auth-worker } }
+      ports: [{ protocol: TCP, port: 8000 }]

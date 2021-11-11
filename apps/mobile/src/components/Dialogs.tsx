@@ -24,6 +24,8 @@ export function AuthDialog({
   onSuccess: (token: string, email: string) => Promise<void>;
 }) {
   const [register, setRegister] = useState(false);
+  const [forgot, setForgot] = useState(false);
+  const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -32,6 +34,10 @@ export function AuthDialog({
     setBusy(true);
     setError("");
     try {
+      if (forgot) {
+        setMessage((await api.resetRequest(email.trim())).message);
+        return;
+      }
       const result = await api.signIn(email.trim(), password, register);
       await onSuccess(result.access_token, result.user.email);
       onClose();
@@ -43,7 +49,13 @@ export function AuthDialog({
   }
   return (
     <Panel
-      title={register ? "Make room for your shortlist." : "Welcome back."}
+      title={
+        forgot
+          ? "Reset your password."
+          : register
+            ? "Make room for your shortlist."
+            : "Welcome back."
+      }
       onClose={onClose}
     >
       <Text style={s.muted}>
@@ -55,28 +67,43 @@ export function AuthDialog({
         onChange={setEmail}
         placeholder="you@example.com"
       />
-      <Field
-        label="PASSWORD"
-        value={password}
-        onChange={setPassword}
-        secure
-        placeholder="At least 12 characters"
-      />
+      {!forgot && (
+        <Field
+          label="PASSWORD"
+          value={password}
+          onChange={setPassword}
+          secure
+          placeholder="At least 12 characters"
+        />
+      )}
+      {!!message && (
+        <Text accessibilityRole="alert" style={s.text}>
+          {message}
+        </Text>
+      )}
       {!!error && (
         <Text accessibilityRole="alert" style={{ color: "#A3422D" }}>
           {error}
         </Text>
       )}
       <Button
-        disabled={busy || !email || password.length < 12}
+        disabled={busy || !email || (!forgot && password.length < 12)}
         onPress={submit}
       >
-        {busy ? "Please wait…" : register ? "Create account" : "Sign in"}
+        {busy
+          ? "Please wait…"
+          : forgot
+            ? "Email reset link"
+            : register
+              ? "Create account"
+              : "Sign in"}
       </Button>
       <Pressable
         accessibilityRole="button"
         onPress={() => {
-          setRegister(!register);
+          setRegister(forgot ? false : !register);
+          setForgot(false);
+          setMessage("");
           setError("");
         }}
       >
@@ -86,14 +113,25 @@ export function AuthDialog({
             { textAlign: "center", textDecorationLine: "underline" },
           ]}
         >
-          {register
+          {register || forgot
             ? "Already have an account? Sign in"
             : "New here? Create a free account"}
         </Text>
       </Pressable>
+      {!forgot && !register && (
+        <Button
+          outline
+          onPress={() => {
+            setForgot(true);
+            setError("");
+          }}
+        >
+          Forgot password?
+        </Button>
+      )}
       <Text style={[s.muted, { fontSize: 11 }]}>
-        This local version uses email and password. Sessions expire after one
-        hour.
+        Sessions stay signed in for up to 30 days. Manage your devices in
+        Account.
       </Text>
     </Panel>
   );
@@ -280,12 +318,14 @@ export function DetailDialog({
   onSave,
   saved,
   onReport,
+  onContact,
 }: {
   home: Listing;
   onClose: () => void;
   onSave: () => void;
   saved: boolean;
   onReport: () => void;
+  onContact: (contact: NonNullable<Listing["contact_adverts"]>[number]) => void;
 }) {
   const [photo, setPhoto] = useState(0);
   const narrow = useWindowDimensions().width < 700;
@@ -390,12 +430,19 @@ export function DetailDialog({
         </View>
       </View>
       <View style={{ gap: 12 }}>
+        {(home.contact_adverts || []).map((contact) => (
+          <Button key={contact.id} onPress={() => onContact(contact)}>
+            Message {contact.name}
+          </Button>
+        ))}
         <Text style={[s.title, { fontSize: 20 }]}>One home. Every source.</Text>
         {home.sources.map((source, i) => (
           <View key={source.name + i} style={[s.card, { padding: 16, gap: 6 }]}>
             <View style={[s.row, { justifyContent: "space-between", gap: 12 }]}>
               <Text style={[s.text, { fontWeight: "700" }]}>
-                {source.name}.pl
+                {source.name === "realtoruch"
+                  ? "Realtoruch"
+                  : `${source.name}.pl`}
               </Text>
               <Text style={s.text}>{money(source.rent_pln)}</Text>
               <Pressable

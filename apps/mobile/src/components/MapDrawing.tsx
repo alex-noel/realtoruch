@@ -11,6 +11,8 @@ export type MapProps = {
   onSelect: (home: Listing) => void;
   city: string;
   polygon?: string;
+  pin?: Point;
+  onPinChange?: (point: Point) => void;
   onPolygonChange: (polygon?: string) => void;
 };
 export function cityCenter(city: string): [number, number] {

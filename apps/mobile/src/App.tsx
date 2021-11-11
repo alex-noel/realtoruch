@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -38,6 +38,8 @@ import TrendingUp from "lucide-react-native/icons/trending-up";
 import User from "lucide-react-native/icons/user";
 import X from "lucide-react-native/icons/x";
 import { api, API_URL, request, restoreToken, setToken } from "./api";
+import { AccountDialog, ResetPasswordDialog } from "./components/AccountDialog";
+import { market } from "./marketplaceApi";
 import {
   DEFAULT_FILTERS,
   Filters,
@@ -58,6 +60,8 @@ import {
 import Insights from "./components/Insights";
 
 if (Platform.OS === "web") require("./web.css");
+const MarketplaceDialog = lazy(() => import("./components/MarketplaceDialog"));
+
 type Tab = "discover" | "saved" | "insights" | "searches" | "notifications";
 const tabs = [
   { id: "discover", title: "Discover homes", icon: Compass },
@@ -97,7 +101,15 @@ function RentalApp() {
   const [retry, setRetry] = useState(0);
   const [view, setView] = useState<"split" | "list" | "map">("split");
   const [dialog, setDialog] = useState<
-    "auth" | "filters" | "about" | "compare" | "save-search" | "report" | null
+    | "auth"
+    | "account"
+    | "marketplace"
+    | "filters"
+    | "about"
+    | "compare"
+    | "save-search"
+    | "report"
+    | null
   >(null);
   const [detail, setDetail] = useState<Listing | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -106,6 +118,13 @@ function RentalApp() {
   const [comparison, setComparison] = useState<Listing[]>([]);
   const [user, setUser] = useState<string | null>(null);
   const [emailMessage, setEmailMessage] = useState("");
+  const [marketMode, setMarketMode] = useState<"adverts" | "messages">(
+    "adverts",
+  );
+  const [contact, setContact] = useState<
+    NonNullable<Listing["contact_adverts"]>[number] | undefined
+  >();
+  const [resetToken, setResetToken] = useState<string | null>(null);
   const [toast, setToast] = useState("");
   const [searchName, setSearchName] = useState("My Kraków shortlist");
   const [reportReason, setReportReason] = useState("");
@@ -266,9 +285,30 @@ function RentalApp() {
     if (Platform.OS === "web") {
       const id = new URLSearchParams(window.location.search).get("listing");
       if (id) open(id);
+      const advert = new URLSearchParams(window.location.search).get("advert");
+      if (advert)
+        market
+          .publicAdvert(advert)
+          .then((r) => open(r.listing_id))
+          .catch((e) => setToast(e.message));
       const action = new URLSearchParams(window.location.hash.slice(1));
       const confirm = action.get("confirm_email"),
         unsubscribe = action.get("unsubscribe_email");
+      const reset = action.get("reset_password"),
+        verify = action.get("verify_account");
+      if (reset || verify) {
+        window.history.replaceState(
+          null,
+          "",
+          window.location.pathname + window.location.search,
+        );
+        if (reset) setResetToken(reset);
+        if (verify)
+          api
+            .verifyAccount(verify)
+            .then((result) => setToast(result.message))
+            .catch((e) => setToast(e.message));
+      }
       if (confirm || unsubscribe) {
         window.history.replaceState(
           null,
@@ -620,28 +660,14 @@ function RentalApp() {
             )}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={user ? "Sign out" : "Sign in"}
-              onPress={async () => {
-                if (user) {
-                  let pushWarning = "";
-                  try {
-                    await disablePush();
-                  } catch {
-                    pushWarning =
-                      " Device alert removal could not be confirmed. You can disable alerts in device settings.";
-                  }
-                  await setToken(null);
-                  currentUser.current = null;
-                  setUser(null);
-                  setToast("Signed out." + pushWarning);
-                } else setDialog("auth");
-              }}
+              accessibilityLabel={user ? "Account" : "Sign in"}
+              onPress={() => setDialog(user ? "account" : "auth")}
               style={[s.row, { gap: 8 }]}
             >
               <User size={17} color={c.ink} />
               {!mobile && (
                 <Text style={[s.text, { fontSize: 12 }]}>
-                  {user ? "Sign out" : "Sign in"}
+                  {user ? "Account" : "Sign in"}
                 </Text>
               )}
             </Pressable>
@@ -1451,6 +1477,81 @@ function RentalApp() {
           onSave={() => toggleFavorite(detail)}
           saved={favorites.some((h) => h.id === detail.id)}
           onReport={() => openDialog(user ? "report" : "auth")}
+          onContact={(advert) => {
+            setContact(advert);
+            setMarketMode("messages");
+            openDialog(user ? "marketplace" : "auth");
+          }}
+        />
+      )}
+      {dialog === "marketplace" && (
+        <Suspense
+          fallback={
+            <ActivityIndicator accessibilityLabel="Loading rental desk" />
+          }
+        >
+          <MarketplaceDialog
+            mode={marketMode}
+            contact={contact}
+            onClose={() => {
+              setDialog(null);
+              setContact(undefined);
+              setRetry((v) => v + 1);
+              refreshAccount();
+            }}
+            onOpenHome={(id) => {
+              setDialog(null);
+              api
+                .detail(id)
+                .then(openHome)
+                .catch((e) => setToast(e.message));
+            }}
+          />
+        </Suspense>
+      )}
+      {dialog === "account" && (
+        <AccountDialog
+          onMarketplace={(mode) => {
+            setMarketMode(mode);
+            setContact(undefined);
+            setDialog("marketplace");
+          }}
+          onClose={() => setDialog(null)}
+          onSignOut={async () => {
+            let pushWarning = "";
+            try {
+              await disablePush();
+            } catch {
+              // A push-provider outage must not prevent revoking the login session.
+              pushWarning =
+                " Device alert removal could not be confirmed. You can disable alerts in device settings.";
+            }
+            await api.signOut();
+            currentUser.current = null;
+            setUser(null);
+            setDialog(null);
+            setToast("Signed out." + pushWarning);
+          }}
+          onDeleted={(message) => {
+            currentUser.current = null;
+            setUser(null);
+            setDialog(null);
+            setToast(message);
+          }}
+        />
+      )}
+      {resetToken && (
+        <ResetPasswordDialog
+          token={resetToken}
+          onClose={() => setResetToken(null)}
+          onComplete={(message) => {
+            setToken(null);
+            currentUser.current = null;
+            setUser(null);
+            setResetToken(null);
+            setToast(message);
+            setDialog("auth");
+          }}
         />
       )}
       {dialog === "auth" && (
@@ -1458,8 +1559,11 @@ function RentalApp() {
           onClose={() => {
             setDialog(null);
             pendingFavorite.current = null;
+            if (currentUser.current && contact) setDialog("marketplace");
           }}
-          onSuccess={signedIn}
+          onSuccess={async (token, email) => {
+            await signedIn(token, email);
+          }}
         />
       )}
       {dialog === "filters" && (
