@@ -15,14 +15,17 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from local import ROOT
+from restore_manifest import isolated_main, profile_args, status
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--container", default="realtoruch-verify-pg")
+    profile_args(parser).add_argument("--container", help="Legacy check of an explicitly labelled disposable container")
     parser.add_argument("--user", default="rentals")
     parser.add_argument("--databases", nargs="+", default=["rentals", "auth"])
     args = parser.parse_args()
+    if not args.container:
+        return status(lambda: isolated_main("postgres", args))
     if not all(
         re.fullmatch(r"[a-z_][a-z0-9_]{0,50}", value)
         for value in [args.user, *args.databases]
@@ -150,4 +153,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
