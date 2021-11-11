@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import inspect as pyinspect
 import re
 from pathlib import Path
@@ -10,7 +11,7 @@ from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
 
-SQL_DIR = Path(__file__).resolve().parents[2] / "infra" / "sql"
+SQL_DIR = Path(os.environ.get("REALTORUCH_SQL_DIR", Path(__file__).resolve().parents[2] / "infra" / "sql"))
 REGISTRY = SQL_DIR / "migrations.json"
 
 
@@ -37,8 +38,16 @@ def apply_postgres(connection, database, registry_path=REGISTRY):
         raise ValueError("PostgreSQL and a known database are required")
     entries = registry[database]
     files = [(entry, (SQL_DIR / entry["file"]).read_bytes()) for entry in entries]
+    # Never infer baseline history from pre-existing tables, including legacy
+    # schema_migrations. Adoption requires an operator-reviewed procedure.
+    tables = set(inspect(connection).get_table_names())
+    if tables and "realtoruch_migrations" not in tables:
+        raise ValueError("Untracked PostgreSQL schema: back up and use a reviewed migration/adoption procedure; see docs/testing.md")
     connection.execute(text("CREATE TABLE IF NOT EXISTS realtoruch_migrations (database_name VARCHAR(20) NOT NULL, version VARCHAR(3) NOT NULL, checksum VARCHAR(64) NOT NULL, PRIMARY KEY (database_name, version))"))
     applied = dict(connection.execute(text("SELECT version, checksum FROM realtoruch_migrations WHERE database_name=:db"), {"db": database}).all())
+    owned_tables = {name for _, data in files for name in re.findall(r"(?im)^CREATE TABLE (?:IF NOT EXISTS )?([a-z_][a-z0-9_]*)", data.decode())} - {"schema_migrations"}
+    if not applied and tables & owned_tables:
+        raise ValueError("Untracked PostgreSQL schema: back up and use a reviewed migration/adoption procedure; see docs/testing.md")
     expected = {e["version"]: hashlib.sha256(data).hexdigest() for e, data in files}
     if any(v not in expected or expected[v] != checksum for v, checksum in applied.items()):
         raise ValueError("Applied migration missing or checksum changed")

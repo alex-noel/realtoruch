@@ -41,7 +41,19 @@ def main():
     env.update(EMAIL_DELIVERY_MODE='disabled', EXPO_PUSH_ENABLED='false', ELASTICSEARCH_URL='', SEARCH_SERVICE_URL='', CLOUDSQL_CONNECTION_NAME='', GCP_PROJECT='')
     env.update(PYTHONPATH=str(ROOT / 'backend'), VERIFY_RUN_ID=args.run_id, TMPDIR=str(dest), EXPO_OFFLINE='1', EXPO_NO_TELEMETRY='1')
     def command(cmd, cwd=ROOT, *, check=True):
-        p = subprocess.run(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=300)
+        p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+        try:
+            output, _ = p.communicate(timeout=300)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
+            # Terminate the whole owned process group, including test descendants.
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.communicate()
+            report['commands'].append({'argv': cmd, 'exit_code': p.returncode, 'interrupted': isinstance(exc, KeyboardInterrupt), 'timed_out': isinstance(exc, subprocess.TimeoutExpired)})
+            raise
+        p.stdout = output
         report['commands'].append({'argv': cmd, 'exit_code': p.returncode})
         if check and p.returncode:
             raise RuntimeError('Command failed: ' + ' '.join(cmd))

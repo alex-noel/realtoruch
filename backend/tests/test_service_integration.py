@@ -222,7 +222,6 @@ def test_registry_postgres_transaction_rolls_back(pg_engine):
 
 
 def test_registry_refuses_untracked_existing_schema(pg_engine):
-    from sqlalchemy.exc import SQLAlchemyError
     from realtoruch.migrations import apply_postgres
     schema = 'untracked_' + uuid4().hex
     with pg_engine.begin() as connection:
@@ -230,7 +229,7 @@ def test_registry_refuses_untracked_existing_schema(pg_engine):
         connection.execute(text(f'CREATE TABLE {schema}.event_receipts (id text PRIMARY KEY)'))
         connection.execute(text(f"INSERT INTO {schema}.event_receipts VALUES ('keep')"))
     try:
-        with pytest.raises(SQLAlchemyError):
+        with pytest.raises(ValueError, match="Untracked PostgreSQL schema"):
             with pg_engine.begin() as connection:
                 connection.execute(text(f'SET LOCAL search_path TO {schema}'))
                 apply_postgres(connection, 'rentals')
@@ -240,3 +239,29 @@ def test_registry_refuses_untracked_existing_schema(pg_engine):
     finally:
         with pg_engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA {schema} CASCADE'))
+
+
+def test_registry_upgrades_tracked_baseline_preserving_rows(pg_engine, tmp_path):
+    import json
+    from realtoruch.migrations import apply_postgres, load_registry
+
+    schema = 'upgrade_' + uuid4().hex
+    registry = load_registry()
+    registry['rentals'] = registry['rentals'][:1]
+    baseline = tmp_path / 'baseline.json'
+    baseline.write_text(json.dumps(registry))
+    try:
+        with pg_engine.begin() as connection:
+            connection.execute(text(f'CREATE SCHEMA {schema}'))
+            connection.execute(text(f'SET LOCAL search_path TO {schema}'))
+            apply_postgres(connection, 'rentals', baseline)
+            connection.execute(text("INSERT INTO event_receipts VALUES ('keep', CURRENT_TIMESTAMP)"))
+        with pg_engine.begin() as connection:
+            connection.execute(text(f'SET LOCAL search_path TO {schema}'))
+            apply_postgres(connection, 'rentals')
+            apply_postgres(connection, 'rentals')
+            assert connection.scalar(text("SELECT id FROM event_receipts")) == 'keep'
+            assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == 4
+    finally:
+        with pg_engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA IF EXISTS {schema} CASCADE'))
