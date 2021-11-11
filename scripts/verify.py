@@ -51,10 +51,17 @@ def main():
         except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
             # Terminate the whole owned process group, including test descendants.
             try:
-                os.killpg(p.pid, signal.SIGKILL)
+                os.killpg(p.pid, signal.SIGTERM if args.profile == 'web' else signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            p.communicate()
+            try:
+                p.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                p.communicate()
             report['commands'].append({'argv': cmd, 'exit_code': p.returncode, 'interrupted': isinstance(exc, KeyboardInterrupt), 'timed_out': isinstance(exc, subprocess.TimeoutExpired)})
             raise
         p.stdout = output
@@ -74,10 +81,22 @@ def main():
         report['platform']['git_revision'] = command(['git', 'rev-parse', 'HEAD']).stdout.strip()
         report['platform']['worktree_dirty'] = bool(command(['git', 'status', '--porcelain', '--untracked-files=no']).stdout.strip())
         if args.profile == 'web':
-            report['status'] = 'NOT_IMPLEMENTED'
-            status = 2
-            print('NOT_IMPLEMENTED: T18 owns the browser runner')
-            return 2
+            if 'PLAYWRIGHT_BROWSERS_PATH' in os.environ:
+                env['PLAYWRIGHT_BROWSERS_PATH'] = os.environ['PLAYWRIGHT_BROWSERS_PATH']
+            if 'VERIFY_BROWSER_ARTIFACTS_DIR' in os.environ:
+                env['VERIFY_BROWSER_ARTIFACTS_DIR'] = os.environ['VERIFY_BROWSER_ARTIFACTS_DIR']
+            env['PATH'] = str(Path(sys.executable).parent) + os.pathsep + env.get('PATH', '')
+            result = command(['npm', 'run', 'test:e2e'], ROOT / 'apps/mobile', check=False)
+            summary_path = ROOT / '.local' / 'verification' / 'T18' / args.run_id / 'summary.json'
+            if not summary_path.exists():
+                raise RuntimeError('Browser runner did not produce its aggregate summary')
+            summary = json.loads(summary_path.read_text())
+            report['counts'] = summary['counts']
+            if result.returncode or summary['status'] != 'passed' or report['counts']['skipped'] or not report['counts']['passed']:
+                raise RuntimeError('Browser tests failed, skipped or did not run')
+            status = 0
+            report['status'] = 'PASS'
+            return 0
         if args.profile == 'services':
             database = 'r_' + args.run_id.replace('-', '_')
             for suffix, image, port, options in [

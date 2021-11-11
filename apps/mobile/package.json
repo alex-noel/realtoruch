@@ -10,7 +10,8 @@
     "ios": "expo start --ios",
     "build:web": "expo export --platform web",
     "typecheck": "tsc --noEmit",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "test:e2e": "python3 e2e/run.py"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -30,6 +31,7 @@
     "react-native-web": "~0.21.4"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.0",
     "@types/leaflet": "^1.9.16",
     "@types/react": "^19.2.0",
     "prettier": "^3.6.2",
