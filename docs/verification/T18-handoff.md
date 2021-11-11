@@ -5,7 +5,7 @@
 - Task: T18
 - Status: IMPLEMENTED_LOCAL. The isolated local cases passed; integrated T15/T16/T17 producer/UI revisions and hosted CI have not yet been tested together.
 - Base revision: `49d4bcf`. Session fixes `3fbab65` and `64b949a` were ported as `26d3124` and `7721dea` using `scripts/commit.py`; the integrator owns their original commits.
-- T18 implementation commits: `95bb97f` and `ddbf681`, created using `python3 scripts/commit.py`. This report is a separate handoff commit.
+- T18 implementation commits: `95bb97f`, `ddbf681` and `ce6087f`, created using `python3 scripts/commit.py`. This report is a separate handoff commit.
 - Work and test date: 11 November 2026, Europe/Warsaw (CET). Reports use UTC.
 - Outcome: repeatable Chromium exercises synthetic rental, account, two-tab and owner/renter flows against the production web export and local services.
 - Scope: integrator approved the narrow CI browser system-dependency extension; no production endpoint or application UI changes in T18. The two session fixes above were produced by the integrator.
@@ -22,12 +22,12 @@ The fixture mutation path is a local child process, not an HTTP endpoint. It che
 | --- | --- | --- |
 | T18-AC01 | PASS, local | TC01: `t18-final-2` and `t18-final-3`, complete synthetic lifecycle, each profile. |
 | T18-AC02 | PASS, local | TC01/TC02: same canonical ID on repost/drop; seen and favorite floor; active map/list and delisted saved state; exact logical inbox and rental `.eml` counts; exclusive rent, minimum area, direct, polygon, unknown vs zero commission. |
-| T18-AC03 | PASS, local; integrated producer rerun pending | TC03: real file verification link, session reload/logout, two-tab lock barrier and stale-account switch. TC04: real local owner and renter contexts, draft/publish/edit, dialog price history, messages/read/reply and withdrawal. The strengthened dialog-only history locator passed `t18-owner-final` after the two complete runs. |
+| T18-AC03 | PASS, local; integrated producer rerun pending | TC03: real file verification link, session reload/logout, two-tab lock barrier and stale-account switch. TC04: real local owner and renter contexts, draft/publish/edit, dialog price history, messages/read/reply and withdrawal. The strengthened dialog-only history locator passed `t18-owner-final`, and foreground/viewport/read-response checks passed `t18-owner-read`, after the two complete runs. |
 | T18-AC04 | PASS, local | TC05: browser outbound route guard, loopback services, file mail and local tile; no external provider used. |
 | T18-AC05 | PASS, local | TC06: `t18-fault-4` deliberately injected a duplicate local notification; the UI assertion failed with expected 1 / received 2. |
 | T18-AC06 | PASS with artifact limitation; integrated rerun pending | TC06/TC07: `t18-final-2` and `t18-final-3` each passed 12/12 with zero skips or retries. Fault screenshot and screened trace retained under the ignored fault run; ordinary journey failures have screenshot/error context but no trace. Traces containing known token fields or values are omitted, not uploaded. |
 
-TC01–TC07 respectively: PASS, PASS, PASS, PASS, PASS, PASS, PASS in the local evidence above. TC07's two full runs precede the final change that scoped two owner-history locators to the detail dialog; that change was separately tested at both widths. The integrator will repeat the full suite after merging T15/T16/T17.
+TC01–TC07 respectively: PASS, PASS, PASS, PASS, PASS, PASS, PASS in the local evidence above. TC07's two full runs precede the final change that scoped two owner-history locators to the detail dialog; those changes were separately tested at both widths in `t18-owner-final` and `t18-owner-read`. The integrator will repeat the full suite after merging T15/T16/T17.
 
 ## Verification
 
@@ -37,6 +37,7 @@ All commands ran from this worktree on macOS 15.7.7 arm64, Python 3.12.9, Node 2
 - `make verify-web ARGS='--run-id t18-final-2'`: exit 0, 12 passed / 0 failed / 0 skipped. Actual UTC 21:43:19–21:44:42. Report `.local/verification/T01/t18-final-2/report.json`; this run used the same implementation as `95bb97f` while it was uncommitted.
 - `make verify-web ARGS='--run-id t18-final-3'`: exit 0, 12 passed / 0 failed / 0 skipped. Report `.local/verification/T01/t18-final-3/report.json`; revision `95bb97f` clean at run start.
 - `VERIFY_RUN_ID=t18-owner-final npm run test:e2e --prefix apps/mobile -- -g 'owner publishes'`: exit 0, 2 passed / 0 failed / 0 skipped, after dialog-scoped history assertions; `.local/verification/T18/t18-owner-final/summary.json`.
+- `VERIFY_RUN_ID=t18-owner-read npm run test:e2e --prefix apps/mobile -- -g 'owner publishes'`: exit 0, 2 passed / 0 failed / 0 skipped, after foregrounding the owner tab, checking the incoming message is in the viewport and waiting for the successful read PUT. This run used the legacy inbox; T17 integration remains pending.
 - `python apps/mobile/e2e/test_sanitize.py`: exit 0, 2 tests / 0 failures, including seven synthetic verify/confirm/unsubscribe/reset/authorization/cookie/JWT canary variants and a safe Playwright-shaped trace. Network, response bodies, sources and stacks are not retained.
 - `VERIFY_RUN_ID=t18-fault-4 T18_FAULT_DUPLICATE=1 npm run test:e2e --prefix apps/mobile -- --project=desktop -g 'draw and save'`: expected exit 1, 0 passed / 1 failed / 0 skipped. The screenshot shows two synthetic NEW MATCH cards. `trace-handling.json` records one retained screened trace and zero omitted; its archive contains `trace.trace` and eight synthetic `screencast/*.jpeg` frames only. The network archive, response/resource bodies and stacks are excluded. Screenshot and trace remain in `.local/verification/T18/t18-fault-4/`; no raw trace is retained or published.
 - Account-switch defect demonstration: `t18-switch-before` failed desktop and its synthetic A-tab mutation was actually stored under synthetic B. After the integrator's fix, `t18-switch-after` passed 2/2 with no skips. Two-tab refresh test holds the first refresh before network continuation, waits until the other tab's `realtoruch-refresh` Web Lock is pending, asserts only one refresh has reached the network, then releases and verifies both sessions. Logout waits for the second tab's real 401 on reload before checking private identity is absent.
