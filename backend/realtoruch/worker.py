@@ -275,61 +275,13 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
 
 
 def create_index(client):
-    if client.head(f"/{INDEX}").status_code == 200:
-        return
-    properties = {
-        key: {"type": "keyword"}
-        for key in (
-            "id",
-            "city",
-            "district",
-            "region",
-            "status",
-            "advertiser_type",
-            "property_type",
-            "amenities",
-        )
-    }
-    properties.update({key: {"type": "text"} for key in ("title", "description", "address")})
-    properties.update(
-        {
-            key: {"type": "integer"}
-            for key in ("rent_pln", "fees_pln", "commission_pln", "rooms", "risk_score")
-        }
-    )
-    properties.update(
-        {"area_m2": {"type": "float"}, "location": {"type": "geo_point"}, "first_seen": {"type": "date"}}
-    )
-    response = client.put(
-        f"/{INDEX}",
-        json={
-            "settings": {"number_of_shards": 1, "number_of_replicas": 0},
-            "mappings": {"dynamic": False, "properties": properties},
-        },
-    )
-    if response.status_code != 400 or "resource_already_exists_exception" not in response.text:
-        response.raise_for_status()
+    from .indexing import ensure_index
+    return ensure_index(client, INDEX)
 
 
 def index_once():
-    with es_client() as client, Session.begin() as session:
-        create_index(client)
-        events = session.scalars(
-            select(Outbox)
-            .where(Outbox.delivered_at.is_(None))
-            .order_by(Outbox.created_at)
-            .limit(100)
-            .with_for_update(skip_locked=True)
-        ).all()
-        # Each write reads the latest canonical state, so retrying an old event cannot roll the index back.
-        for event in events:
-            listing = session.get(Listing, event.listing_id)
-            document = serialize_many(session, [listing])[0]
-            if listing.lat is not None:
-                document["location"] = {"lat": listing.lat, "lon": listing.lon}
-            client.put(f"/{INDEX}/_doc/{listing.id}", json=document).raise_for_status()
-            event.delivered_at = now()
-        return len(events)
+    from .indexing import index_once as run_index
+    return run_index(Session, es_client, INDEX)
 
 
 def retention():
@@ -397,7 +349,7 @@ def alerts_once():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "command", choices=["collect", "index", "alerts", "retention", "migrate", "baseline-searches"]
+        "command", choices=["collect", "index", "alerts", "retention", "migrate", "baseline-searches", "rebuild-index"]
     )
     parser.add_argument("--cloud", action="store_true")
     parser.add_argument("--loop", action="store_true")
@@ -426,6 +378,10 @@ def main():
         with Session.begin() as session:
             for search in session.scalars(select(SavedSearch)):
                 baseline_search(session, search)
+        return
+    if args.command == "rebuild-index":
+        from .indexing import rebuild
+        rebuild(Session, es_client, INDEX)
         return
     if args.command == "migrate":
         if get_settings().environment == "production":

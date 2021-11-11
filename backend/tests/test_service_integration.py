@@ -20,6 +20,7 @@ from test_rental_journey import test_complete_rental_journey as _journey
 from realtoruch import worker
 from realtoruch.ingest import ingest
 from realtoruch.models import Outbox, now
+from realtoruch.migrations import load_registry
 from realtoruch.schemas import SearchFilters
 from realtoruch.search import build_query
 
@@ -68,75 +69,68 @@ def test_rental_journey_on_versioned_postgres_schema(pg_engine, record, auth_cli
             del app.state.validate_claims
 
 
-@pytest.mark.skipif(
-    not os.getenv("TEST_ELASTICSEARCH_URL"), reason="Requires an isolated Elasticsearch test cluster"
-)
-def test_index_update_is_not_lost_during_concurrent_ingestion(pg_engine, record, monkeypatch):
-    from test_rental_journey import home
-
+@pytest.mark.skipif(not os.getenv("TEST_ELASTICSEARCH_URL"), reason="Requires isolated Elasticsearch")
+def test_versioned_interleaving_and_tombstone(pg_engine, record, monkeypatch):
+    import threading
+    from realtoruch import indexing
+    from realtoruch.models import SearchRevision
     from realtoruch.settings import get_settings
+    from realtoruch.search import es_client
 
-    monkeypatch.setattr(worker, "INDEX", "verify_" + os.environ.get("VERIFY_RUN_ID", "test").replace("-", "_"))
-
+    alias = "verify_" + os.environ.get("VERIFY_RUN_ID", "test").replace("-", "_")
     monkeypatch.setattr(get_settings(), "elasticsearch_url", os.environ["TEST_ELASTICSEARCH_URL"])
     factory = sessionmaker(pg_engine, expire_on_commit=False)
-    monkeypatch.setattr(worker, "Session", factory)
-    original = home(record)
     with factory.begin() as session:
-        listing_id = ingest(session, original)["listing_id"]
-    with ThreadPoolExecutor(max_workers=1) as pool, factory() as indexing:
-        pending = indexing.scalar(select(Outbox).with_for_update())
-
-        def update_home():
-            with factory.begin() as session:
-                ingest(
-                    session,
-                    original.model_copy(
-                        update={"rent_pln": 4200, "observed_at": original.observed_at + timedelta(minutes=1)}
-                    ),
-                )
-
-        update = pool.submit(update_home)
-        deadline = time.monotonic() + 5
-        blocked = False
-        while time.monotonic() < deadline:
-            with pg_engine.connect() as inspector:
-                blocked = bool(
-                    inspector.scalar(
-                        text(
-                            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%outbox%'"
-                        )
-                    )
-                )
-            if blocked:
-                break
-            time.sleep(0.02)
-        assert blocked, "Ingestion must wait until the prior search write is acknowledged"
-        pending.delivered_at = now()
-        indexing.commit()
-        update.result(timeout=10)
+        listing_id = ingest(session, record)["listing_id"]
+    started, release = threading.Event(), threading.Event()
+    real_send = indexing.send_bulk
+    def pause(client, docs, index):
+        started.set()
+        assert release.wait(15)
+        return real_send(client, docs, index)
+    monkeypatch.setattr(indexing, "send_bulk", pause)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(indexing.index_once, factory, es_client, alias)
+        assert started.wait(10)
+        with factory.begin() as session:
+            ingest(session, record.model_copy(update={"rent_pln": 4200, "status": "inactive", "observed_at": record.observed_at + timedelta(minutes=1)}))
+        monkeypatch.setattr(indexing, "send_bulk", real_send)
+        assert pool.submit(indexing.index_once, factory, es_client, alias).result(timeout=15) == 1
+        release.set()
+        first.result(timeout=15)
     with factory() as session:
-        assert len(session.scalars(select(Outbox).where(Outbox.delivered_at.is_(None))).all()) == 1
-    assert worker.index_once() == 1
-    with worker.es_client() as client:
-        client.post(f"/{worker.INDEX}/_refresh").raise_for_status()
-        response = client.post(f"/{worker.INDEX}/_search", json=build_query(SearchFilters(**FILTERS)))
-        response.raise_for_status()
-        matches = {hit["_id"]: hit["_source"] for hit in response.json()["hits"]["hits"]}
-        assert matches[listing_id]["rent_pln"] == 4200
+        revision = session.get(SearchRevision, listing_id).revision
+        assert not session.scalars(select(Outbox).where(Outbox.delivered_at.is_(None))).all()
+    with es_client() as client:
+        doc = client.get(f"/{alias}/_doc/{listing_id}").json()
+        assert doc["_version"] == revision
+        assert doc["_source"]["rent_pln"] == 4200
+        assert doc["_source"]["status"] == "inactive"
+        old = dict(doc["_source"], rent_pln=4500, status="active")
+        assert real_send(client, [(listing_id, revision - 1, old), (listing_id, revision, old)], alias)[listing_id] == (409, True)
+        doc = client.get(f"/{alias}/_doc/{listing_id}").json()
+        assert doc["_source"]["status"] == "inactive" and doc["_source"]["rent_pln"] == 4200
+
+    # Separately release the older request before any new indexer runs: its
+    # acknowledgement must leave the newer revision pending for the next pass.
     with factory.begin() as session:
-        ingest(
-            session,
-            original.model_copy(
-                update={"status": "inactive", "observed_at": original.observed_at + timedelta(minutes=2)}
-            ),
-        )
-    worker.index_once()
-    with worker.es_client() as client:
-        client.post(f"/{worker.INDEX}/_refresh").raise_for_status()
-        response = client.post(f"/{worker.INDEX}/_search", json=build_query(SearchFilters(**FILTERS)))
-        response.raise_for_status()
-        assert listing_id not in {hit["_id"] for hit in response.json()["hits"]["hits"]}
+        ingest(session, record.model_copy(update={"rent_pln": 4100, "observed_at": record.observed_at + timedelta(minutes=2)}))
+    started.clear()
+    release.clear()
+    monkeypatch.setattr(indexing, "send_bulk", pause)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(indexing.index_once, factory, es_client, alias)
+        assert started.wait(10)
+        with factory.begin() as session:
+            ingest(session, record.model_copy(update={"rent_pln": 4000, "observed_at": record.observed_at + timedelta(minutes=3)}))
+        release.set()
+        assert first.result(timeout=15) == 0
+    with factory() as session:
+        assert session.scalars(select(Outbox).where(Outbox.delivered_at.is_(None))).all()
+    monkeypatch.setattr(indexing, "send_bulk", real_send)
+    assert indexing.index_once(factory, es_client, alias) == 1
+    with es_client() as client:
+        assert client.get(f"/{alias}/_doc/{listing_id}").json()["_source"]["rent_pln"] == 4000
 
 
 def test_marketplace_on_versioned_postgres_schema(pg_engine, auth_client):
@@ -205,7 +199,7 @@ def test_registry_rejects_checksum_drift_and_rolls_back(pg_engine):
         transaction.rollback()
     with pg_engine.begin() as connection:
         apply_postgres(connection, 'rentals')
-        assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == 4
+        assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == len(load_registry()['rentals'])
 
 
 
@@ -256,12 +250,21 @@ def test_registry_upgrades_tracked_baseline_preserving_rows(pg_engine, tmp_path)
             connection.execute(text(f'SET LOCAL search_path TO {schema}'))
             apply_postgres(connection, 'rentals', baseline)
             connection.execute(text("INSERT INTO event_receipts VALUES ('keep', CURRENT_TIMESTAMP)"))
+            connection.execute(text("""INSERT INTO listings (id, title, description, city, district, region,
+                address, area_m2, rooms, rent_pln, advertiser_type, property_type, status,
+                amenities, images, risk_flags, risk_score, is_demo, first_seen, last_seen, updated_at)
+                VALUES ('legacy-home', 'Keep', '', 'Warszawa', '', '', 'Street', 54, 2, 4200,
+                'private', 'apartment', 'active', '[]', '[]', '[]', 0, false,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"""))
         with pg_engine.begin() as connection:
             connection.execute(text(f'SET LOCAL search_path TO {schema}'))
             apply_postgres(connection, 'rentals')
             apply_postgres(connection, 'rentals')
             assert connection.scalar(text("SELECT id FROM event_receipts")) == 'keep'
-            assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == 4
+            assert connection.scalar(text("SELECT rent_pln FROM listings WHERE id='legacy-home'")) == 4200
+            assert connection.scalar(text("SELECT revision FROM search_revisions WHERE listing_id='legacy-home'")) == 1
+            assert connection.scalar(text("SELECT count(*) FROM outbox WHERE listing_id='legacy-home' AND delivered_at IS NULL")) == 1
+            assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == len(load_registry()['rentals'])
     finally:
         with pg_engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA IF EXISTS {schema} CASCADE'))
@@ -337,3 +340,129 @@ def test_t03_postgres_replay_after_interruption(pg_engine, record):
     with factory() as db:
         after = [db.scalar(select(func.count()).select_from(m)) for m in (EventReceipt, Observation, SourceListing, AlertEvent)]
     assert after == before
+
+
+@pytest.mark.skipif(not os.getenv('TEST_ELASTICSEARCH_URL'), reason='Requires isolated Elasticsearch')
+def test_rebuild_failure_retry_and_concurrent_writes(pg_engine, record, monkeypatch):
+    import threading
+    from realtoruch import indexing
+    from realtoruch.search import es_client
+    from realtoruch.settings import get_settings
+    alias = 'rebuild_' + os.environ.get('VERIFY_RUN_ID', 'test').replace('-', '_')
+    monkeypatch.setattr(get_settings(), 'elasticsearch_url', os.environ['TEST_ELASTICSEARCH_URL'])
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    with factory.begin() as session:
+        home = ingest(session, record)['listing_id']
+        ingest(session, record.model_copy(update={'external_id': 'second', 'address': 'Second street', 'area_m2': 100}))
+    indexing.index_once(factory, es_client, alias)
+    with es_client() as client:
+        old = client.get(f'/_alias/{alias}').json()
+    send = indexing.send_bulk
+    def fail(client, docs, index):
+        send(client, docs[:1], index)
+        raise RuntimeError('injected candidate failure')
+    monkeypatch.setattr(indexing, 'send_bulk', fail)
+    with pytest.raises(RuntimeError, match='injected'):
+        indexing.rebuild(factory, es_client, alias)
+    with es_client() as client:
+        assert client.get(f'/_alias/{alias}').json() == old
+        assert client.get(f'/{alias}/_doc/{home}').status_code == 200
+    started, release = threading.Event(), threading.Event()
+    def wait(client, docs, index):
+        result = send(client, docs, index)
+        started.set()
+        assert release.wait(15)
+        return result
+    monkeypatch.setattr(indexing, 'send_bulk', wait)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        rebuilding = pool.submit(indexing.rebuild, factory, es_client, alias)
+        assert started.wait(10)
+        with factory.begin() as session:
+            ingest(session, record.model_copy(update={'rent_pln': 4200, 'observed_at': record.observed_at + timedelta(minutes=1)}))
+        monkeypatch.setattr(indexing, 'send_bulk', send)
+        indexing_future = pool.submit(indexing.index_once, factory, es_client, alias)
+        assert not indexing_future.done()
+        release.set()
+        rebuilding.result(timeout=15)
+        indexing_future.result(timeout=15)
+    with es_client() as client:
+        assert client.get(f'/{alias}/_doc/{home}').json()['_source']['rent_pln'] == 4200
+        assert client.get(f'/_alias/{alias}').json() != old
+        active_index = next(iter(client.get(f'/_alias/{alias}').json()))
+        client.delete(f'/{active_index}').raise_for_status()
+    indexing.rebuild(factory, es_client, alias)
+    with es_client() as client:
+        assert client.get(f'/{alias}/_doc/{home}').json()['_source']['rent_pln'] == 4200
+
+
+@pytest.mark.skipif(not os.getenv('TEST_ELASTICSEARCH_URL'), reason='Requires isolated Elasticsearch')
+def test_hundred_changed_homes_converge(pg_engine, record, monkeypatch):
+    from realtoruch import indexing
+    from realtoruch.models import Listing, SearchRevision
+    from realtoruch.search import es_client
+    from realtoruch.settings import get_settings
+    alias = 'batch_' + os.environ.get('VERIFY_RUN_ID', 'test').replace('-', '_')
+    monkeypatch.setattr(get_settings(), 'elasticsearch_url', os.environ['TEST_ELASTICSEARCH_URL'])
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    with factory.begin() as session:
+        ids = []
+        for i in range(100):
+            raw = record.model_copy(update={'external_id': str(i), 'address': f'Address {i}', 'area_m2': 50 + i * 4})
+            ids.append(ingest(session, raw)['listing_id'])
+    assert len(set(ids)) == 100
+    with factory.begin() as session:
+        for home in session.scalars(select(Listing).where(Listing.id.in_(ids))):
+            home.rent_pln = 4200
+            indexing.queue_listing(session, home.id)
+    start = time.monotonic()
+    with factory() as session:
+        versions = dict(session.execute(select(SearchRevision.listing_id, SearchRevision.revision)).all())
+    deadline = start + 30
+    while time.monotonic() < deadline:
+        indexing.index_once(factory, es_client, alias)
+        with es_client() as client:
+            client.post(f'/{alias}/_refresh').raise_for_status()
+            result = client.post(f'/{alias}/_search', json={'size': 100, 'version': True, 'query': {'match_all': {}}})
+            result.raise_for_status()
+            hits = result.json()['hits']['hits']
+            if len(hits) == 100 and all(hit['_version'] == versions[hit['_id']] and hit['_source']['rent_pln'] == 4200 for hit in hits):
+                elapsed = time.monotonic() - start
+                print(f'T08_CONVERGENCE_SECONDS={elapsed:.6f} sample_count=100 refresh=explicit poll=immediate')
+                Path(os.environ.get('TMPDIR', '/tmp'), 't08-convergence.json').write_text(
+                    __import__('json').dumps({'elapsed_seconds': elapsed, 'count': 100,
+                        'refresh': 'explicit per poll', 'poll_interval_seconds': 0.2}))
+                assert elapsed <= 30
+                return
+        time.sleep(0.2)
+    pytest.fail(f'100 changes did not converge within 30 seconds; elapsed={time.monotonic()-start:.3f}')
+
+
+@pytest.mark.skipif(not os.getenv('TEST_ELASTICSEARCH_URL'), reason='Requires isolated Elasticsearch')
+def test_profile_change_reindexes_public_only(pg_engine, record, monkeypatch):
+    import json
+    from realtoruch import indexing
+    from realtoruch.marketplace import ProfileBody, save_profile
+    from realtoruch.models import Advert, AdvertiserProfile
+    from realtoruch.search import es_client
+    from realtoruch.settings import get_settings
+    alias = 'profile_' + os.environ.get('VERIFY_RUN_ID', 'test').replace('-', '_')
+    monkeypatch.setattr(get_settings(), 'elasticsearch_url', os.environ['TEST_ELASTICSEARCH_URL'])
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    with factory.begin() as session:
+        home = ingest(session, record)['listing_id']
+        session.add(AdvertiserProfile(user_id='owner', name='Before', kind='private', description='profile'))
+        session.flush()
+        session.add(Advert(id='profile-advert', user_id='owner', listing_id=home, state='published', draft={'secret': 'draft-canary'}))
+    indexing.index_once(factory, es_client, alias)
+    with es_client() as client:
+        before = client.get(f'/{alias}/_doc/{home}').json()['_version']
+    with factory() as session:
+        save_profile(ProfileBody(name='After', kind='private', description='profile'), claims={'sub': 'owner'}, session=session)
+    indexing.index_once(factory, es_client, alias)
+    with es_client() as client:
+        result = client.get(f'/{alias}/_doc/{home}').json()
+        assert result['_version'] > before
+        payload = json.dumps(result['_source'])
+        assert 'After' in payload
+        for secret in ('draft-canary', '700100101', 'phone_hash', 'email', 'password'):
+            assert secret not in payload
