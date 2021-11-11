@@ -1,9 +1,52 @@
 from collections import defaultdict
+from contextlib import contextmanager
+from time import monotonic
 
-from sqlalchemy import Float, Integer, case, cast, func, or_, select
+from sqlalchemy import Boolean, Float, Integer, String, case, cast, func, or_, select, text, true
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql.functions import FunctionElement
 
 from .models import Listing, Observation, SourceListing, now
-from .schemas import SearchFilters
+from .schemas import (
+    PUBLIC_CARD_LINKS,
+    SORT_FIELDS,
+    PublicRiskFlag,
+    SearchFilters,
+    public_link,
+    public_match_reason,
+    without_contacts,
+)
+
+PUBLIC_SQL_BUDGET_MS = 2_000
+
+
+@contextmanager
+def catalog_read_budget(session):
+    """Put a finite statement/lock budget on public catalog reads."""
+    connection = session.connection()
+    if connection.dialect.name == "postgresql":
+        connection.execute(text(f"SET LOCAL statement_timeout = '{PUBLIC_SQL_BUDGET_MS}ms'"))
+        yield
+    else:
+        driver = connection.connection.driver_connection
+        previous = driver.execute("PRAGMA busy_timeout").fetchone()[0]
+        deadline = monotonic() + PUBLIC_SQL_BUDGET_MS / 1_000
+        driver.execute(f"PRAGMA busy_timeout = {PUBLIC_SQL_BUDGET_MS}")
+        driver.set_progress_handler(lambda: monotonic() >= deadline, 1000)
+        try:
+            yield
+        finally:
+            driver.set_progress_handler(None, 0)
+            driver.execute(f"PRAGMA busy_timeout = {previous}")
+
+
+def public_links(values):
+    for value in values:
+        try:
+            yield public_link(value)
+        except ValueError:
+            # A source URL with credentials is still useful internally.
+            continue
 
 
 def public_listing(listing, sources):
@@ -38,22 +81,33 @@ def public_listing(listing, sources):
     }
     for key in ("first_seen", "last_seen", "updated_at"):
         result[key] = getattr(listing, key).isoformat() + "Z"
+    for key, length in (
+        ("title", 240), ("description", 20_000), ("address", 240),
+        ("city", 100), ("district", 100), ("region", 100),
+    ):
+        result[key] = without_contacts(result[key])[:length]
+    # Existing ingestion accepts arbitrarily long amenity strings. They cannot
+    # match a public filter (max 60 characters) and need not invalidate a card.
+    result["amenities"] = [without_contacts(value)[:100] for value in result["amenities"] if len(value) <= 100]
+    result["images"] = list(public_links(result["images"]))
+    result["risk_flags"] = [PublicRiskFlag.model_validate(flag).model_dump() for flag in result["risk_flags"]]
     result["total_monthly_pln"] = (
         listing.rent_pln + listing.fees_pln if listing.fees_pln is not None else None
     )
     result["sources"] = [
         {
             "name": s.source,
-            "url": s.url,
+            "url": url,
             "rent_pln": s.data["rent_pln"],
             "fees_pln": s.data.get("fees_pln"),
             "commission_pln": s.data.get("commission_pln"),
             "advertiser_type": s.data["advertiser_type"],
             "status": s.status,
             "last_checked": s.observed_at.isoformat() + "Z",
-            "match_reason": s.match_reason,
+            "match_reason": public_match_reason(s.match_reason),
         }
         for s in sources
+        for url in public_links([s.url])
     ]
     return result
 
@@ -61,21 +115,30 @@ def public_listing(listing, sources):
 def serialize_many(session, listings):
     if not listings:
         return []
+    ids = [listing.id for listing in listings]
     grouped = defaultdict(list)
+    sources = select(SourceListing.id, func.row_number().over(
+        partition_by=SourceListing.listing_id,
+        order_by=(case((SourceListing.status == "active", 0), else_=1), SourceListing.observed_at.desc(), SourceListing.id),
+    ).label("n")).where(SourceListing.listing_id.in_(ids)).subquery()
     for source in session.scalars(
-        select(SourceListing).where(SourceListing.listing_id.in_([l.id for l in listings]))
+        select(SourceListing).join(sources, SourceListing.id == sources.c.id)
+        .where(sources.c.n <= PUBLIC_CARD_LINKS).order_by(sources.c.n)
     ):
         grouped[source.listing_id].append(source)
     from .models import Advert, AdvertiserProfile
 
     contacts = defaultdict(list)
-    for advert, profile in session.execute(
-        select(Advert, AdvertiserProfile)
-        .join(AdvertiserProfile)
-        .where(Advert.listing_id.in_([l.id for l in listings]), Advert.state == "published")
+    ranked = select(Advert.id, func.row_number().over(
+        partition_by=Advert.listing_id, order_by=(Advert.updated_at.desc(), Advert.id),
+    ).label("n")).where(Advert.listing_id.in_(ids), Advert.state == "published").subquery()
+    for listing_id, advert_id, profile_id, name, kind in session.execute(
+        select(Advert.listing_id, Advert.id, AdvertiserProfile.user_id, AdvertiserProfile.name, AdvertiserProfile.kind)
+        .join(ranked, Advert.id == ranked.c.id).join(AdvertiserProfile, Advert.user_id == AdvertiserProfile.user_id)
+        .where(ranked.c.n <= PUBLIC_CARD_LINKS).order_by(ranked.c.n)
     ):
-        contacts[advert.listing_id].append(
-            {"id": advert.id, "name": profile.name, "kind": profile.kind, "profile_id": profile.user_id}
+        contacts[listing_id].append(
+            {"id": advert_id, "name": without_contacts(name)[:100], "kind": kind, "profile_id": profile_id}
         )
     return [
         {
@@ -86,16 +149,59 @@ def serialize_many(session, listings):
     ]
 
 
-def filtered_query(filters: SearchFilters):
-    query = select(Listing).where(Listing.status == "active")
+def _literal_like(value):
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+class ascii_label(FunctionElement):
+    type = String()
+    inherit_cache = True
+
+
+@compiles(ascii_label, "postgresql")
+def _pg_ascii_label(element, compiler, **kwargs):
+    return f'lower({compiler.process(element.clauses, **kwargs)} COLLATE "C")'
+
+
+@compiles(ascii_label)
+def _sqlite_ascii_label(element, compiler, **kwargs):
+    return f"lower({compiler.process(element.clauses, **kwargs)})"
+
+
+class amenity_matches(FunctionElement):
+    type = Boolean()
+    inherit_cache = True
+
+
+@compiles(amenity_matches, "postgresql")
+def _pg_amenity_matches(element, compiler, **kwargs):
+    column, value = (compiler.process(clause, **kwargs) for clause in element.clauses)
+    return f"CAST({column} AS jsonb) @> jsonb_build_array(CAST({value} AS text))"
+
+
+@compiles(amenity_matches, "sqlite")
+def _sqlite_amenity_matches(element, compiler, **kwargs):
+    column, value = (compiler.process(clause, **kwargs) for clause in element.clauses)
+    return f"EXISTS (SELECT 1 FROM json_each({column}) item WHERE item.type = 'text' AND item.value = {value})"
+
+
+def _ascii_label_match(column, value):
+    # SQLite and ES keyword case-insensitive matching both use ASCII case
+    # folding. Explicit C collation gives PostgreSQL the same behavior.
+    folded = value.translate(str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"))
+    return ascii_label(column) == folded
+
+
+def filtered_query(filters: SearchFilters, *, include_text=True):
+    query = select(Listing).where(Listing.status == "active", Listing.hidden.is_(False))
     if filters.city:
-        query = query.where(Listing.city.ilike(filters.city.replace("%", "\\%").replace("_", "\\_")))
+        query = query.where(_ascii_label_match(Listing.city, filters.city))
     if filters.district:
-        query = query.where(Listing.district.ilike(filters.district.replace("%", "\\%").replace("_", "\\_")))
-    if filters.q:
-        term = "%" + filters.q.replace("%", "\\%").replace("_", "\\_") + "%"
+        query = query.where(_ascii_label_match(Listing.district, filters.district))
+    if include_text and filters.q:
+        term = "%" + _literal_like(filters.q) + "%"
         query = query.where(
-            or_(Listing.title.ilike(term), Listing.address.ilike(term), Listing.district.ilike(term))
+            or_(*(column.ilike(term, escape="\\") for column in (Listing.title, Listing.address, Listing.district)))
         )
     for value, condition in (
         (filters.min_price, Listing.rent_pln >= (filters.min_price or 0)),
@@ -120,14 +226,9 @@ def filtered_query(filters: SearchFilters):
     if filters.property_type != "all":
         query = query.where(Listing.property_type == filters.property_type)
     if filters.amenity:
-        # JSON containment differs by database. Exact quoted token keeps this portable.
-        import json
-
-        from sqlalchemy import String, cast
-
-        query = query.where(
-            cast(Listing.amenities, String).contains(json.dumps(filters.amenity), autoescape=True)
-        )
+        # Query decoded array elements; a quoted substring can match escaped
+        # data inside a different amenity or miss a non-ASCII token.
+        query = query.where(amenity_matches(Listing.amenities, filters.amenity))
     if filters.bbox:
         w, s, e, n = map(float, filters.bbox.split(","))
         query = query.where(Listing.lon.between(w, e), Listing.lat.between(s, n))
@@ -140,25 +241,50 @@ def filtered_query(filters: SearchFilters):
 
 def search_db(session, filters):
     query = filtered_query(filters)
-    total = session.scalar(select(func.count()).select_from(query.subquery()))
-    order = {
-        "newest": Listing.first_seen.desc(),
-        "price_asc": Listing.rent_pln.asc(),
-        "price_desc": Listing.rent_pln.desc(),
-        "area_desc": Listing.area_m2.desc(),
-    }[filters.sort]
-    listings = session.scalars(
-        query.order_by(order, Listing.id)
-        .offset((filters.page - 1) * filters.page_size)
-        .limit(filters.page_size)
+    sort_column = getattr(Listing, SORT_FIELDS[filters.sort])
+    order = sort_column.asc() if filters.sort == "price_asc" else sort_column.desc()
+    ids = query.with_only_columns(Listing.id)
+    counts = select(func.count().label("total")).select_from(ids.subquery()).subquery()
+    page_ids = ids.order_by(order, Listing.id).offset(filters.offset).limit(filters.page_size).subquery()
+    # An empty page still carries the count. Count and page share the same
+    # statement snapshot even while collectors change the catalog.
+    rows = session.execute(
+        select(Listing, counts.c.total).select_from(counts)
+        .outerjoin(page_ids, true()).outerjoin(Listing, Listing.id == page_ids.c.id)
+        .order_by(order, Listing.id).execution_options(populate_existing=True)
     ).all()
     return {
-        "items": serialize_many(session, listings),
-        "total": total,
+        "items": serialize_many(session, [listing for listing, _ in rows if listing is not None]),
+        "total": rows[0].total,
         "page": filters.page,
         "page_size": filters.page_size,
         "engine": "postgresql" if session.bind.dialect.name == "postgresql" else "sqlite",
+        "degraded": False,
+        "consistency": "sql",
+        "total_relation": "exact",
     }
+
+
+def check_index_page(session, filters, page):
+    ids = [item.id for item in page.items]
+    # This query deliberately runs for an empty candidate page too: a SQL
+    # outage must not look like a successful, empty REST catalog.
+    current = {
+        row.id: row for row in session.scalars(
+            filtered_query(filters, include_text=False).where(Listing.id.in_(ids))
+            .execution_options(populate_existing=True)
+        )
+    }
+    if len(current) != len(ids):
+        return None
+    sort_field = SORT_FIELDS[filters.sort]
+    items = serialize_many(session, [current[listing_id] for listing_id in ids])
+    checked_fields = {sort_field}
+    if filters.q:
+        checked_fields.update(("title", "address", "district", "description"))
+    if any(item[field] != getattr(hit, field) for item, hit in zip(items, page.items) for field in checked_fields):
+        return None
+    return {**page.model_dump(exclude={"items"}), "items": items, "consistency": "sql_checked"}
 
 
 def market_history(session, city="", district="", region="", months=12):
@@ -182,7 +308,7 @@ def market_history(session, city="", district="", region="", months=12):
         Observation.rent_pln.label("rent"), Listing.area_m2.label("area"),
         Listing.is_demo.label("demo"), source_rank.label("source_rank"),
     ).join(Listing, Observation.listing_id == Listing.id).where(
-        Observation.observed_at >= start, Observation.observed_at <= end,
+        Observation.observed_at >= start, Observation.observed_at <= end, Listing.hidden.is_(False),
     )
     for value, column in ((city, Listing.city), (district, Listing.district), (region, Listing.region)):
         if value:
@@ -224,7 +350,7 @@ def market_history(session, city="", district="", region="", months=12):
 def market_summary(session, city=""):
     """Summarize active homes without materializing the catalog in Python."""
     filtered = select(Listing.id, Listing.rent_pln, Listing.district, Listing.is_demo,
-                      Listing.advertiser_type).where(Listing.status == "active")
+                      Listing.advertiser_type).where(Listing.status == "active", Listing.hidden.is_(False))
     if city:
         filtered = filtered.where(Listing.city == city)
     homes = filtered.subquery()
@@ -238,7 +364,9 @@ def market_summary(session, city=""):
     source_count = session.scalar(select(func.count()).select_from(SourceListing).join(
         homes, SourceListing.listing_id == homes.c.id).where(SourceListing.status == "active"))
     districts = session.scalars(select(homes.c.district).where(homes.c.district != "").distinct().order_by(homes.c.district)).all()
-    cities = session.scalars(select(Listing.city).distinct().order_by(Listing.city)).all()
+    cities = session.scalars(
+        select(Listing.city).where(Listing.hidden.is_(False)).distinct().order_by(Listing.city)
+    ).all()
     return {"homes": count, "source_listings": source_count, "duplicates_removed": source_count - count,
             "private_homes": private, "median_rent_pln": rent, "demo": bool(demo),
             "districts": districts, "cities": cities}

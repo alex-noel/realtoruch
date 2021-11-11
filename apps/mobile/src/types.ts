@@ -81,6 +81,8 @@ export type SearchResult = {
   page_size: number;
   engine: string;
   degraded?: boolean;
+  consistency?: "sql" | "sql_checked" | "eventual";
+  total_relation?: "exact" | "index";
 };
 export type Summary = {
   homes: number;
