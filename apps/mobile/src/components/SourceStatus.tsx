@@ -183,7 +183,7 @@ export default function SourceStatus({
           <View style={{ alignItems: "flex-start" }}>
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ expanded: showDetails }}
+              aria-expanded={showDetails}
               onPress={() => setShowDetails((open) => !open)}
               style={s.outline}
             >
