@@ -10,14 +10,17 @@ import json
 import os
 import socket
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
+from random import uniform
 from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
 from protego import Protego
 
+from .fetch_state import CachedPage, Validators, request_variant, retry_deadline
+from .models import now
 from .portals import (
     ListingUnavailable,
     NotRental,
@@ -37,6 +40,10 @@ class SourceAccessError(RuntimeError):
     def __init__(self, message, status_code=None):
         super().__init__(message)
         self.status_code = status_code
+
+
+class PayloadTooLarge(ValueError):
+    pass
 
 
 def load_sources():
@@ -69,6 +76,10 @@ class Connector:
         self.known_urls = known_urls
         self.last_request = time.monotonic()
         self.progress = progress or (lambda: None)
+        self.timing = None
+        self.allow_conditional = True
+        self.invalidate_cache = lambda url: None
+        self.observation_validator = None
         self.robots = {}
         self.report = {
             "source": config["name"],
@@ -79,6 +90,13 @@ class Connector:
             "inactive": 0,
             "skipped": 0,
             "fresh_skipped": 0,
+            "network_attempts": 0,
+            "robots_attempts": 0,
+            "conditional_attempts": 0,
+            "retry_attempts": 0,
+            "responses_304": 0,
+            "reused_304": 0,
+            "body_bytes": 0,
             "limited": False,
             "errors": [],
         }
@@ -89,50 +107,113 @@ class Connector:
     def close(self):
         self.client.close()
 
-    def fetch(self, url, *, page=False):
+    def _variant(self, url):
+        if self.client.auth is not None:
+            return None
+        return request_variant(url, self.client.build_request("GET", url).headers, self.config.get("mode"))
+
+    def fetch(self, url, *, page=False, cached=None):
         validate_url(url, self.config["allowed_hosts"])
         delay = max(1.0, 60 / max(1, self.config.get("requests_per_minute", 6)))
+        self._response_validator = self._reused_page = None
         if page:
             parsed = urlparse(url)
             origin = f"{parsed.scheme}://{parsed.netloc}"
             if origin not in self.robots:
-                status, body = self._download(origin + "/robots.txt", {}, delay, limit=512_000)
+                status, body = self._with_retries(origin + "/robots.txt", {}, delay, robots=True)
                 if status != 200 or b"<html" in body.lower() or b"<!doctype" in body.lower():
                     raise SourceAccessError("Cannot verify robots policy", status)
-                self.robots[origin] = Protego.parse(body.decode("utf-8", errors="replace"))
-            parser = self.robots[origin]
-            agent = self.client.headers["User-Agent"]
-            if not parser.can_fetch(url, agent):
+                parser = Protego.parse(body.decode("utf-8", errors="replace"))
+                agent = self.client.headers["User-Agent"]
+                rate = parser.request_rate(agent)
+                delay = max(delay, parser.crawl_delay(agent) or 0,
+                            rate.seconds / rate.requests if rate and rate.requests > 0 else 0)
+                self.robots[origin] = parser, delay
+                if self.timing:
+                    self.timing.extend_pacing(self._request_started + timedelta(seconds=delay))
+            parser, delay = self.robots[origin]
+            if not parser.can_fetch(url, self.client.headers["User-Agent"]):
                 raise SourceAccessError("Source robots policy disallows this page")
-            rate = parser.request_rate(agent)
-            delay = max(delay, parser.crawl_delay(agent) or 0, rate.seconds / rate.requests if rate else 0)
         headers = {}
         secret = os.environ.get(self.config.get("token_env", ""))
         if secret and not page:
             headers["Authorization"] = f"Bearer {secret}"
-        status, body = self._download(url, headers, delay)
+        variant = self._variant(url) if page else None
+        if (not variant or not cached or cached.state["variant"] != variant
+                or cached.data["source"] != self.config["name"] or cached.data["url"] != url):
+            cached = None
+        if cached:
+            headers.update(cached.headers())
+        status, body = self._with_retries(url, headers, delay, cached=cached)
+        if status == 200 and page:
+            self._response_validator = Validators.from_headers(self._response_headers, variant, now())
         if status in (404, 410) and not page:
             raise SourceAccessError("Feed unavailable", status)
         return status, body
 
-    def _download(self, url, headers, delay, limit=5_000_000):
-        time.sleep(max(0, self.last_request + delay - time.monotonic()))
-        self.progress()
+    def _with_retries(self, url, headers, delay, *, robots=False, cached=None):
+        orphan = False
+        for attempt in range(2):
+            try:
+                status, body = self._download(url, headers, delay, 512_000 if robots else 5_000_000,
+                                              robots=robots, retry=bool(attempt))
+            except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+                if attempt or isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code != 502:
+                    raise
+                continue
+            if status != 304:
+                if orphan and status != 200:
+                    raise SourceAccessError("No representation after an unsolicited 304", status)
+                return status, body
+            if cached and cached.accepts_304(self._response_headers):
+                self._reused_page = cached
+                return status, body
+            # An unsolicited/mismatched 304 gets at most one unconditional
+            # request, sharing the attempt budget with timeout and 502 retries.
+            orphan = True
+            cached = None
+            headers = {k: v for k, v in headers.items() if k not in ("If-None-Match", "If-Modified-Since")}
+        return status, body
+
+    def _download(self, url, headers, delay, limit=5_000_000, *, robots=False, retry=False):
+        remaining = max(0, self.last_request + delay - time.monotonic())
+        time.sleep(remaining + (uniform(0.05, 0.25) if retry else 0))
+        if self.timing:
+            while remaining := self.timing.reserve_request(delay):
+                time.sleep(remaining)
+        else:
+            self.progress()
         self.last_request = time.monotonic()
+        self._request_started = now()
+        self.report["network_attempts"] += 1
+        self.report["robots_attempts"] += int(robots)
+        self.report["conditional_attempts"] += int("If-None-Match" in headers or "If-Modified-Since" in headers)
+        self.report["retry_attempts"] += int(retry)
         # Redirects aren't followed: a trusted host cannot redirect tokens to another origin.
-        with self.client.stream("GET", url, headers=headers) as response:
+        with self.client.stream("GET", url, headers=headers, follow_redirects=False) as response:
+            self._response_headers = getattr(response, "headers", {})
+            if response.status_code == 304:
+                self.report["responses_304"] += 1
+                return 304, b""
             if response.status_code in (404, 410):
                 return response.status_code, b""
-            if response.status_code in (401, 403, 429):
+            if response.status_code in (429, 503):
+                deadline = retry_deadline(self._response_headers.get("retry-after"), now())
+                if deadline is not None:
+                    if self.timing:
+                        self.timing.defer_requests(deadline)
+                    self.report["retry_after"] = deadline.isoformat() + "Z"
+            if response.status_code in (401, 403, 429, 503):
                 raise SourceAccessError("Source denied or throttled this request", response.status_code)
-            response.raise_for_status()
             if response.is_redirect:
-                raise RuntimeError("Configure the final feed URL; redirects are not followed")
+                raise SourceAccessError("Configure the final source URL; redirects are not followed", response.status_code)
+            response.raise_for_status()
             content = bytearray()
             for chunk in response.iter_bytes():
+                self.report["body_bytes"] += len(chunk)
+                if len(content) + len(chunk) > limit:
+                    raise PayloadTooLarge("Source payload exceeds size limit")
                 content.extend(chunk)
-                if len(content) > limit:
-                    raise ValueError("Source payload exceeds size limit")
             return response.status_code, bytes(content)
 
     def note_error(self, exc, stage, url=""):
@@ -151,8 +232,43 @@ class Connector:
         if not previous or self.config.get("force_rechecks"):
             return True
         interval = min(10080, max(0, int(self.config.get("recheck_interval_minutes", 0))))
-        observed = datetime.fromisoformat(previous["observed_at"]).replace(tzinfo=None)
-        return observed <= datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=interval)
+        try:
+            observed = datetime.fromisoformat(previous["observed_at"]).replace(tzinfo=None)
+        except (KeyError, ValueError, TypeError):
+            return True
+        return observed <= now() - timedelta(minutes=interval)
+
+    def _detail(self, url, previous, parse):
+        self.observation_validator = self._response_validator = self._reused_page = None
+        cached = None
+        if self.allow_conditional and isinstance(previous, dict) and previous.get("_fetch"):
+            cached = CachedPage.read(previous, previous["_fetch"], self.config["name"], url,
+                                     self._variant(url), self.config.get("city", ""))
+        try:
+            status, body = (self.fetch(url, page=True, cached=cached) if cached else self.fetch(url, page=True))
+        except PayloadTooLarge:
+            self.invalidate_cache(url)
+            raise
+        if status == 304:
+            if self._reused_page:
+                self.observation_validator = self._reused_page
+                self.report["reused_304"] += 1
+                return self._reused_page.raw.model_copy(update={"observed_at": now()})
+            self.invalidate_cache(url)
+            raise SourceAccessError("No validated representation for 304", 304)
+        if status in (404, 410):
+            self.invalidate_cache(url)
+            raise ListingUnavailable("Confirmed HTTP disappearance")
+        if status != 200:
+            raise SourceAccessError("Detail unavailable", status)
+        try:
+            record = parse(body.decode("utf-8"))
+        except (ValueError, TypeError, KeyError):
+            self.invalidate_cache(url)
+            raise
+        if record.status == "active" and str(record.url) == url:
+            self.observation_validator = self._response_validator
+        return record.model_copy(update={"observed_at": now()})
 
     def portal_records(self):
         if self.config.get("recheck_only") and not self.known_urls:
@@ -171,19 +287,16 @@ class Connector:
                 return None
             checked.add(url)
             previous = entry.get("previous") if isinstance(entry, dict) else None
-            previous = previous or self.previous_lookup(url)
+            previous = self.previous_lookup(url) or previous
             if not self.is_due(previous):
                 self.report["fresh_skipped"] += 1
                 return None
             self.report["checked"] += 1
             try:
-                status, body = self.fetch(url, page=True)
-                if status in (404, 410):
-                    raise ListingUnavailable("Confirmed HTTP disappearance")
-                if status != 200:
-                    raise SourceAccessError("Detail unavailable", status)
-                record = parse_detail(
-                    self.config["name"], body.decode("utf-8"), url, city=self.config.get("city", "")
+                record = self._detail(
+                    url, previous, lambda html: parse_detail(
+                        self.config["name"], html, url, city=self.config.get("city", "")
+                    ),
                 )
             except ListingUnavailable as exc:
                 if not previous:
@@ -205,7 +318,7 @@ class Connector:
                         "source": self.config["name"],
                         "url": url,
                         "status": "inactive",
-                        "observed_at": datetime.now(timezone.utc),
+                        "observed_at": now(),
                         "is_demo": False,
                     }
                 )
@@ -310,21 +423,21 @@ class Connector:
             # A page disappearance can be emitted only when a previous valid record exists.
             for entry in self.config.get("listing_urls", []):
                 url = entry["url"] if isinstance(entry, dict) else entry
-                status, content = self.fetch(url, page=True)
-                if status in (404, 410):
-                    if isinstance(entry, dict) and entry.get("previous"):
+                previous = entry.get("previous") if isinstance(entry, dict) else None
+                try:
+                    yield self._detail(url, previous, lambda html: parse_jsonld(html, self.config["name"], url))
+                except ListingUnavailable:
+                    if previous:
                         yield RawListing.model_validate(
                             {
-                                **entry["previous"],
+                                **previous,
                                 "source": self.config["name"],
                                 "url": url,
                                 "status": "inactive",
-                                "observed_at": datetime.now(timezone.utc),
+                                "observed_at": now(),
                                 "is_demo": False,
                             }
                         )
-                    continue
-                yield parse_jsonld(content.decode(), self.config["name"], url)
         else:
             raise ValueError("Supported connector modes are portal, feed and jsonld")
 

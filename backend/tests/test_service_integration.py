@@ -779,3 +779,163 @@ def test_t10_split_pending_alert_guard_on_postgres(pg_engine, auth_client, recor
         finally:
             app.dependency_overrides.clear()
             del app.state.validate_claims
+
+def test_t04_postgres_upgrade_keeps_provider_state_and_migration_checksums(pg_engine, tmp_path):
+    import json
+    from datetime import datetime
+
+    from realtoruch.migrations import apply_postgres, load_registry
+
+    schema = "t04_upgrade_" + uuid4().hex
+    registry = load_registry()
+    registry["rentals"] = [entry for entry in registry["rentals"] if entry["version"] <= "004"]
+    baseline = tmp_path / "baseline-t04.json"
+    baseline.write_text(json.dumps(registry))
+    stamp = datetime(2024, 1, 2, 8)
+    try:
+        with pg_engine.begin() as connection:
+            connection.execute(text(f"CREATE SCHEMA {schema}"))
+            connection.execute(text(f"SET LOCAL search_path TO {schema}"))
+            apply_postgres(connection, "rentals", baseline)
+            connection.execute(text(
+                "INSERT INTO source_poll_state VALUES ('otodom', 'legacy', :stamp, :stamp, 3, :stamp)"
+            ), {"stamp": stamp})
+            checksums = dict(connection.execute(text(
+                "SELECT version, checksum FROM realtoruch_migrations WHERE database_name='rentals'"
+            )).all())
+        with pg_engine.begin() as connection:
+            connection.execute(text(f"SET LOCAL search_path TO {schema}"))
+            apply_postgres(connection, "rentals")
+            apply_postgres(connection, "rentals")
+            assert connection.execute(text(
+                "SELECT source, lease_id, lease_until, retry_after, failures, last_success_at, next_allowed_request "
+                "FROM source_poll_state"
+            )).one() == ("otodom", "legacy", stamp, stamp, 3, stamp, None)
+            assert connection.scalar(text("SELECT COUNT(*) FROM collection_fetch_state")) == 0
+            applied = dict(connection.execute(text(
+                "SELECT version, checksum FROM realtoruch_migrations WHERE database_name='rentals'"
+            )).all())
+            assert "005" in applied and {version: applied[version] for version in checksums} == checksums
+    finally:
+        with pg_engine.begin() as connection:
+            connection.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
+
+
+def test_t04_postgres_request_reservations_and_defer_are_provider_wide_and_token_fenced(pg_engine, monkeypatch):
+    from test_connectors import FetchClock
+    from realtoruch import collection_health as health
+    from realtoruch.models import SourcePollState
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    clock = FetchClock()
+    monkeypatch.setattr(health, "now", clock.now)
+    source = "otodom"
+    old, _ = health.claim(factory, {"name": source, "city": "Kraków"})
+    lease = health.LeaseHeartbeat(factory, source, old)
+    assert lease.reserve_request(7) == 0
+    effective = clock.now() + timedelta(seconds=31)
+    lease.extend_pacing(effective)
+    with factory.begin() as db:
+        state = db.get(SourcePollState, source, with_for_update={"nowait": True})
+        assert state.next_allowed_request == effective
+        state.lease_until = clock.now() - timedelta(seconds=1)
+
+    new, _ = health.claim(factory, {"name": source, "city": "Warszawa"})
+    assert new and new != old
+    replacement = health.LeaseHeartbeat(factory, source, new)
+    assert replacement.reserve_request(5) == 31
+    # No transaction spans the would-be wait: an independent connection can lock the provider.
+    with factory.begin() as db:
+        assert db.get(SourcePollState, source, with_for_update={"nowait": True}).next_allowed_request == effective
+    clock.sleep(31)
+    assert replacement.reserve_request(5) == 0
+    deadline = clock.now() + timedelta(seconds=37)
+    replacement.defer_requests(deadline)
+    for operation in (
+        lambda owner: owner.reserve_request(60),
+        lambda owner: owner.extend_pacing(deadline + timedelta(days=1)),
+        lambda owner: owner.defer_requests(deadline + timedelta(days=1)),
+    ):
+        with pytest.raises(health.LeaseLost):
+            operation(health.LeaseHeartbeat(factory, source, old))
+    with factory() as db:
+        state = db.get(SourcePollState, source)
+        assert (state.lease_id, state.next_allowed_request, state.retry_after) == (
+            new, clock.now() + timedelta(seconds=5), deadline,
+        )
+    assert health.finish(factory, source, new, {
+        "status": "failed", "errors": [{"kind": "SourceAccessError"}], "retry_after": deadline.isoformat() + "Z",
+    })
+    clock.sleep(36)
+    assert health.claim(factory, {"name": source, "city": "Kraków"})[1]["reason"] == "backoff"
+    clock.sleep(1)
+    assert health.claim(factory, {"name": source, "city": "Kraków"})[0]
+
+
+@pytest.mark.parametrize("race", ["payload_changed", "owner_replaced_304", "owner_replaced_invalidation"])
+def test_t04_postgres_conditional_response_checks_representation_and_lease_at_commit(pg_engine, monkeypatch, race):
+    from threading import Barrier
+
+    import httpx
+    from sqlalchemy import func
+    from test_connectors import ETAG, ROBOTS, detail_page, fake_collector
+    from realtoruch.collection_health import claim
+    from realtoruch.models import CollectionFetchState, Listing, Observation, SourceListing, SourcePollState
+    from realtoruch.schemas import RawListing
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    response_ready, release = Barrier(2), Barrier(2)
+    detail_hits = 0
+
+    def handler(request):
+        nonlocal detail_hits
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, content=ROBOTS)
+        detail_hits += 1
+        if detail_hits == 1:
+            return httpx.Response(200, content=detail_page(), headers={"ETag": ETAG})
+        assert request.headers["If-None-Match"] == ETAG
+        response_ready.wait(timeout=10)
+        release.wait(timeout=10)
+        if race == "owner_replaced_invalidation":
+            return httpx.Response(200, content=b"<html>unrecognized detail page</html>")
+        return httpx.Response(304)
+
+    clock, _, _ = fake_collector(monkeypatch, factory, handler)
+    assert worker.collect()[0]["ingested"] == 1
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(worker.collect)
+        response_ready.wait(timeout=10)
+        with factory.begin() as db:
+            # The worker must not hold provider or representation locks while HTTP is in flight.
+            poll = db.get(SourcePollState, "otodom", with_for_update={"nowait": True})
+            prior = db.scalar(select(SourceListing).with_for_update(nowait=True))
+            if race == "payload_changed":
+                replacement = RawListing.model_validate({
+                    **prior.data, "rent_pln": 4100, "observed_at": clock.now() - timedelta(microseconds=1),
+                })
+                ingest(db, replacement)
+            else:
+                poll.lease_until = clock.now() - timedelta(seconds=1)
+        if race != "payload_changed":
+            new_owner, _ = claim(factory, {"name": "otodom", "city": "Warszawa"})
+            assert new_owner
+            with factory.begin() as db:
+                state = db.scalar(select(CollectionFetchState))
+                state.validators = {**state.validators, "etag": '"replacement"'}
+        with factory() as db:
+            initial_observed = db.scalar(select(SourceListing.observed_at))
+            initial_history = db.scalar(select(func.count()).select_from(Observation))
+            initial_tag = db.scalar(select(CollectionFetchState)).validators["etag"]
+        release.wait(timeout=10)
+        with pytest.raises(worker.CollectionFailed) as error:
+            pending.result(timeout=10)
+        assert error.value.reports[0]["status"] == ("failed" if race == "payload_changed" else "interrupted")
+        assert error.value.reports[0]["ingested"] == 0
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(Listing)) == 1
+        assert db.scalar(select(func.count()).select_from(Observation)) == initial_history
+        assert db.scalar(select(SourceListing.observed_at)) == initial_observed
+        assert db.scalar(select(CollectionFetchState)).validators["etag"] == initial_tag
+        if race != "payload_changed":
+            assert db.get(SourcePollState, "otodom").lease_id == new_owner

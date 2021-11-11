@@ -4,6 +4,7 @@
     {"version": "002", "file": "002_alerts.sql"},
     {"version": "003", "file": "003_email_alerts.sql"},
     {"version": "004", "file": "004_marketplace_rentals.sql"},
+    {"version": "005", "file": "005_collection_fetch_state.sql"},
     {"version": "006", "file": "006_search_revision.sql"},
     {"version": "008", "file": "008_delivery_leases.sql"}
   ],
