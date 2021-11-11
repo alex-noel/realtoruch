@@ -70,26 +70,12 @@ const write = (method: string, data: unknown) => ({
   method,
   body: JSON.stringify(data),
 });
-// The shared request timeout is bypassed by a caller signal. Preserve the
-// request deadline for cancellable inbox calls until the shared client composes
-// its own signals.
-async function messageRequest<T>(
+function messageRequest<T>(
   path: string,
   signal?: AbortSignal,
   options?: RequestInit,
 ) {
-  if (!signal) return request<T>(path, options);
-  const controller = new AbortController();
-  const cancel = () => controller.abort();
-  if (signal.aborted) cancel();
-  else signal.addEventListener("abort", cancel, { once: true });
-  const timer = setTimeout(cancel, 12000);
-  try {
-    return await request<T>(path, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-    signal.removeEventListener("abort", cancel);
-  }
+  return request<T>(path, signal ? { ...options, signal } : options);
 }
 export const market = {
   profile: () => request<{ profile: Profile | null }>("/v1/me/advertiser"),

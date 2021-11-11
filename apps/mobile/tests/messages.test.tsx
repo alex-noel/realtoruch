@@ -507,29 +507,4 @@ describe("messages API transport", () => {
     );
   });
 
-  it("aborts cancelled calls and retains a deadline with a caller signal", async () => {
-    vi.useFakeTimers();
-    vi.mocked(request).mockImplementation(
-      (_path, options) =>
-        new Promise((_, reject) => {
-          options?.signal?.addEventListener(
-            "abort",
-            () => reject(Error("Aborted")),
-            { once: true },
-          );
-        }),
-    );
-    const caller = new AbortController();
-    const cancelled = expect(
-      market.thread("A", undefined, caller.signal),
-    ).rejects.toThrow("Aborted");
-    caller.abort();
-    await cancelled;
-    const timeout = expect(
-      market.conversations(undefined, new AbortController().signal),
-    ).rejects.toThrow("Aborted");
-    await vi.advanceTimersByTimeAsync(12000);
-    await timeout;
-    expect(vi.getTimerCount()).toBe(0);
-  });
 });

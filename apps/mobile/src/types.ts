@@ -84,6 +84,26 @@ export type SearchResult = {
   consistency?: "sql" | "sql_checked" | "eventual";
   total_relation?: "exact" | "index";
 };
+export type CollectorHealth = {
+  status: "running" | "succeeded" | "partial" | "failed" | "interrupted" | "other";
+  city: string;
+  started_at: string;
+  finished_at: string | null;
+  limited: boolean;
+  errors: { kind: string; http_status: number | null }[];
+  last_success_at: string | null;
+};
+
+export type SourceHealth = {
+  name: string;
+  enabled: boolean;
+  cadence_minutes: number | null;
+  last_observed_at: string | null;
+  stored_adverts: number;
+  health: CollectorHealth | null;
+};
+
+export type Sources = { sources: SourceHealth[]; demo_mode: boolean };
 export type Summary = {
   homes: number;
   source_listings: number;

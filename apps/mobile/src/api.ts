@@ -5,6 +5,7 @@ import type {
   Listing,
   SearchResult,
   Summary,
+  Sources,
   History,
   SavedSearch,
   NotificationInbox,
@@ -175,35 +176,81 @@ function validationMessage(data: unknown): string {
   }
   return "Request could not be completed. Please check your details.";
 }
-export async function request<T>(path: string, options: RequestInit = {}, authService = false, retry = true, retried = false, lockHeld = false): Promise<T> {
+function cancelled() {
+  const error = new Error("Request cancelled.");
+  error.name = "AbortError";
+  return error;
+}
+
+// A caller can stop waiting without cancelling the session refresh shared by
+// other requests or interrupting rotation under the cross-tab lock.
+function waitForRefresh(refresh: Promise<string | null>, signal: AbortSignal) {
+  return new Promise<string | null>((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", abort);
+    const abort = () => {
+      cleanup();
+      reject(cancelled());
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    void refresh.then(
+      (token) => { cleanup(); resolve(token); },
+      (error) => { cleanup(); reject(error); },
+    );
+  });
+}
+
+export async function request<T>(path: string, options: RequestInit & { anonymous?: boolean } = {}, authService = false, retry = true, retried = false, lockHeld = false): Promise<T> {
+  const { signal: callerSignal, anonymous, ...init } = options;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
-  const usedToken = accessToken; const intent = generation;
-  try {
+  const abort = () => controller.abort();
+  callerSignal?.addEventListener("abort", abort, { once: true });
+  if (callerSignal?.aborted) abort();
+  const timeout = setTimeout(abort, 12000);
+  const intent = generation;
+  function checkResponse() {
+    if (controller.signal.aborted) throw cancelled();
+    if (!anonymous) checkIntent(intent);
+  }
+  async function send(mayRetry: boolean, didRetry: boolean): Promise<T> {
+    checkResponse();
+    const usedToken = anonymous ? null : accessToken;
     const response = await fetch((authService ? AUTH_URL : API_URL) + path, {
-      ...options, credentials: authService && Platform.OS === "web" ? "include" : "omit",
-      signal: options.signal || controller.signal,
-      headers: { "Content-Type": "application/json", ...(usedToken ? { Authorization: `Bearer ${usedToken}` } : {}), ...options.headers },
+      ...init, credentials: authService && Platform.OS === "web" ? "include" : "omit",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", ...(usedToken ? { Authorization: `Bearer ${usedToken}` } : {}), ...init.headers },
     });
-    checkIntent(intent);
-    if (response.status === 401 && retry && usedToken && path !== "/v1/auth/refresh") {
-      if (accessToken !== usedToken || (await refreshSession(intent, lockHeld))) {
-        checkIntent(intent); return request<T>(path, options, authService, false, true, lockHeld);
-      }
+    checkResponse();
+    if (response.status === 401 && mayRetry && usedToken && path !== "/v1/auth/refresh") {
+      if (accessToken !== usedToken) return send(false, true);
+      const refresh = refreshSession(intent, lockHeld);
+      // Logout holds the cookie lock until any rotation it started settles.
+      const token = lockHeld ? await refresh : await waitForRefresh(refresh, controller.signal);
+      checkResponse();
+      if (token) return send(false, true);
     }
     if (!response.ok) {
       const kind = response.status === 401 ? "invalid" : response.status === 403 ? "forbidden" : response.status >= 500 ? "transient" : "http";
       let data: unknown; try { data = await response.json(); } catch { data = null; }
-      checkIntent(intent);
-      if (kind === "invalid" && usedToken && (retry || retried) && path !== "/v1/auth/refresh") await invalidate(intent);
+      checkResponse();
+      if (kind === "invalid" && usedToken && (mayRetry || didRetry) && path !== "/v1/auth/refresh") await invalidate(intent);
       throw new SessionError(kind, kind === "invalid" ? ((path.endsWith("/login") || path.endsWith("/account")) ? validationMessage(data) : "Session expired or revoked. Sign in again.") : kind === "transient" ? "Cannot reach the service. Try again." : validationMessage(data), response.status);
     }
-    const data = await response.json(); checkIntent(intent); return data;
+    const data = await response.json();
+    checkResponse();
+    return data;
+  }
+  try {
+    return await send(retry, retried);
   } catch (error) {
+    if (callerSignal?.aborted) throw cancelled();
     if (error instanceof SessionError) throw error;
-    checkIntent(intent);
+    if (!anonymous) checkIntent(intent);
     throw new SessionError("transient", "Cannot reach the service. Check your connection and try again.");
-  } finally { clearTimeout(timeout); }
+  } finally {
+    clearTimeout(timeout);
+    callerSignal?.removeEventListener("abort", abort);
+  }
 }
 export function queryString(values: object) {
   return Object.entries(values)
@@ -226,22 +273,25 @@ export const api = {
   search: (filters: Filters, page = 1, signal?: AbortSignal) =>
     request<SearchResult>(
       `/v1/listings?${queryString({ ...filters, page, page_size: 24 })}`,
-      { signal },
+      { signal, anonymous: true },
     ),
   detail: (id: string) => request<Listing>(`/v1/listings/${id}`),
-  summary: (city: string) =>
-    request<Summary>(`/v1/market/summary?${queryString({ city })}`),
+  summary: (city: string, signal?: AbortSignal) =>
+    request<Summary>(`/v1/market/summary?${queryString({ city })}`, { signal, anonymous: true }),
+  sources: (city: string, signal?: AbortSignal) =>
+    request<Sources>(`/v1/sources?${queryString({ city })}`, { signal, anonymous: true }),
   history: (city: string, district = "") =>
     request<History>(`/v1/market/history?${queryString({ city, district })}`),
   favorites: () => request<{ items: Listing[] }>("/v1/me/favorites"),
   favorite: (id: string, saved: boolean) =>
     request(`/v1/me/favorites/${id}`, { method: saved ? "PUT" : "DELETE" }),
   searches: () => request<{ items: SavedSearch[] }>("/v1/me/searches"),
-  seen: (id: string) => request(`/v1/me/seen/${id}`, { method: "PUT" }),
-  listingState: (ids: string[]) =>
+  seen: (id: string, signal?: AbortSignal) => request(`/v1/me/seen/${id}`, { method: "PUT", signal }),
+  listingState: (ids: string[], signal?: AbortSignal) =>
     request<{ seen_ids: string[] }>("/v1/me/listing-state", {
       method: "POST",
       body: JSON.stringify({ listing_ids: ids }),
+      signal,
     }),
   notifications: (page = 1) =>
     request<NotificationInbox>(`/v1/me/notifications?page=${page}`),
