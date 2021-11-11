@@ -465,6 +465,41 @@ def test_t12_large_upstream_is_closed_without_reading_the_rest(route, client, mo
     assert consumed == ["read", "read", "closed"]
 
 
+@pytest.mark.parametrize("route", ["rest", "direct"])
+def test_t12_small_chunks_do_not_reset_total_search_deadline(route, client, monkeypatch):
+    clock = [0]
+    reads = []
+
+    class SlowSearchResponse(httpx.SyncByteStream):
+        def __iter__(self):
+            for _ in range(2):
+                clock[0] += 3  # Below the per-read timeout, above the total after two reads.
+                reads.append(clock[0])
+                yield b" "
+            pytest.fail("Another small chunk was read after the total deadline")
+
+        def close(self):
+            reads.append("closed")
+
+    monkeypatch.setattr(search_transport, "monotonic", lambda: clock[0])
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, stream=SlowSearchResponse()))
+    if route == "rest":
+        monkeypatch.setattr(api, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(api.settings, "search_service_url", "http://private-search.test")
+        with httpx.Client(transport=transport) as upstream:
+            monkeypatch.setattr(api.httpx, "stream", upstream.stream)
+            response = client.get("/v1/listings")
+        assert response.status_code == 200 and response.json()["degraded"] is True
+    else:
+        monkeypatch.setattr(search, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(
+            search, "es_client", lambda: httpx.Client(base_url="http://fake-es.test", transport=transport)
+        )
+        response = TestClient(search.app).get("/v1/search")
+        assert response.status_code == 503
+    assert reads == [3, 6, "closed"]
+
+
 @pytest.mark.parametrize(
     "bad_result",
     [
