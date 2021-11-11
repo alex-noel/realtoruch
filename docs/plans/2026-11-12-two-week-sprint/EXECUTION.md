@@ -25,20 +25,20 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 | T09 | VERIFIED | gpt-6-luna | high | None |
 | T10 | LOCAL_PARTIAL | gpt-6.1-terra | xhigh | T08, T09 |
 | T11 | VERIFIED | gpt-6.1-terra | high | T10 |
-| T12 | IN_PROGRESS | gpt-6.1-sol | high | T08, T11 |
+| T12 | VERIFIED | gpt-6.1-sol | high | T08, T11 |
 | T13 | VERIFIED | gpt-6.1-terra | xhigh | T01 |
-| T14 | LOCAL_PARTIAL | gpt-6.1-terra | high | T01 |
+| T14 | VERIFIED | gpt-6.1-terra | high | T01 |
 | T15 | VERIFIED | gpt-6.1-terra | xhigh | T10, T13, T14 |
 | T16 | VERIFIED | gpt-6.1-sol | high | T10 |
-| T17 | IN_PROGRESS | gpt-6.1-sol | high | T14, T16 |
-| T18 | IN_PROGRESS | gpt-6.1-terra | high | T01, T14, T02 |
-| T19 | PLANNED | gpt-6.1-sol | medium | T03, T14 |
+| T17 | VERIFIED | gpt-6.1-sol | high | T14, T16 |
+| T18 | VERIFIED | gpt-6.1-terra | high | T01, T14, T02 |
+| T19 | IN_PROGRESS | gpt-6.1-sol | high | T03, T14 |
 | T20 | PLANNED | gpt-6.1-sol | high | T17, T19, T18 |
 | T21 | PLANNED | gpt-6.1-sol | high | T14 |
-| T25 | PLANNED | gpt-6.1-terra | high | T08, T11, T12 |
+| T25 | IN_PROGRESS | gpt-6.1-terra | high | T08, T11, T12 |
 | T26 | VERIFIED | gpt-6.1-sol | medium | T03, T08, T13 |
 | T27 | PLANNED | gpt-6.1-sol | high | T11, T15 |
-| T28 | PLANNED | gpt-6.1-terra | high | T02, T08, T13, T15, T26 |
+| T28 | IN_REVIEW | gpt-6.1-terra | high | T02, T08, T13, T15, T26 |
 | T32 | PLANNED | parent integrator | independent review | T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T25, T26, T27, T28 |
 
 ## Integration decisions
@@ -65,3 +65,5 @@ T26 is accepted after independent privacy/operations review,105 real-service pas
 T15 is accepted at `ade29cb` after independent privacy/concurrency review and 152 combined real-service passes. T16 is accepted at `7cf3994`; its tuple cursors and account guards are integrated. Parent session fixes `3fbab65` and `64b949a` passed targeted actual-browser regressions, with the complete integrated T18 suite still pending.
 
 T07 is integrated at `dcd5768`; 141 combined local tests passed without skips. The live run uses the immutable `b3782cc` detached checkout, beginning 2026-11-11 21:27:38 UTC with a fixed target end of 2026-11-14 21:27:38 UTC. The first cycle obtained four observations from Otodom/Morizon, while Gratka discovery parsing failed. No live removal or long-duration reliability is claimed. T12, T17 and T18 are active; T19, T21, T27 and T28 are dependency-ready.
+
+T12 is accepted after public-contract review and 188 combined real-service passes. Parent T26 correction `b4ae272` aligns queue diagnostics with indexer eligibility even when creation timestamps are ahead. T17 is integrated at `2b69e8a`, and T18 at `3bec9db`: the complete root browser run passed 12 tests without skips, covering the integrated owner inbox and both account/session cases. All 33 frontend unit tests passed after separating unit and browser discovery. This closes T14’s remaining local browser gate. T25 and T19 are active, while T28 is receiving grant and network-boundary corrections. T07 remains time-gated, with one eligible completed cycle and no runner gaps through 2026-11-11 21:58:20 UTC.

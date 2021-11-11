@@ -183,17 +183,20 @@
     },
     {
       "id": "T12",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
         "T08",
         "T11"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": "Worker implementing bounded public DTOs, SQL/Elasticsearch parity and pagination on reviewed base 3fbab65.",
-      "evidence": []
+      "worker_commit": "e2d8a7d + 6ae4567 + 4e273b5",
+      "integrated_commit": "71126e0 + 8d06442",
+      "review": "Parent public DTO, exact filter parity and streaming-boundary review; combined real PostgreSQL/Elasticsearch profile passed 188 tests with zero failures/skips after the T26 eligibility correction.",
+      "evidence": [
+        "docs/verification/T12-handoff.md",
+        ".local/verification/T01/integrated-t12-final/report.json"
+      ]
     },
     {
       "id": "T13",
@@ -213,7 +216,7 @@
     },
     {
       "id": "T14",
-      "status": "LOCAL_PARTIAL",
+      "status": "VERIFIED",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [
@@ -221,9 +224,10 @@
       ],
       "worker_commit": "03a324c + c03550f",
       "integrated_commit": "edf5e59 + 3fbab65 + 64b949a",
-      "review": "Session implementation accepted after independent race review and 20 unit tests. T18 real-browser targeted account and different-account cross-tab cases passed desktop/mobile. Parent full integrated browser repeat remains pending.",
+      "review": "Parent session-race review and targeted browser account-switch reproduction/fix; complete integrated browser suite passed 12 tests with zero failures/skips, including both viewport sizes and real two-tab refresh/logout.",
       "evidence": [
-        "docs/verification/T14-handoff.md"
+        "docs/verification/T14-handoff.md",
+        ".local/verification/T01/integrated-t17-t18/report.json"
       ]
     },
     {
@@ -261,21 +265,24 @@
     },
     {
       "id": "T17",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
         "T14",
         "T16"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": "Dispatched on reviewed base 64b949a; owns inbox UI and typed message client. Browser-label coordination with T18; viewport-aware acknowledgement required.",
-      "evidence": []
+      "worker_commit": "e8d2b5e + e41cd4b",
+      "integrated_commit": "2b69e8a",
+      "review": "Parent inbox lifecycle review and full integrated 12-test browser profile passed; 33 frontend unit tests passed. Native bundles compile; installed native keyboard/safe-area behavior remains outside this local acceptance.",
+      "evidence": [
+        "docs/verification/T17-handoff.md",
+        ".local/verification/T01/integrated-t17-t18/report.json"
+      ]
     },
     {
       "id": "T18",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [
@@ -283,23 +290,26 @@
         "T14",
         "T02"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "95bb97f + ddbf681 + ce6087f + 92c5f96 + 087c3d2",
+      "integrated_commit": "3bec9db + 2b69e8a",
+      "review": "Two worker full browser runs and parent integrated T12/T14/T15/T16/T17 run each passed 12 tests without skips. Controlled duplicate fault failed as required; trace canaries passed. Hosted CI not run.",
+      "evidence": [
+        "docs/verification/T18-handoff.md",
+        ".local/verification/T01/integrated-t17-t18/report.json"
+      ]
     },
     {
       "id": "T19",
-      "status": "PLANNED",
+      "status": "IN_PROGRESS",
       "model": "gpt-6.1-sol",
-      "reasoning_effort": "medium",
+      "reasoning_effort": "high",
       "depends": [
         "T03",
         "T14"
       ],
       "worker_commit": null,
       "integrated_commit": null,
-      "review": null,
+      "review": "Worker B implementing source freshness, cancellation, debounce and shared timeout composition on reviewed base 3bec9db.",
       "evidence": []
     },
     {
@@ -332,7 +342,7 @@
     },
     {
       "id": "T25",
-      "status": "PLANNED",
+      "status": "IN_PROGRESS",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [
@@ -342,7 +352,7 @@
       ],
       "worker_commit": null,
       "integrated_commit": null,
-      "review": null,
+      "review": "Worker A measuring representative disposable catalogs and candidate-query amplification on reviewed base 3bec9db; numeric acceptance is pending.",
       "evidence": []
     },
     {
@@ -356,11 +366,12 @@
         "T13"
       ],
       "worker_commit": "cdcc56e + fa86da8",
-      "integrated_commit": "3d8d410",
-      "review": "Parent privacy/operations review;105real-service passes,6SQLite/Helm passes and12APIregression passes. No cloud claim. T28 must wire private scraper authentication and readiness probes.",
+      "integrated_commit": "3d8d410 + b4ae272",
+      "review": "Parent privacy/operations review and follow-on clock/queue-eligibility correction. Future creation timestamps no longer hide work from diagnostics. Combined real-service profile passed 188 tests without skips; T28 wiring under review.",
       "evidence": [
         "docs/verification/T26-handoff.md",
-        ".local/verification/T01/integrated-t26-review/report.json"
+        ".local/verification/T01/integrated-t26-review/report.json",
+        ".local/verification/T01/integrated-t12-final/report.json"
       ]
     },
     {
@@ -379,7 +390,7 @@
     },
     {
       "id": "T28",
-      "status": "PLANNED",
+      "status": "IN_REVIEW",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [
@@ -389,9 +400,9 @@
         "T15",
         "T26"
       ],
-      "worker_commit": null,
+      "worker_commit": "998b8e0",
       "integrated_commit": null,
-      "review": null,
+      "review": "Initial worker profile passed 189 real-service tests. Parent requested narrower grants, real cancellation permission checks, metrics egress pairing and corrected runtime/cache documentation; revisions in progress.",
       "evidence": []
     },
     {
@@ -433,10 +444,10 @@
     }
   ],
   "active_assignments": {
-    "A": "T18 complete browser suite and artifacts",
-    "B": "T07 pinned live soak running; T19 ready after a worker slot opens",
-    "C": "T12 public search parity and privacy",
-    "D": "T17 inbox UI and lifecycle"
+    "A": "T25 catalog load and measured query optimization",
+    "B": "T19 search lifecycle and source freshness",
+    "C": "T28 deployment configuration review corrections",
+    "D": "T17 accepted; queued T27 restore verification"
   },
   "live_soak": {
     "session_id": 50850,
