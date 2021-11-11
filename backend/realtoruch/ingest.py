@@ -105,15 +105,9 @@ def recompute_listing(session, listing, *, new_property=False):
     if canonical_changed:
         listing.updated_at = now()
         session.add(AlertEvent(listing_id=listing.id))
-    # Wait for an in-flight index write before deciding whether another event is needed.
-    # Without the row lock, an indexer could acknowledge an old snapshot after this update.
-    if not session.scalar(
-        select(Outbox.id)
-        .where(Outbox.listing_id == listing.id, Outbox.delivered_at.is_(None))
-        .limit(1)
-        .with_for_update()
-    ):
-        session.add(Outbox(listing_id=listing.id))
+    # Sources, contact adverts and freshness also contribute to the public DTO.
+    from .indexing import queue_listing
+    queue_listing(session, listing.id)
 
 
 def ingest(session, raw: RawListing):

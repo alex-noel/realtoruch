@@ -179,7 +179,8 @@ def merge(
     target.first_seen = min(source.first_seen, target.first_seen)
     session.flush()
     recompute_listing(session, target)
-    session.add(Outbox(listing_id=source_id))
+    from .indexing import queue_listing
+    queue_listing(session, source_id)
     session.execute(
         update(AlertEvent)
         .where(
