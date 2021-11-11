@@ -134,7 +134,7 @@ def main():
         suites = ['backend/tests/test_infra_contract.py', 'backend/tests/test_service_integration.py', 'backend/tests/test_delivery_races.py',
                   'backend/tests/test_market_history.py', 'backend/tests/test_metrics.py',
                   'backend/tests/test_message_cursors.py', 'backend/tests/test_account_data.py',
-                  'backend/tests/test_public_contract.py',
+                  'backend/tests/test_public_contract.py', 'backend/tests/test_query_budgets.py',
                   'backend/tests/test_restore_contract.py'] if args.profile == 'services' else ['backend/tests']
         selection = ['-k', 'not test_t26_helm and not test_t26_sqlite'] if args.profile == 'services' else []
         result = command([sys.executable, '-m', 'pytest', *suites, *selection, '--junitxml', str(xml)], check=False)
