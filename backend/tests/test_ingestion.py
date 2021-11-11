@@ -22,6 +22,8 @@ def test_phone_normalization_is_keyed_and_never_public(session, record):
 
 
 def test_duplicate_sources_become_one_home_and_keep_prices(session, record):
+    # This lifecycle fixture represents a known shared unit, not just a building.
+    record = record.model_copy(update={"address": "Dąbrowskiego 24/3"})
     one = ingest(session, record)
     two = ingest(session, record.model_copy(update={"source": "olx", "rent_pln": 3200}))
     assert one["listing_id"] == two["listing_id"]
@@ -71,6 +73,8 @@ def test_retry_is_idempotent_and_old_observation_cannot_roll_back(session, recor
 
 
 def test_source_removal_keeps_property_active_until_last_source_is_removed(session, record):
+    # This lifecycle fixture represents a known shared unit, not just a building.
+    record = record.model_copy(update={"address": "Dąbrowskiego 24/3"})
     result = ingest(session, record)
     ingest(session, record.model_copy(update={"source": "olx"}))
     removed = record.model_copy(
@@ -84,6 +88,8 @@ def test_source_removal_keeps_property_active_until_last_source_is_removed(sessi
 
 
 def test_history_counts_properties_once_per_month(session, record):
+    # This lifecycle fixture represents a known shared unit, not just a building.
+    record = record.model_copy(update={"address": "Dąbrowskiego 24/3"})
     ingest(session, record)
     ingest(session, record.model_copy(update={"source": "olx"}))
     ingest(
@@ -155,3 +161,9 @@ def test_normalized_addresses_and_image_sizes_preserve_property_identity(session
         }
     )
     assert ingest(session, different_photo)["listing_id"] != original
+
+
+def test_same_building_floor_and_phone_without_photo_or_unit_remain_separate(session, record):
+    first = ingest(session, record)["listing_id"]
+    second = ingest(session, record.model_copy(update={"source": "olx"}))["listing_id"]
+    assert first != second

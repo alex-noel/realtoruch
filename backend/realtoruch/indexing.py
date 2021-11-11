@@ -113,6 +113,8 @@ def snapshot(session, ids):
     """Lock revision rows briefly so every DTO and version share a committed state."""
     if not ids:
         return []
+    from .ingest import lock_identity
+    lock_identity(session, shared=True)
     revisions = dict(session.execute(
         select(SearchRevision.listing_id, SearchRevision.revision)
         .where(SearchRevision.listing_id.in_(ids)).order_by(SearchRevision.listing_id).with_for_update()
@@ -187,6 +189,8 @@ def index_once(factory, client_factory, alias):
                 docs = snapshot(session, sorted({event.listing_id for event in events}))
             outcomes = send_bulk(client, docs, alias)
             with factory.begin() as session:
+                from .ingest import lock_identity
+                lock_identity(session, shared=True)
                 sent = {listing_id: revision for listing_id, revision, _ in docs if listing_id in outcomes}
                 current = dict(session.execute(select(SearchRevision.listing_id, SearchRevision.revision)
                     .where(SearchRevision.listing_id.in_(sent)).order_by(SearchRevision.listing_id).with_for_update()).all())

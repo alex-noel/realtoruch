@@ -208,6 +208,8 @@ def favorites(user_id=Depends(require_user), session=Depends(get_session)):
 
 @app.put("/v1/me/favorites/{listing_id}", tags=["Account"])
 def save_favorite(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    from .ingest import lock_identity
+    lock_identity(session, shared=True)
     listing_id = resolve_id(session, listing_id)
     home = session.get(Listing, listing_id)
     if not home:
@@ -225,6 +227,8 @@ def save_favorite(listing_id: str, user_id=Depends(require_user), session=Depend
 
 @app.delete("/v1/me/favorites/{listing_id}", tags=["Account"])
 def remove_favorite(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    from .ingest import lock_identity
+    lock_identity(session, shared=True)
     listing_id = resolve_id(session, listing_id)
     favorite = session.get(Favorite, (user_id, listing_id))
     if favorite:
@@ -241,6 +245,8 @@ class SaveSearchBody(BaseModel):
 
 @app.post("/v1/me/searches", status_code=201, tags=["Account"])
 def save_search(body: SaveSearchBody, user_id=Depends(require_user), session=Depends(get_session)):
+    from .ingest import lock_identity
+    lock_identity(session, shared=True)
     if (
         session.scalar(select(func.count()).select_from(SavedSearch).where(SavedSearch.user_id == user_id))
         >= 30
@@ -297,6 +303,8 @@ def delete_search(search_id: str, user_id=Depends(require_user), session=Depends
 
 @app.put("/v1/me/seen/{listing_id}", tags=["Account"])
 def mark_seen(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    from .ingest import lock_identity
+    lock_identity(session, shared=True)
     listing_id = resolve_id(session, listing_id)
     home = session.get(Listing, listing_id)
     if not home:
@@ -419,6 +427,8 @@ class ReportBody(BaseModel):
 
 @app.post("/v1/listings/{listing_id}/reports", status_code=201, tags=["Account"])
 def report(listing_id: str, body: ReportBody, user_id=Depends(require_user), session=Depends(get_session)):
+    from .ingest import lock_identity
+    lock_identity(session, shared=True)
     listing_id = resolve_id(session, listing_id)
     if not session.get(Listing, listing_id):
         raise HTTPException(404, "Home not found")
