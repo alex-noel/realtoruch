@@ -11,6 +11,7 @@ spec:
       labels: { app: alerts }
     spec:
       serviceAccountName: alerts
+      terminationGracePeriodSeconds: 30
       nodeSelector: { workload: core }
       securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
       containers:
@@ -20,6 +21,10 @@ spec:
           env:
             - name: GCP_CONFIG_SECRET
               value: "projects/{{ .Values.projectId }}/secrets/realtoruch-alerts-config/versions/latest"
+          readinessProbe:
+            exec: { command: ["python", "-m", "realtoruch.runtime", "python", "-m", "realtoruch.worker", "alerts", "--check-ready"] }
+            periodSeconds: 30
+            timeoutSeconds: 10
           resources:
             requests: { cpu: 100m, memory: 192Mi }
             limits: { cpu: "1", memory: 512Mi }

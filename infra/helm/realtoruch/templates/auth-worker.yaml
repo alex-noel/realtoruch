@@ -11,6 +11,7 @@ spec:
       labels: { app: auth-worker }
     spec:
       serviceAccountName: auth
+      terminationGracePeriodSeconds: 30
       nodeSelector: { workload: core }
       securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
       containers:
@@ -20,6 +21,10 @@ spec:
           env:
             - name: GCP_CONFIG_SECRET
               value: "projects/{{ .Values.projectId }}/secrets/realtoruch-auth-config/versions/latest"
+          readinessProbe:
+            exec: { command: ["python", "-m", "realtoruch.runtime", "python", "-m", "realtoruch.auth_jobs", "--check-ready"] }
+            periodSeconds: 30
+            timeoutSeconds: 10
           resources:
             requests: { cpu: 50m, memory: 192Mi }
             limits: { cpu: "1", memory: 512Mi }

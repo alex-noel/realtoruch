@@ -18,6 +18,7 @@ spec:
     metadata:
       labels: { app: elasticsearch }
     spec:
+      terminationGracePeriodSeconds: 30
       nodeSelector: { workload: core }
       securityContext: { runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000 }
       containers:

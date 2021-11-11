@@ -131,7 +131,7 @@ def main():
             else:
                 raise RuntimeError('Services did not become ready within 120 seconds')
         xml = dest / 'results.xml'
-        suites = ['backend/tests/test_service_integration.py', 'backend/tests/test_delivery_races.py',
+        suites = ['backend/tests/test_infra_contract.py', 'backend/tests/test_service_integration.py', 'backend/tests/test_delivery_races.py',
                   'backend/tests/test_market_history.py', 'backend/tests/test_metrics.py',
                   'backend/tests/test_message_cursors.py', 'backend/tests/test_account_data.py',
                   'backend/tests/test_public_contract.py'] if args.profile == 'services' else ['backend/tests']
