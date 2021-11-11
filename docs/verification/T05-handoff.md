@@ -59,3 +59,20 @@ git diff --check
 - The fixture matrix does not establish live empty, removal or challenge page shapes. OLX empty discovery fails closed and the positive OLX removal case is synthetic. Other unrecognized interstitials can appear as ordinary parser errors while still preserving listing state.
 - The change has no schema or persistent configuration dependency. A code rollback restores prior parsing and reporting behavior without rewriting existing observations.
 - No live provider requests, cloud resources, real email, push or deployment were used. No external blocker remains for the offline task.
+
+## Gratka mixed results correction for T05 and T07
+
+Verified offline on 11 November 2026 at 23:51 CET against base `bfc4989`. A private search capture from 13:20 CET contained 35 entries in the rental `AggregateOffer`: 31 supported `/ob/` routes and four alternate `/oi/` routes. The two groups shared the search-card shape. The saved detail captures cover `/ob/` only, and the search capture did not establish the purpose or detail contract of `/oi/`.
+
+The old parser raised `unrecognized_page` for the capture. The corrected parser found all 31 supported adverts and a next page within the configured search scope. In Gratka rental discovery, well-formed same-host HTTPS `/nieruchomosci/<slug>/oi/<numeric-id>` links are ignored before detail fetching. A nonempty result set without a supported advert still fails. The existing host, detail identity, pagination and removal rules apply. Coverage is limited to supported detail routes.
+
+The synthetic fixture and mocked connector regression verify that the collector fetches only the supported advert, emits it as active and rejects direct `/oi/` detail parsing. Other invalid same-host routes and the all-unsupported result set still fail. The portal and connector suites passed 110 tests with zero failures or skips and one existing Starlette deprecation warning. Ruff lint, format and `git diff --check` passed.
+
+```sh
+env -u TEST_POSTGRES_URL -u TEST_ELASTICSEARCH_URL PYTHONPATH=backend /Users/alexnoel/Documents/ChatGPT/realtoruch/.venv/bin/python -m pytest backend/tests/test_portals.py backend/tests/test_connectors.py -q -o addopts=
+/Users/alexnoel/Documents/ChatGPT/realtoruch/.venv/bin/ruff check backend/realtoruch/portals.py backend/tests/test_portals.py
+/Users/alexnoel/Documents/ChatGPT/realtoruch/.venv/bin/ruff format --check backend/realtoruch/portals.py backend/tests/test_portals.py
+git diff --check
+```
+
+This correction used the saved capture and synthetic fixtures only. The live T07 soak is pinned to `b3782cca` and may still report the original Gratka discovery failure. The offline result supplies candidate evidence for T05-TC02. Live Gratka coverage and the elapsed-time gate remain subject to the pinned run. [T07 handoff](T07-handoff.md)

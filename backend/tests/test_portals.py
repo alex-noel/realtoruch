@@ -76,6 +76,61 @@ def test_discovery_returns_only_source_listing_urls_and_bounded_next_page(source
     assert page.next_url == SEARCH[source] + "?page=2"
 
 
+def test_gratka_mixed_search_fetches_only_supported_rental_detail(monkeypatch):
+    search, detail = SEARCH["gratka"], DETAIL["gratka"]
+    html = fixture("gratka", "mixed")
+    page = discover("gratka", html, search)
+    assert page.urls == [detail]
+    assert page.next_url == search + "?page=2"
+
+    connector = Connector(configured("gratka"))
+    bodies = {search: html, detail: fixture("gratka")}
+    calls = []
+
+    def fetch(url, **kwargs):
+        calls.append(url)
+        return 200, bodies[url].encode()
+
+    monkeypatch.setattr(connector, "fetch", fetch)
+    try:
+        records = list(connector.records())
+        assert calls == [search, detail]
+        assert [(record.external_id, record.status) for record in records] == [("900001", "active")]
+        assert connector.report["discovered"] == connector.report["emitted"] == 1
+        assert connector.report["errors"] == []
+    finally:
+        connector.close()
+
+    unsupported = "https://gratka.pl/nieruchomosci/fixture-alternate/oi/910001"
+    with pytest.raises(ParseError) as error:
+        parse_detail("gratka", fixture("gratka"), unsupported, city="Warszawa")
+    assert error.value.code is ParseCode.UNSUPPORTED_URL
+
+
+def test_gratka_nonempty_search_with_no_supported_routes_fails():
+    html = fixture("gratka", "mixed").replace("/ob/900001", "/oi/900001")
+    with pytest.raises(ParseError, match="Search offers contain no recognized listing URLs") as error:
+        discover("gratka", html, SEARCH["gratka"])
+    assert error.value.code is ParseCode.UNRECOGNIZED_PAGE
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/nieruchomosci/fixture-alternate/other/910001",
+        "/nieruchomosci/fixture-alternate/oi/unrecognized",
+        "http://gratka.pl/nieruchomosci/fixture-alternate/oi/910001",
+        "https://example@gratka.pl/nieruchomosci/fixture-alternate/oi/910001",
+        "https://gratka.pl:444/nieruchomosci/fixture-alternate/oi/910001",
+    ],
+)
+def test_gratka_other_invalid_same_host_result_urls_still_fail(url):
+    html = fixture("gratka", "mixed").replace("/nieruchomosci/fixture-alternate/oi/910001", url)
+    with pytest.raises(ParseError, match="Unrecognized rental result URL") as error:
+        discover("gratka", html, SEARCH["gratka"])
+    assert error.value.code is ParseCode.UNRECOGNIZED_PAGE
+
+
 @pytest.mark.parametrize("source", SEARCH)
 def test_actual_portal_shapes_map_required_fields_without_inventing_fees(source):
     raw = parse_detail(source, fixture(source), DETAIL[source], city="Warszawa")

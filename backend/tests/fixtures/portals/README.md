@@ -19,3 +19,5 @@ The new empty, drift and access pages are synthetic fixtures created and inspect
 | Structural drift | `otodom-drift.html` replaces `items` | `gratka-drift.html` replaces `offers` | `morizon-drift.html` replaces `offers` | `olx-drift.html` supplies an unfamiliar card URL |
 
 All four details are also exercised with foreign currency, fractional PLN with Polish grouping spaces, required rent ranges and optional fees that must remain unknown. The lifecycle tests mock transport and audit the resulting collector logs with synthetic canaries. This matrix supplies no live evidence for empty, removed or blocked pages.
+
+`gratka-mixed.html` is a synthetic rental search with a supported `/ob/` advert, an unsupported same-host `/oi/` result and an external link. Tests check that only the supported detail is fetched, a nonempty page with zero supported results fails, and other invalid same-host routes still fail. The fixture establishes no detail contract or listing coverage for `/oi/`.
