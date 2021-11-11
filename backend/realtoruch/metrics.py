@@ -149,7 +149,6 @@ def _rental_rows(stamp):
             Outbox.created_at,
             case(
                 (Outbox.last_index_status.in_((400, 413)), "failed"),
-                (Outbox.created_at > stamp, "deferred"),
                 else_="ready",
             ),
             Outbox.delivered_at.is_(None),

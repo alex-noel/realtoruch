@@ -245,7 +245,7 @@ def exercise_queue_snapshots(sql_kind, tmp_path, record, monkeypatch):
             assert TestClient(api.app).get("/metrics").status_code == 403
             assert TestClient(auth.app).get("/metrics").status_code == 403
         expected = [
-            (rest, "search_outbox", [2, 0, 1, 2, 0], 100, 3),
+            (rest, "search_outbox", [3, 0, 0, 2, 0], 100, 3),
             (rest, "rental_email", [2, 2, 1, 1, 1], 80, 3),
             (rest, "push", [3, 2, 1, 1, 1], 120, 3),
             (accounts, "auth_mail", [2, 2, 1, 1, 1], 80, 3),
@@ -315,7 +315,7 @@ def exercise_runbook_sql(databases):
     access, leases, indexing, emails, erasure, versions = all_rows
     assert access == [("otodom", "403", 1), ("otodom", "429", 1)]
     assert len(leases) == 1 and leases[0].source == "otodom"
-    assert [(r.state, r.rows) for r in indexing] == [("eligible", 2), ("held", 2)]
+    assert [(r.state, r.rows) for r in indexing] == [("eligible", 3), ("held", 2)]
     assert {r.status: (r.rows, r.leased) for r in emails} == {
         "cancelled": (1, 0),
         "failed": (1, 0),
@@ -359,9 +359,18 @@ def test_t26_postgres_and_es_index_runbook(tmp_path, record, monkeypatch):
                     }
                 ),
             )
+            # Creation time is an ordering/age field, not a delivery deadline.
+            # A future timestamp (including clock skew) must remain visible
+            # to diagnostics, just as it remains eligible to index_once.
+            session.execute(text("UPDATE outbox SET created_at = timezone('UTC', now()) + interval '1 hour' WHERE delivered_at IS NULL"))
         with rentals() as session:
             (pending,) = session.execute(text(runbook_queries()[2])).all()
             assert pending.state == "eligible" and pending.rows == 1
+        monkeypatch.setattr(api, "Session", rentals)
+        snapshot, _ = samples(TestClient(api.app))
+        assert value(snapshot, "queue_depth", queue="search_outbox", state="ready") == 1
+        assert value(snapshot, "queue_depth", queue="search_outbox", state="deferred") == 0
+        assert value(snapshot, "queue_oldest_eligible_age_seconds", queue="search_outbox") == 0
         with es_client() as client:
             doc_url = f"/{alias}/_doc/{home}"
             stale = client.get(doc_url, params={"_source": "false"}).raise_for_status().json()
