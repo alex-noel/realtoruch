@@ -439,10 +439,92 @@ describe("incoming link delivery lifecycle", () => {
   });
 });
 
+async function startRevokedRestore(
+  restoreToken: () => Promise<string | null>,
+  linkFetch: (url: string, options: RequestInit) => Promise<Response>,
+) {
+  secureStore.getItemAsync
+    .mockResolvedValueOnce("old-access")
+    .mockResolvedValueOnce("revoked-refresh");
+  const refreshStarted = barrier<void>();
+  const refreshResponse = barrier<Response>();
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options: RequestInit) => {
+    if (!url.endsWith("/v1/auth/refresh")) return linkFetch(url, options);
+    refreshStarted.resolve();
+    return refreshResponse.promise;
+  }));
+  const restoring = restoreToken();
+  await refreshStarted.promise;
+  return async () => {
+    refreshResponse.resolve(Response.json({}, { status: 401 }));
+    await expect(restoring).rejects.toMatchObject({ kind: "invalid" });
+  };
+}
+
+it("keeps public link lookups valid when native startup rejects a stored session", async () => {
+  const { api, getSessionState, restoreToken } = await import("../src/api");
+  const { market } = await import("../src/marketplaceApi");
+  const publicResponse = barrier<void>();
+  const listing = { id: "canonical-home" };
+  const advert = { listing_id: listing.id };
+  const authorization: (string | null)[] = [];
+  const rejectRestore = await startRevokedRestore(restoreToken, async (url, options) => {
+    authorization.push(new Headers(options.headers).get("Authorization"));
+    await publicResponse.promise;
+    return Response.json(url.includes("/v1/adverts/") ? advert : listing);
+  });
+
+  const lookups = Promise.all([api.detail("old-alias"), market.publicAdvert("advert")]);
+  await rejectRestore();
+  expect(getSessionState()).toBe("reauth");
+  publicResponse.resolve();
+  await expect(lookups).resolves.toEqual([listing, advert]);
+  expect(authorization).toEqual([null, null]);
+});
+
 describe("link token requests", () => {
   function response(data: unknown, status = 200) {
     return new Response(JSON.stringify(data), { status });
   }
+
+  it.each([
+    ["verify-account", "/v1/auth/verify-email"],
+    ["confirm-email", "/v1/notifications/email/confirm"],
+    ["unsubscribe-email", "/v1/notifications/email/unsubscribe"],
+  ] as const)("completes %s once after native session invalidation", async (type, path) => {
+    const { api, getSessionState, restoreToken } = await import("../src/api");
+    const { lifecycle, handlers } = lifecycleFixture();
+    const pending = barrier<Response>();
+    const linkFetch = vi.fn((_url: string, _options: RequestInit) => pending.promise);
+    const rejectRestore = await startRevokedRestore(restoreToken, linkFetch);
+    let consumed: Promise<string> | undefined;
+    handlers.consume.mockImplementation(({ type, token }) => {
+      const result = type === "verify-account"
+        ? api.verifyAccount(token)
+        : api.emailAlertLink(type, token);
+      return consumed = result.then(({ message }) => message);
+    });
+
+    const action = { type, token: fixtureToken };
+    lifecycle.receive(action, "restoring");
+    lifecycle.receive(action, "restoring");
+    await rejectRestore();
+    pending.resolve(response({ message: "Link applied." }));
+    await expect(consumed).resolves.toBe("Link applied.");
+    await vi.waitFor(() =>
+      expect(handlers.feedback).toHaveBeenLastCalledWith({ message: "Link applied." }),
+    );
+    lifecycle.receive(action, "guest");
+    expect(linkFetch).toHaveBeenCalledTimes(1);
+    const [url, options] = linkFetch.mock.calls[0];
+    expect(new URL(url).pathname).toBe(path);
+    expect(options.method).toBe("POST");
+    expect(JSON.parse(String(options.body)).token === fixtureToken).toBe(true);
+    expect(new Headers(options.headers).get("Authorization")).toBeNull();
+    expect(handlers.error).not.toHaveBeenCalled();
+    expect(getSessionState()).toBe("reauth");
+    expect(secureStore.deleteItemAsync).toHaveBeenCalledTimes(2);
+  });
 
   it("renders fixed expired/used reset errors and leaves the unrelated session active after failures", async () => {
     const { api, getSessionState } = await import("../src/api");
@@ -496,7 +578,7 @@ describe("link token requests", () => {
   });
 
   it("does not refresh a valid session on an invalid verify or confirmation token", async () => {
-    const { api, request, getSessionState } = await import("../src/api");
+    const { api, getSessionState } = await import("../src/api");
     let count = 0;
     vi.stubGlobal(
       "fetch",
@@ -519,15 +601,7 @@ describe("link token requests", () => {
       message: "This link is invalid or has expired.",
     });
     await expect(
-      request(
-        "/v1/notifications/email/confirm",
-        {
-          method: "POST",
-          body: JSON.stringify({ token: fixtureToken }),
-        },
-        false,
-        false,
-      ),
+      api.emailAlertLink("confirm-email", fixtureToken),
     ).rejects.toMatchObject({
       message: "This confirmation link expired or was already used.",
     });

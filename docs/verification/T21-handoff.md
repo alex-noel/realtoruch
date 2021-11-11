@@ -72,3 +72,24 @@ Final native bundles and public config are in ignored `.local/verification/T21/n
 
 - Native installation, platform association, Android Maps and actual OS link delivery are deferred to T22. No user-supplied domain or Maps key was provided.
 - No real mail, live provider requests, account creation outside the local synthetic test environment, cloud resources, push, deployment or publication were used.
+
+## Review after T19 integration
+
+On 2026-11-11 (CET), reviewed integration base `a30d1d5`. A native restore that rejects a revoked refresh token advances the session generation. Public listing detail and advert resolution now use the anonymous request option, so an otherwise valid lookup can finish after that session change and neither endpoint receives a bearer token. Saved-home membership still requires the active account, and seen remains a separate authenticated write for the canonical detail that opens.
+
+Link navigation now claims the same request counter as ordinary detail navigation before its first lookup. A stale response or failure cannot replace the newer home or show an obsolete link error. The rental desk also checks the account and detail request before opening a returned home, preserving its sign-out behavior with the now anonymous detail API.
+
+Email verification and email alert confirmation/unsubscribe authorize solely from the token in the request body. They now use the same anonymous request option and retain explicit user retry and fixed errors. A startup revocation cannot turn a successful, one-time token consumption into a misleading Retry link. Password reset keeps its existing session and cookie behavior.
+
+| Actual time (CET) | Command from `apps/mobile` | Result |
+| --- | --- | --- |
+| 23:39:19 | `npm run test:unit -- linking -t 'native startup'` before the transport change | Expected failure: one test rejected with “The account session changed”; 54 other cases filtered out. |
+| 23:40:05 | `npm run test:unit -- linking session` after the transport change | 75 passed, 0 failed, 0 skipped. |
+| 23:40–23:41 | `VERIFY_RUN_ID=t21-linking-race-baseline npm run test:e2e -- linking.spec.ts --project=desktop -g 'late push link'` before the navigation change | Expected failure: the selected card disappeared after the delayed push response. |
+| 23:41–23:42 | `VERIFY_RUN_ID=t21-linking-integrated npm run test:e2e -- linking.spec.ts` after the navigation change | 6 passed (3 desktop, 3 responsive mobile), 0 failed, 0 skipped. The newer card remains open and only its canonical ID is marked seen. |
+| 23:42:45 | `npm run test:unit` and `npm run typecheck` | 119 passed, 0 failed, 0 skipped; typecheck passed. |
+| 23:46:09 | `npm run test:unit -- linking -t 'after native session invalidation'` before the token transport change | Three expected failures: each successful token response was superseded; 55 other cases filtered out. |
+| 23:46:18 | `npm run test:unit` and `npm run typecheck` after all transport and navigation changes | 122 passed, 0 failed, 0 skipped; typecheck passed. Each token-only action completes once, with no Retry feedback or session changes beyond the simulated startup revocation. |
+| 23:47 | `VERIFY_RUN_ID=t21-linking-integrated-final npm run test:e2e -- linking.spec.ts` | 8 passed (4 desktop, 4 responsive mobile), 0 failed, 0 skipped. Late rental desk response after sign-out cannot open a detail. Zero retained or omitted traces. |
+
+The browser commands used the same pinned Chromium and loopback-only T18 harness as above. Unit coverage of the native startup race uses simulated SecureStore and HTTP responses. The previous placeholder export evidence is from the original T21 worktree; rerunning both platforms on the combined sprint build is deferred to T32. Installed-device link delivery and association remain T22 work.

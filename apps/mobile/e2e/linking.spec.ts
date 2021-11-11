@@ -37,18 +37,11 @@ async function register(page: Page, name: string) {
     .click();
 }
 
-test("protected alias resumes after login and warm push opens the same retained home", async ({
-  page,
-  context,
-}, info) => {
-  const blocked = await allowLoopback(context);
-  const alias = "old-saved-alias";
-  const canonical = "canonical-saved-home";
-  const title = "T21 retained fixture home";
-  const home: Listing = {
-    id: canonical,
+function fixtureHome(id: string, title: string, status = "active"): Listing {
+  return {
+    id,
     title,
-    description: "Synthetic retained fixture",
+    description: "Synthetic link fixture",
     city: "Kraków",
     district: "",
     region: "",
@@ -65,7 +58,7 @@ test("protected alias resumes after login and warm push opens the same retained 
     total_monthly_pln: null,
     advertiser_type: "private",
     property_type: "apartment",
-    status: "inactive",
+    status,
     images: [],
     amenities: [],
     is_demo: false,
@@ -75,6 +68,39 @@ test("protected alias resumes after login and warm push opens the same retained 
     risk_flags: [],
     sources: [],
   };
+}
+
+async function holdListing(page: Page, home: Listing) {
+  const url = `${API_URL}/v1/listings/${home.id}`;
+  let release!: () => void;
+  const delay = new Promise<void>((resolve) => { release = resolve; });
+  await page.route(url, async (route) => {
+    await delay;
+    await route.fulfill({ json: home });
+  });
+  return {
+    url,
+    release,
+    async respond() {
+      const response = page.waitForResponse(url);
+      release();
+      await (await response).finished();
+      await page.evaluate(() => new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ));
+    },
+  };
+}
+
+test("protected alias resumes after login and warm push opens the same retained home", async ({
+  page,
+  context,
+}, info) => {
+  const blocked = await allowLoopback(context);
+  const alias = "old-saved-alias";
+  const canonical = "canonical-saved-home";
+  const title = "T21 retained fixture home";
+  const home = fixtureHome(canonical, title, "inactive");
   const lookedUp: string[] = [];
   const markedSeen: string[] = [];
   await page.route(`${API_URL}/v1/listings/${alias}`, (route) => {
@@ -136,6 +162,108 @@ test("protected alias resumes after login and warm push opens the same retained 
     page.getByRole("heading", { name: "Welcome back." }),
   ).toHaveCount(0);
   expect(blocked).toEqual([]);
+});
+
+test("a late push link cannot replace a more recently opened card", async ({
+  page,
+  context,
+}, info) => {
+  const blocked = await allowLoopback(context);
+  const late = fixtureHome("late-push-home", "T21 delayed push home");
+  const card = fixtureHome("newer-card-home", "T21 newer card home");
+  const held = await holdListing(page, late);
+  const markedSeen: string[] = [];
+  await page.route(`${API_URL}/v1/listings?*`, (route) =>
+    route.fulfill({
+      json: { items: [card], total: 1, page: 1, page_size: 24, engine: "sql" },
+    }),
+  );
+  await page.route(`${API_URL}/v1/listings/${card.id}`, (route) =>
+    route.fulfill({ json: card }),
+  );
+  await page.route(`${API_URL}/v1/me/seen/*`, (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    markedSeen.push(id);
+    return route.fulfill({
+      json: { seen: true, listing_id: id, rent_pln: card.rent_pln },
+    });
+  });
+
+  try {
+    await page.goto("/", { waitUntil: "commit" });
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await register(page, `t21-late-push-${info.project.name}`);
+    await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+
+    const pending = page.waitForRequest(held.url);
+    await page.evaluate((listing_id) => {
+      navigator.serviceWorker.dispatchEvent(
+        new MessageEvent("message", { data: { type: "open-listing", listing_id } }),
+      );
+    }, late.id);
+    await pending;
+
+    await page.getByRole("button", { name: `View ${card.title}` }).click();
+    const detail = page.getByRole("dialog");
+    await expect(detail.getByText(card.title, { exact: true })).toBeVisible();
+    await expect.poll(() => markedSeen).toEqual([card.id]);
+
+    await held.respond();
+    await expect(detail.getByText(card.title, { exact: true })).toBeVisible();
+    expect(markedSeen).toEqual([card.id]);
+    expect(blocked).toEqual([]);
+  } finally {
+    held.release();
+  }
+});
+
+test("a rental desk lookup cannot open a detail after sign-out", async ({
+  page,
+  context,
+}, info) => {
+  const blocked = await allowLoopback(context);
+  const home = fixtureHome("late-owner-home", "T21 delayed rental desk home");
+  const held = await holdListing(page, home);
+  await page.route(`${API_URL}/v1/me/advertiser`, (route) =>
+    route.fulfill({
+      json: { profile: { id: "owner", name: "T21 owner", kind: "private", description: "" } },
+    }),
+  );
+  await page.route(`${API_URL}/v1/me/adverts`, (route) =>
+    route.fulfill({
+      json: {
+        items: [{
+          id: "owner-advert",
+          listing_id: home.id,
+          state: "published",
+          version: 1,
+          advert: home,
+        }],
+      },
+    }),
+  );
+
+  try {
+    await page.goto("/", { waitUntil: "commit" });
+    const account = page.getByRole("button", { name: "Account", exact: true });
+    const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+    await signIn.click();
+    await register(page, `t21-rental-desk-${info.project.name}`);
+    await account.click();
+    await page.getByRole("button", { name: "My rental adverts" }).click();
+
+    const pending = page.waitForRequest(held.url);
+    await page.getByRole("button", { name: "View home", exact: true }).click();
+    await pending;
+    await account.click();
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(signIn).toBeVisible();
+    await held.respond();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(blocked).toEqual([]);
+  } finally {
+    held.release();
+  }
 });
 
 test("account link errors are safe and retryable, with token fragments removed", async ({
