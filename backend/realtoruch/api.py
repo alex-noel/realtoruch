@@ -211,7 +211,9 @@ def sources(city: str = Query("", max_length=100), session=Depends(get_session))
 @app.get("/v1/me/favorites", tags=["Account"])
 def favorites(user_id=Depends(require_user), session=Depends(get_session)):
     homes = session.scalars(
-        select(Listing).join(Favorite).where(Favorite.user_id == user_id).order_by(Favorite.created_at.desc())
+        select(Listing).join(Favorite)
+        .where(Favorite.user_id == user_id, Listing.hidden.is_(False))
+        .order_by(Favorite.created_at.desc())
     ).all()
     return {"items": serialize_many(session, homes)}
 
@@ -223,7 +225,7 @@ def save_favorite(listing_id: str, user_id=Depends(require_user), session=Depend
     guard_account_write(session, user_id)
     listing_id = resolve_id(session, listing_id)
     home = session.get(Listing, listing_id)
-    if not home:
+    if not home or home.hidden:
         raise HTTPException(404, "Home not found")
     if not session.get(Favorite, (user_id, listing_id)):
         session.add(Favorite(user_id=user_id, listing_id=listing_id, price_floor=home.rent_pln))

@@ -14,9 +14,11 @@ from pydantic import HttpUrl
 from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
+from test_marketplace import account
 from test_service_integration import pg_engine  # noqa: F401 - disposable migrated schema fixture
 
 from realtoruch import api, indexing, search, search_transport
+from realtoruch.auth import validate_claims
 from realtoruch.db import get_session
 from realtoruch.ingest import ingest
 from realtoruch.models import CollectionRun, Listing, SourceListing, SourcePollState, now
@@ -107,6 +109,92 @@ def store(session, record):
     listing_id = ingest(session, record)["listing_id"]
     session.commit()
     return listing_id, serialize_many(session, [session.get(Listing, listing_id)])[0]
+
+
+@pytest.fixture(params=[
+    "sqlite",
+    pytest.param("postgres", marks=pytest.mark.skipif(
+        not os.getenv("TEST_POSTGRES_URL"), reason="Requires isolated PostgreSQL"
+    )),
+])
+def favorite_catalog(request):
+    engine = (
+        request.getfixturevalue("pg_engine")
+        if request.param == "postgres"
+        else request.getfixturevalue("session").get_bind()
+    )
+    return sessionmaker(engine, expire_on_commit=False)
+
+
+def test_favorites_hide_moderated_homes_but_retain_delisted_homes(
+    favorite_catalog, auth_client, record, monkeypatch
+):
+    moderator_id, moderator = account(auth_client, "favorites-moderator")
+    _, renter = account(auth_client, "favorites-renter")
+    monkeypatch.setattr(api.settings, "moderator_user_ids", moderator_id)
+    monkeypatch.setattr(api.app.state, "validate_claims", validate_claims, raising=False)
+
+    def rental_session():
+        with favorite_catalog() as session:
+            yield session
+
+    monkeypatch.setitem(api.app.dependency_overrides, get_session, rental_session)
+    with favorite_catalog.begin() as session:
+        home = ingest(session, record)["listing_id"]
+        alias = ingest(session, record.model_copy(update={
+            "external_id": "old-alias", "address": "Inna 89", "phone": None,
+        }))["listing_id"]
+        withdrawn = record.model_copy(update={
+            "external_id": "later-withdrawn", "address": "Osobna 49", "phone": None,
+        })
+        delisted = ingest(session, withdrawn)["listing_id"]
+    assert len({home, alias, delisted}) == 3
+
+    with TestClient(api.app) as client:
+        merge = client.post(
+            f"/v1/moderation/listings/{alias}/merge", headers=moderator,
+            json={"target_id": home, "reason": "Reviewed both offers as the same home."},
+        )
+        assert merge.status_code == 200, merge.text
+        for headers, listing_id in ((renter, home), (moderator, home), (renter, delisted)):
+            assert client.put(f"/v1/me/favorites/{listing_id}", headers=headers).status_code == 200
+        with favorite_catalog.begin() as session:
+            ingest(session, withdrawn.model_copy(update={
+                "status": "inactive", "observed_at": withdrawn.observed_at + timedelta(minutes=1),
+            }))
+
+        def review(action):
+            report = client.post(
+                f"/v1/listings/{home}/reports", headers=renter,
+                json={"reason": "Please review this synthetic listing."},
+            )
+            assert report.status_code == 201, report.text
+            result = client.post(
+                f"/v1/moderation/reports/{report.json()['id']}/review", headers=moderator,
+                json={"action": action, "reason": "Moderation review of the fixture."},
+            )
+            assert result.status_code == 200, result.text
+
+        def favorites(headers):
+            response = client.get("/v1/me/favorites", headers=headers)
+            assert response.status_code == 200, response.text
+            return {item["id"]: item["status"] for item in response.json()["items"]}
+
+        review("hide")
+        assert client.get(f"/v1/listings/{alias}").status_code == 404
+        hidden_favorites = favorites(renter)
+        assert client.delete(f"/v1/me/favorites/{alias}", headers=moderator).status_code == 200
+        hidden_saves = [
+            client.put(f"/v1/me/favorites/{listing_id}", headers=moderator).status_code
+            for listing_id in (home, alias)
+        ]
+        assert (hidden_favorites, hidden_saves) == ({delisted: "inactive"}, [404, 404])
+
+        review("restore")
+        assert favorites(renter) == {home: "active", delisted: "inactive"}
+        assert favorites(moderator) == {}
+        assert client.delete(f"/v1/me/favorites/{delisted}", headers=renter).status_code == 200
+        assert favorites(renter) == {home: "active"}
 
 
 def test_t12_upstream_private_fields_cannot_escape(session, record, client, monkeypatch):
