@@ -50,4 +50,11 @@ Stop or drain every writer before taking the paired snapshots: API, auth, collec
 
 In this fixture the paired recovery point is the recorded quiescence time; zero committed fixture writes through that point were lost. Every later write would be outside the recovery point. Backup elapsed time includes inventory and dump creation; restore elapsed time includes validation and inventory. Application recovery time also includes the restored API and worker checks. These local timings cover the tiny fixture and do not estimate production RPO or RTO. The drill does not exercise cloud restore, production roles or production cutover.
 
+Measured on 2026-11-11 UTC from clean revision `66a6546`, on macOS 15.7.7 ARM64 with Python 3.12.9. Each run used two accounts, two owned adverts, five source listings, nine observations and one private message. PostgreSQL used the cached x86_64 PostgreSQL 16.15 image; SQLite was 3.50.2.
+
+| Run | Quiescent recovery point (UTC) | Backup | Pair restore | Restore plus application and worker checks |
+| --- | --- | ---: | ---: | ---: |
+| `t27-final-sqlite` | `22:18:11.204` | 0.004 s | 0.007 s | 0.231 s |
+| `t27-final-postgres` | `22:18:15.559` | 1.003 s | 1.617 s | 2.223 s |
+
 Raw SQL backups, manifests, source files and `.eml` previews stay in the ignored run directory. Restrict access to the local operator, use encrypted storage for operational backups, and set and enforce a retention period for copies, logs, and mail previews. The drill uses filesystem permissions; it does not encrypt files. Keep raw files out of Git, shared logs, and ordinary handoffs. Rebuild the derived search projection from restored SQL into a new index before a real cutover; an existing search index can contain revisions newer than the SQL recovery point.
