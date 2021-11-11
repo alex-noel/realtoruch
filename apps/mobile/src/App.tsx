@@ -48,7 +48,7 @@ import {
 import { c, font, s } from "./theme";
 import { Button, Chip, Field, Panel, money } from "./components/UI";
 import { ListingCard } from "./components/ListingCard";
-import PropertyMap from "./components/PropertyMap";
+import PropertyMap from "./components/DeferredPropertyMap";
 import {
   AuthDialog,
   CompareDialog,
@@ -565,12 +565,16 @@ function RentalApp() {
         accessibilityRole="button"
         accessibilityLabel={title}
         accessibilityState={{ selected: tab === id }}
+        {...(Platform.OS === "web"
+          ? { "aria-current": tab === id ? "page" : undefined }
+          : {})}
         onPress={() => setTab(id)}
         style={[
           s.row,
           {
             gap: 13,
             padding: compact ? 12 : 15,
+            maxWidth: "100%",
             borderLeftWidth: compact ? 0 : 2,
             borderLeftColor: tab === id ? "#BCCDA4" : "transparent",
             backgroundColor:
@@ -589,6 +593,7 @@ function RentalApp() {
               fontSize: 12,
               fontWeight: tab === id ? "600" : "400",
               fontFamily: font,
+              flexShrink: 1,
             }}
           >
             {title}
@@ -644,6 +649,7 @@ function RentalApp() {
                   fontSize: 23,
                   fontWeight: "600",
                   letterSpacing: -1,
+                  flexShrink: 1,
                 }}
               >
                 realtoruch<Text style={{ color: "#B7CA9E" }}>.</Text>
@@ -653,7 +659,7 @@ function RentalApp() {
               style={[
                 s.label,
                 {
-                  color: "#718F7E",
+                  color: "#A2BAAC",
                   marginLeft: 28,
                   marginBottom: 15,
                   fontSize: 9,
@@ -700,7 +706,7 @@ function RentalApp() {
               <ArrowUpRight size={12} color="#A6B8A7" />
             </Pressable>
             <View style={{ height: 1, backgroundColor: "#355143" }} />
-            <Text style={{ color: "#728D7C", fontSize: 10 }}>
+            <Text style={{ color: "#A2BAAC", fontSize: 10 }}>
               Made for finding home.
             </Text>
           </View>
@@ -711,11 +717,13 @@ function RentalApp() {
           style={[
             s.row,
             {
-              height: 76,
+              minHeight: 76,
+              paddingVertical: 12,
               paddingHorizontal: mobile ? 20 : 36,
               borderBottomWidth: 1,
               borderColor: c.line,
               justifyContent: "space-between",
+              flexWrap: "wrap",
               gap: 12,
             },
           ]}
@@ -749,7 +757,7 @@ function RentalApp() {
                 <Text
                   style={[
                     s.label,
-                    { color: "#8D7450", fontSize: 9, letterSpacing: 0.7 },
+                    { color: "#735B39", fontSize: 9, letterSpacing: 0.7 },
                   ]}
                 >
                   DEMO CATALOG
@@ -787,6 +795,7 @@ function RentalApp() {
                 borderBottomWidth: 1,
                 borderColor: c.line,
                 justifyContent: "space-around",
+                flexWrap: "wrap",
                 backgroundColor: "white",
               },
             ]}
@@ -890,7 +899,7 @@ function RentalApp() {
                       {search.filters.city} · {search.new_matches} unread
                       matches{search.filters.polygon ? " · Drawn area" : ""}
                     </Text>
-                    <View style={[s.row, { gap: 12 }]}>
+                    <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>
                       <Button
                         onPress={() => {
                           changeFilters(search.filters);
@@ -1027,7 +1036,7 @@ function RentalApp() {
                     <View
                       style={[
                         s.row,
-                        { flex: 1, gap: 12, paddingHorizontal: 18 },
+                        { flex: 1, minWidth: 0, gap: 12, paddingHorizontal: 18 },
                       ]}
                     >
                       <Search size={18} color={c.muted} />
@@ -1043,6 +1052,7 @@ function RentalApp() {
                         placeholderTextColor={c.muted}
                         style={{
                           flex: 1,
+                          minWidth: 0,
                           fontFamily: font,
                           color: c.ink,
                           fontSize: 12,
@@ -1213,7 +1223,10 @@ function RentalApp() {
                 ]}
               >
                 <View style={[s.row, { gap: 9 }]}>
-                  <Text style={[s.text, { fontWeight: "600", fontSize: 16 }]}>
+                  <Text
+                    aria-live="polite"
+                    style={[s.text, { fontWeight: "600", fontSize: 16, flexShrink: 1 }]}
+                  >
                     {tab === "saved"
                       ? `${favorites.length} saved homes`
                       : result
@@ -1225,7 +1238,7 @@ function RentalApp() {
                   )}
                 </View>
                 {tab === "discover" && (
-                  <View style={[s.row, { gap: 14 }]}>
+                  <View style={[s.row, { gap: 14, flexWrap: "wrap" }]}>
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel="Change sort order"
@@ -1278,6 +1291,13 @@ function RentalApp() {
                               view === mode ||
                               (mode === "list" && !desktop && view === "split"),
                           }}
+                          {...(Platform.OS === "web"
+                            ? {
+                                "aria-pressed":
+                                  view === mode ||
+                                  (mode === "list" && !desktop && view === "split"),
+                              }
+                            : {})}
                           style={{
                             padding: 10,
                             backgroundColor:
@@ -1302,7 +1322,7 @@ function RentalApp() {
                     </Text>
                   )}
                   {result && (
-                    <Text accessibilityLiveRegion="polite" style={s.muted}>
+                    <Text aria-live="polite" style={s.muted}>
                       Showing previous results loaded {resultAge(result.receivedAt)}.
                     </Text>
                   )}
@@ -1378,7 +1398,10 @@ function RentalApp() {
                       ))}
                       {tab === "discover" && currentPage && total > pageSize && (
                         <View
-                          style={[s.row, { justifyContent: "space-between" }]}
+                          style={[
+                            s.row,
+                            { justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
+                          ]}
                         >
                           <Button
                             outline
@@ -1516,7 +1539,7 @@ function RentalApp() {
                       s.text,
                       {
                         fontWeight: "700",
-                        color: "#929A90",
+                        color: c.muted,
                         fontSize: 14,
                         letterSpacing: -0.4,
                       },
@@ -1542,6 +1565,7 @@ function RentalApp() {
                 paddingHorizontal: 24,
                 paddingVertical: 12,
                 justifyContent: "space-between",
+                flexWrap: "wrap",
                 gap: 14,
                 backgroundColor: c.green,
               },
@@ -1551,7 +1575,7 @@ function RentalApp() {
               {comparison.length} {comparison.length === 1 ? "home" : "homes"}{" "}
               to compare
             </Text>
-            <View style={[s.row, { gap: 15 }]}>
+            <View style={[s.row, { gap: 15, flexWrap: "wrap" }]}>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => setComparison([])}

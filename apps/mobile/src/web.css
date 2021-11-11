@@ -17,11 +17,41 @@ button,
   touch-action: manipulation;
 }
 :focus-visible {
-  outline: 2px solid #d77343 !important;
-  outline-offset: 3px;
+  outline: 2px solid #9b3f21 !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #fff;
 }
-input {
-  outline-offset: -2px;
+input:focus-visible,
+textarea:focus-visible {
+  outline-offset: -3px;
+}
+.app-dialog {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+}
+.app-dialog[open] {
+  display: flex;
+}
+.app-dialog::backdrop {
+  background: transparent;
+}
+[data-testid="listing-photo"] {
+  display: block;
+  width: 100%;
+  object-fit: cover;
+}
+/* User-entered titles, descriptions and message bodies can contain long words. */
+[dir="auto"] {
+  overflow-wrap: anywhere;
 }
 .leaflet-container {
   font-family:
