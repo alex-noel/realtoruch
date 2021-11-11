@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Image,
+  Platform,
   Pressable,
   Text,
   View,
@@ -17,6 +18,48 @@ import ShieldAlert from "lucide-react-native/icons/shield-alert";
 import { Listing } from "../types";
 import { c, s } from "../theme";
 import { money } from "./UI";
+
+export function ListingPhoto({
+  uri,
+  alt,
+  width,
+  height,
+  fill = false,
+}: {
+  uri: string;
+  alt: string;
+  width: number;
+  height: number;
+  fill?: boolean;
+}) {
+  if (Platform.OS === "web")
+    return (
+      <img
+        data-testid="listing-photo"
+        src={uri}
+        alt={alt}
+        width={width}
+        height={height}
+        loading="lazy"
+        decoding="async"
+        style={
+          fill ? { position: "absolute", inset: 0, height: "100%" } : undefined
+        }
+      />
+    );
+  return (
+    <Image
+      source={{ uri }}
+      accessibilityLabel={alt}
+      style={{
+        width: "100%",
+        height: fill ? "100%" : height,
+        position: fill ? "absolute" : "relative",
+      }}
+      resizeMode="cover"
+    />
+  );
+}
 
 export function ListingCard({
   home,
@@ -45,7 +88,6 @@ export function ListingCard({
         {
           borderColor: selected ? c.green : c.line,
           flexDirection: compact ? "column" : "row",
-          overflow: "hidden",
         },
       ]}
     >
@@ -54,22 +96,24 @@ export function ListingCard({
         accessibilityLabel={`View ${home.title}`}
         onPress={onOpen}
         style={{
-          width: compact ? "100%" : 196,
+          width: compact ? "100%" : "34%",
+          maxWidth: compact ? "100%" : 196,
           height: compact ? 210 : undefined,
           minHeight: compact ? 210 : 202,
           backgroundColor: c.pale,
         }}
       >
         {home.images[0] ? (
-          <Image
-            source={{ uri: home.images[0] }}
-            accessibilityLabel={
+          <ListingPhoto
+            uri={home.images[0]}
+            alt={
               home.is_demo
                 ? "Illustrative apartment interior"
                 : `Photo of ${home.title}`
             }
-            style={{ width: "100%", height: "100%", position: "absolute" }}
-            resizeMode="cover"
+            width={compact ? 400 : 196}
+            height={compact ? 210 : 202}
+            fill
           />
         ) : (
           <View
@@ -79,26 +123,6 @@ export function ListingCard({
             <Text style={s.muted}>No photo available</Text>
           </View>
         )}
-        <View
-          style={{
-            position: "absolute",
-            top: 12,
-            left: 12,
-            backgroundColor: "#FFFFFFED",
-            paddingHorizontal: 8,
-            paddingVertical: 5,
-          }}
-        >
-          <Text
-            style={[s.label, { color: c.ink, fontSize: 9, letterSpacing: 0.5 }]}
-          >
-            {home.advertiser_type === "private"
-              ? "DIRECT OFFER"
-              : home.advertiser_type === "agency"
-                ? "AGENCY"
-                : "TYPE UNCONFIRMED"}
-          </Text>
-        </View>
         <View
           style={{
             position: "absolute",
@@ -118,25 +142,33 @@ export function ListingCard({
           </Text>
         </View>
       </Pressable>
-      <View style={{ flex: 1, padding: 19, gap: 10 }}>
-        {home.status !== "active" || seen ? (
-          <View style={[s.row, { gap: 8 }]}>
-            {home.status !== "active" ? (
-              <Text style={[s.label, { color: c.warning }]}>
-                {home.status === "inactive"
-                  ? "DELISTED"
-                  : "AVAILABILITY UNCONFIRMED"}
-              </Text>
-            ) : null}
-            {seen ? (
-              <Text style={[s.label, { color: c.muted }]}>SEEN</Text>
-            ) : null}
-          </View>
-        ) : null}
-        <View style={[s.row, { justifyContent: "space-between", gap: 8 }]}>
-          <View style={[s.row, { gap: 5, flex: 1 }]}>
+      <View style={{ flex: 1, minWidth: 0, padding: 19, gap: 10 }}>
+        <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
+          <Text style={[s.label, { color: c.green }]}>
+            {home.advertiser_type === "private"
+              ? "DIRECT OFFER"
+              : home.advertiser_type === "agency"
+                ? "AGENCY"
+                : "TYPE UNCONFIRMED"}
+          </Text>
+          {home.status !== "active" && (
+            <Text style={[s.label, { color: c.warning }]}>
+              {home.status === "inactive"
+                ? "DELISTED"
+                : "AVAILABILITY UNCONFIRMED"}
+            </Text>
+          )}
+          {seen && <Text style={s.label}>SEEN</Text>}
+        </View>
+        <View
+          style={[
+            s.row,
+            { justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
+          ]}
+        >
+          <View style={[s.row, { gap: 5, minWidth: 0, flexShrink: 1 }]}>
             <MapPin size={11} color={c.muted} />
-            <Text numberOfLines={1} style={[s.muted, { fontSize: 11 }]}>
+            <Text style={[s.muted, { fontSize: 11, flexShrink: 1 }]}>
               {[home.district, home.city].filter(Boolean).join(", ")}
             </Text>
           </View>
@@ -145,19 +177,22 @@ export function ListingCard({
             accessibilityLabel={
               saved ? `Unsave ${home.title}` : `Save ${home.title}`
             }
+            accessibilityState={{ selected: saved }}
+            {...(Platform.OS === "web" ? { "aria-pressed": saved } : {})}
             onPress={onSave}
             hitSlop={10}
+            style={[s.row, { padding: 4, gap: 4 }]}
           >
             <Heart
               size={18}
               color={saved ? c.orange : c.muted}
               fill={saved ? c.orange : "none"}
             />
+            {saved && <Text style={[s.muted, { fontSize: 11 }]}>Saved</Text>}
           </Pressable>
         </View>
         <Pressable onPress={onOpen} accessibilityRole="button">
           <Text
-            numberOfLines={2}
             style={[
               s.text,
               {
@@ -171,13 +206,11 @@ export function ListingCard({
             {home.title}
           </Text>
         </Pressable>
-        <View style={[s.row, { gap: 12 }]}>
+        <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
           <Text style={[s.text, { fontSize: 12 }]}>{home.area_m2} m²</Text>
-          <Text style={{ color: c.line }}>│</Text>
           <Text style={[s.text, { fontSize: 12 }]}>
             {home.rooms} {home.rooms === 1 ? "room" : "rooms"}
           </Text>
-          <Text style={{ color: c.line }}>│</Text>
           <Text style={[s.muted, { fontSize: 11 }]}>
             {home.floor === null ? "Floor n/a" : `Floor ${home.floor}`}
           </Text>
@@ -185,7 +218,12 @@ export function ListingCard({
         <View
           style={[
             s.row,
-            { justifyContent: "space-between", marginTop: 2, gap: 8 },
+            {
+              justifyContent: "space-between",
+              marginTop: 2,
+              gap: 8,
+              flexWrap: "wrap",
+            },
           ]}
         >
           <View>
@@ -208,12 +246,17 @@ export function ListingCard({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Compare ${home.title}`}
+            accessibilityState={{ selected: compared }}
+            {...(Platform.OS === "web" ? { "aria-pressed": compared } : {})}
             onPress={onCompare}
             style={{
               padding: 8,
               borderWidth: 1,
               borderColor: compared ? c.green : c.line,
               backgroundColor: compared ? c.pale : "white",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
             }}
           >
             {compared ? (
@@ -221,13 +264,14 @@ export function ListingCard({
             ) : (
               <Plus size={14} color={c.ink} />
             )}
+            {compared && (
+              <Text style={[s.muted, { fontSize: 11 }]}>Compared</Text>
+            )}
           </Pressable>
         </View>
         <View style={[s.row, { gap: 5, marginTop: 2 }]}>
-          {home.risk_flags.length ? (
+          {!!home.risk_flags.length && (
             <ShieldAlert color={c.warning} size={12} />
-          ) : (
-            <Check color={c.green} size={12} />
           )}
           <Text
             style={[
@@ -239,11 +283,14 @@ export function ListingCard({
               },
             ]}
           >
-            {home.risk_flags.length
-              ? "Advertiser details worth checking"
+            {home.commission_pln === null
+              ? "Commission not stated"
               : home.commission_pln === 0
-                ? "No commission stated"
-                : "See source fees"}
+                ? "No commission"
+                : `Commission: ${money(home.commission_pln)}`}
+            {home.risk_flags.length
+              ? " · Advertiser details worth checking"
+              : ""}
           </Text>
           <Pressable
             accessibilityRole="button"

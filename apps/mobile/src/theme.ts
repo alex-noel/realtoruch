@@ -3,11 +3,11 @@ export const c = {
   bg: "#F6F6F1",
   paper: "#FFFFFF",
   ink: "#172D2A",
-  muted: "#78817B",
+  muted: "#536259",
   line: "#E0E5DD",
   green: "#234D3D",
   pale: "#E9EEE4",
-  orange: "#D77343",
+  orange: "#A84625",
   cream: "#F0E9D8",
   warning: "#935C2F",
 };
@@ -63,7 +63,7 @@ export const s = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: c.line,
+    borderColor: "#7A897F",
     paddingHorizontal: 14,
     paddingVertical: 12,
     color: c.ink,
