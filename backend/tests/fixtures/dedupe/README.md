@@ -1,0 +1,9 @@
+# T09 synthetic duplicate identity evaluation
+
+`pairs.jsonl` is a frozen, authored synthetic benchmark. Each pair has stable ID, explicit truth label, rationale, scenario family, split, provenance and synthetic evidence inputs. It contains 220 pairs: 80 `same_home`, 100 `different_home`, and 40 `ambiguous`. No row was labelled from matching output; labels encode the documented scenario ground truth before running the evaluator.
+
+Scenario-family partitions are fixed in `scripts/evaluate_dedupe.py`: `same_home_repost`, `morizon_gratka`, `address_image`, `stock_photo` and `missing_address_location` are development families; `resized_image_url`, `shared_agency_phone`, `unit_floor_conflict`, `city_conflict`, `room_area_boundary`, and `building_no_unit` are holdout families. Both partitions contain positive, negative, and ambiguous examples. All variants of a family remain on one side. The holdout is frozen for later T10 evaluation; no T10 threshold tuning is in this task.
+
+All phone evidence is deterministic synthetic keyed data and all image URLs use reserved `.test` names. There are no actual phone numbers, portal captures, user records, or downloaded photos. Provenance marks each authored synthetic scenario. Each pair has an individually written rationale containing its synthetic instance evidence. Rows vary the synthetic listing identity and evidence instance within a documented family; they are not represented as independently observed real listings.
+
+Run with `PYTHONPATH=backend .venv/bin/python scripts/evaluate_dedupe.py`. The script validates schema, family split, label counts and raw contact absence, then calls the production `realtoruch.dedupe.matching_property`. Its sequence report exercises production `realtoruch.ingest.ingest` with in-memory SQLite, including canonical count and AlertEvent suppression. This report measures only deterministic behavior on this designed fixture, not live-market accuracy.
