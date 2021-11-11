@@ -360,3 +360,9 @@ class IdentityDecision(Base):
     action: Mapped[str] = mapped_column(String(20))
     reason: Mapped[str] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class AccountClosure(Base):
+    """Opaque, durable guard against stale authorized requests."""
+    __tablename__ = "account_closures"
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)

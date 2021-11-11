@@ -48,6 +48,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 install_http(app)
+from .account_data import guard_account_write, router as account_data_router
+app.include_router(account_data_router)
 from .email_alerts import router as email_router
 from .marketplace import router as marketplace_router
 from .identity_review import resolve_id, router as identity_router
@@ -181,6 +183,7 @@ def favorites(user_id=Depends(require_user), session=Depends(get_session)):
 def save_favorite(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
     from .ingest import lock_identity
     lock_identity(session, shared=True)
+    guard_account_write(session, user_id)
     listing_id = resolve_id(session, listing_id)
     home = session.get(Listing, listing_id)
     if not home:
@@ -200,6 +203,7 @@ def save_favorite(listing_id: str, user_id=Depends(require_user), session=Depend
 def remove_favorite(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
     from .ingest import lock_identity
     lock_identity(session, shared=True)
+    guard_account_write(session, user_id)
     listing_id = resolve_id(session, listing_id)
     favorite = session.get(Favorite, (user_id, listing_id))
     if favorite:
@@ -218,6 +222,7 @@ class SaveSearchBody(BaseModel):
 def save_search(body: SaveSearchBody, user_id=Depends(require_user), session=Depends(get_session)):
     from .ingest import lock_identity
     lock_identity(session, shared=True)
+    guard_account_write(session, user_id)
     if (
         session.scalar(select(func.count()).select_from(SavedSearch).where(SavedSearch.user_id == user_id))
         >= 30
@@ -264,6 +269,7 @@ def saved_searches(user_id=Depends(require_user), session=Depends(get_session)):
 
 @app.delete("/v1/me/searches/{search_id}", tags=["Account"])
 def delete_search(search_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    guard_account_write(session, user_id)
     search = session.get(SavedSearch, search_id)
     if not search or search.user_id != user_id:
         raise HTTPException(404, "Search not found")
@@ -276,6 +282,7 @@ def delete_search(search_id: str, user_id=Depends(require_user), session=Depends
 def mark_seen(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
     from .ingest import lock_identity
     lock_identity(session, shared=True)
+    guard_account_write(session, user_id)
     listing_id = resolve_id(session, listing_id)
     home = session.get(Listing, listing_id)
     if not home:
@@ -336,6 +343,7 @@ def notifications(
 
 @app.put("/v1/me/notifications/{notification_id}/read", tags=["Account"])
 def read_notification(notification_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    guard_account_write(session, user_id)
     item = session.get(Notification, notification_id)
     if not item or item.user_id != user_id:
         raise HTTPException(404, "Notification not found")
@@ -356,6 +364,7 @@ def notification_config():
 
 @app.post("/v1/me/push-subscriptions", tags=["Account"])
 def subscribe_push(body: PushBody, user_id=Depends(require_user), session=Depends(get_session)):
+    guard_account_write(session, user_id)
     import hashlib
 
     if body.kind == "web" and not notification_config()["web_push_enabled"]:
@@ -383,6 +392,7 @@ def subscribe_push(body: PushBody, user_id=Depends(require_user), session=Depend
 
 @app.delete("/v1/me/push-subscriptions/{subscription_id}", tags=["Account"])
 def unsubscribe_push(subscription_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    guard_account_write(session, user_id)
     item = session.get(PushSubscription, subscription_id)
     if not item or item.user_id != user_id:
         raise HTTPException(404, "Subscription not found")
@@ -400,6 +410,7 @@ class ReportBody(BaseModel):
 def report(listing_id: str, body: ReportBody, user_id=Depends(require_user), session=Depends(get_session)):
     from .ingest import lock_identity
     lock_identity(session, shared=True)
+    guard_account_write(session, user_id)
     listing_id = resolve_id(session, listing_id)
     if not session.get(Listing, listing_id):
         raise HTTPException(404, "Home not found")
@@ -434,9 +445,17 @@ def erase_account_data(user_id: str, session=Depends(get_session)):
     from .models import Advert, AdvertiserProfile, Conversation, Message
     from .marketplace import publish_observation
 
+    from .ingest import lock_identity
+    lock_identity(session)
+    guard_account_write(session, user_id, closing=True)
+
+    # T16 replies lock the conversation before inspecting/inserting messages.
+    # Match that order, including when the other participant is still active.
     conversations = select(Conversation.id).where(
         (Conversation.renter_id == user_id) | (Conversation.owner_id == user_id)
     )
+    for _ in session.scalars(conversations.order_by(Conversation.id).with_for_update()).yield_per(100):
+        pass
     session.execute(
         delete(Message).where(Message.conversation_id.in_(conversations)),
         execution_options={"synchronize_session": False},
@@ -447,7 +466,10 @@ def erase_account_data(user_id: str, session=Depends(get_session)):
     )
     for advert in session.scalars(select(Advert).where(Advert.user_id == user_id).with_for_update()):
         if advert.listing_id:
-            advert.draft = {**advert.draft, "title": "Withdrawn listing", "description": "", "images": []}
+            advert.draft = {
+                **advert.draft, "title": "Withdrawn listing", "description": "", "address": "",
+                "lat": None, "lon": None, "images": [],
+            }
             publish_observation(session, advert, session.get(AdvertiserProfile, user_id), "inactive")
         session.delete(advert)
     session.flush()

@@ -388,6 +388,23 @@ def me(claims=Depends(require_claims)):
     return {"id": claims["sub"], "email": claims["email"], "email_verified": claims["email_verified"]}
 
 
+@app.post("/v1/auth/reauthenticate")
+def reauthenticate(body: PasswordBody, response: Response, claims=Depends(require_claims)):
+    with AuthSession() as session:
+        user = session.get(User, claims["sub"])
+        check_password(user, body.password)
+    issued = now()
+    value = jwt.encode(
+        {"sub": claims["sub"], "sid": claims["sid"], "purpose": "account_export",
+         "iss": settings.jwt_issuer, "aud": "realtoruch-account-export",
+         "iat": issued, "exp": issued + timedelta(minutes=5)},
+        settings.jwt_private_key.replace("\\n", "\n") or settings.jwt_secret,
+        algorithm="RS256" if settings.jwt_private_key else "HS256",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"export_token": value, "expires_in": 300}
+
+
 @app.post("/v1/auth/logout")
 def logout(response: Response, claims=Depends(require_claims)):
     with AuthSession.begin() as session:

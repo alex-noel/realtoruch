@@ -201,7 +201,7 @@ def test_t16_tc02_concurrent_acknowledgements_cannot_regress(inbox, engine):
         if sql.startswith("UPDATE conversations SET") and not at_update.is_set():
             at_update.set()
             assert release.wait(5), "newer acknowledgement was not released"
-        if at_update.is_set() and (sql == "BEGIN IMMEDIATE" or "FOR UPDATE" in sql):
+        if at_update.is_set() and (sql == "BEGIN IMMEDIATE" or "FOR UPDATE" in sql or "pg_advisory_xact_lock" in sql):
             at_second_lock.set()
 
     event.listen(engine, "before_cursor_execute", pause_after_lock)
