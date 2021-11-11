@@ -326,6 +326,15 @@ class SourcePollState(Base):
     retry_after: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     failures: Mapped[int] = mapped_column(Integer, default=0)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_allowed_request: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class CollectionFetchState(Base):
+    __tablename__ = "collection_fetch_state"
+    source: Mapped[str] = mapped_column(String(40), primary_key=True)
+    url_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_listing_id: Mapped[str] = mapped_column(ForeignKey("source_listings.id", ondelete="CASCADE"))
+    validators: Mapped[dict] = mapped_column(JSON)
 
 
 class ListingAlias(Base):
