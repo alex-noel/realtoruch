@@ -33,8 +33,8 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 | T17 | VERIFIED | gpt-6.1-sol | high | T14, T16 |
 | T18 | VERIFIED | gpt-6.1-terra | high | T01, T14, T02 |
 | T19 | VERIFIED | gpt-6.1-sol | high | T03, T14 |
-| T20 | IN_PROGRESS | gpt-6.1-sol | high | T17, T19, T18 |
-| T21 | IN_REVIEW | gpt-6.1-sol | high | T14 |
+| T20 | VERIFIED | gpt-6.1-sol | high | T17, T19, T18 |
+| T21 | VERIFIED | gpt-6.1-sol | high | T14 |
 | T25 | IN_PROGRESS | gpt-6.1-terra | high | T08, T11, T12 |
 | T26 | VERIFIED | gpt-6.1-sol | medium | T03, T08, T13 |
 | T27 | VERIFIED | gpt-6.1-sol | high | T11, T15 |
@@ -73,3 +73,5 @@ T28 is integrated at `a2f53d5`; root verification passed 189 real-service tests 
 T19 is accepted at `7c8894b`: the broad browser run passed 14 cases and exposed a missing expansion attribute in two narrow-screen cases; the correction passed both focused cases. T28 is accepted at `eceb19d` after an actual-role retention regression verified its narrow maintenance grants. T27 is integrated at `ac23172` after ownership, recovery and erasure review; its combined worker profile passed 190 real-service tests without skips. T20 and T21 are active. T25 now uses equally analyzed fresh catalogs: baseline search targets pass, while history remains over target; the matched aggregate optimization is being measured. Final integration will repeat the complete profiles on the combined candidate.
 
 T08’s remaining reference gate passed on clean `a30d1d5`: all test work ran inside a measured four-CPU/eight-GiB container budget, and 100 changed homes converged in 0.431287 seconds. T21 is integrated at that commit with 118 combined frontend unit passes; worker D is correcting reproduced cold-link/session and slow-link/navigation races before final acceptance. T20’s timed browser budget passes; its final accessibility regression continues. T25 history remains above target and is receiving measured SQL-plan improvements.
+
+The user explicitly authorized GitHub push; `cf7b146` now matches `origin/codex/core-sprint-2026-11`. Hosted run `43115090311` passed real services, web and native bundle jobs, but the offline job found one T08 test fixture made obsolete by T12 title sanitization. A test-only correction is pending its focused check. T20 is locally accepted after all 28 worker browser cases; T21 integration races passed 122 units and eight browser cases. The Gratka mixed-route compatibility fix is integrated at `3db8927` after private-capture replay and 110 portal/connector tests; current pinned soak evidence remains on the earlier parser. T25 final native matched capacity validation is in progress.

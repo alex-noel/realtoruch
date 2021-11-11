@@ -92,16 +92,19 @@ def test_profile_edit_revises_public_payload_and_excludes_secrets(session, recor
         assert secret not in payload
 
 
-def test_oversized_document_is_recorded_without_starving_later_work(tmp_path, record):
+def test_oversized_document_is_recorded_without_starving_later_work(tmp_path, record, monkeypatch):
     from realtoruch.models import Listing, now
-    from realtoruch.indexing import MAX_BYTES
+    from realtoruch import indexing
+    # Public titles are capped at 240 characters. Exercise the transport limit
+    # with a valid public description and a smaller per-test byte budget.
+    monkeypatch.setattr(indexing, 'MAX_BYTES', 16 * 1024)
     engine = create_engine('sqlite:///' + str(tmp_path / 'large.db'))
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     with factory.begin() as session:
         for i in range(101):
-            listing = Listing(id=f'{i:03}', title='x' * MAX_BYTES if i == 0 else 'ok',
-                description='', city='Warszawa', district='', region='', address='', area_m2=55,
+            listing = Listing(id=f'{i:03}', title='ok',
+                description='x' * 20_000 if i == 0 else '', city='Warszawa', district='', region='', address='', area_m2=55,
                 rooms=2, rent_pln=4200, advertiser_type='private', property_type='apartment',
                 status='active', amenities=[], images=[], risk_flags=[], risk_score=0, is_demo=False)
             session.add(listing)
