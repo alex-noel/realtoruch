@@ -3,7 +3,7 @@
 ## Identity and outcome
 
 - Task T19
-- Status IMPLEMENTED_LOCAL. The browser profile is pending the run window coordinated with T25.
+- Status VERIFIED locally after parent integration review and browser correction. Installed native behavior remains unverified.
 - Reviewed base `3bec9db82dff9747e5c65f6e28edd608b0c224d6`.
 - Implementation commit accompanies this report, created with `python3 scripts/commit.py`.
 - Work and unit verification took place on 2026-11-11, Europe/Warsaw (CET, UTC+01:00).
@@ -23,21 +23,21 @@
 
 | AC ID | Status | Test cases | Evidence |
 | --- | --- | --- | --- |
-| T19-AC01 | PASS | TC01, TC02 | Unit cases check fixed copy for all state categories and no exception detail in the view model. Browser rendering check pending. |
+| T19-AC01 | PASS | TC01, TC02 | Unit cases check fixed copy for all state categories and no exception detail in the view model. Mounted rendering passed in the parent browser checks. |
 | T19-AC02 | PASS | TC01, TC02 | Unit checks stale previous success, inclusive freshness boundary, invalid cadence, impossible/missing/future times and disabled OLX with one stored advert. |
-| T19-AC03 | PASS | TC03, TC04 | Independent request generations reject late Kraków results and status in unit barriers. The mounted browser check is pending. |
-| T19-AC04 | PASS | TC04, TC05 | Unit checks one batch of 50 and batches of 100/100/1 for 201 unique IDs, cleanup before/after dispatch and late authenticated response fencing. The mounted browser check is pending. |
-| T19-AC05 | NOT_RUN | TC05, TC06 | Unit verifies logout supersedes late private batches while a public search completes, plus retained-age formatting. Offline/retry UI and mounted logout verification are pending. |
-| T19-AC06 | NOT_RUN | TC06 | Keyboard, accessible names and no horizontal overflow at 320 px are in the pending browser run. No runtime dependency added. |
+| T19-AC03 | PASS | TC03, TC04 | Independent request generations reject late Kraków results and status in unit barriers. The mounted browser check passed in the parent run. |
+| T19-AC04 | PASS | TC04, TC05 | Unit checks one batch of 50 and batches of 100/100/1 for 201 unique IDs, cleanup before/after dispatch and late authenticated response fencing. The mounted browser check passed in the parent run. |
+| T19-AC05 | PASS | TC05, TC06 | Unit and parent browser checks verify late private state is fenced on logout, public filters/results remain, and offline results retain an age and usable retry. |
+| T19-AC06 | PASS, web | TC06 | Parent Chromium checks passed keyboard retry, timestamps, expanded state and zero horizontal document overflow at 320 px. No runtime dependency added. |
 
 | Test case | Status | Evidence |
 | --- | --- | --- |
 | T19-TC01 | PASS | 10:00 success with one-hour cadence, 12:00 failure and 12:01 clock produces failed/delayed with separate timestamps. |
 | T19-TC02 | PASS | Disabled OLX with one stored advert and no health shows unavailable automatic collection and unknown freshness. |
-| T19-TC03 | PASS | Separate signal and generation barriers accept Warszawa then release late Kraków. Mounted App browser run pending. |
-| T19-TC04 | PASS | Fake clock issues one search at 250 ms after the twentieth edit and one 50-ID read. Mounted App browser run pending. |
-| T19-TC05 | PASS | Scheduler cleanup suppresses pending/late callbacks and logout fences a late private request. Mounted App browser run pending. |
-| T19-TC06 | NOT_RUN | The Playwright spec is checked in for offline retry, timestamps, accessible roles and viewport width. Browser run pending. |
+| T19-TC03 | PASS | Separate signal and generation barriers accept Warszawa then release late Kraków. Mounted App browser checks passed. |
+| T19-TC04 | PASS | Fake clock issues one search at 250 ms after the twentieth edit and one 50-ID read. Mounted App browser checks passed. |
+| T19-TC05 | PASS | Scheduler cleanup suppresses pending/late callbacks and logout fences a late private request. Mounted App browser checks passed. |
+| T19-TC06 | PASS | The parent targeted browser run passed offline retry, timestamps, accessible expanded state and viewport width in both profiles. |
 
 ## Verification
 
@@ -61,8 +61,14 @@ Transport tests use synthetic account tokens and fake clocks. They check the cal
 
 ## Blockers and next action
 
-Run `make verify-web` in the coordinated benchmark gap and record the browser result. The browser spec uses intercepted synthetic listings and source responses, plus the isolated local auth service for logout. Installed native behavior remains unverified. This work used no cloud resources, real mail or live provider requests.
+The parent browser evidence below closes the local browser gate. The browser spec uses intercepted synthetic listings and source responses, plus the isolated local auth service for logout. Installed native behavior remains unverified. This work used no cloud resources, real mail or live provider requests.
 
 ## Integrator review in progress
 
 The parent reviewed request generation, normalized city boundaries, private-state clearing and the deadline/refresh interaction. The staged integration includes T17's inbox. Its temporary timeout wrapper is now removed: inbox calls pass their original caller signal to the shared request transport, which owns the deadline. The integration test exercises actual shared transport cancellation and timeout through `market.thread` and `market.conversations`, replacing the earlier wrapper-only mock timer test. All **64 frontend unit tests passed, 0 failed, 0 skipped**, at actual CET 2026-11-11 23:10:29. The complete browser check remains pending the isolated T25 measurement window; this unit result does not close AC05 or AC06.
+
+## Browser correction and acceptance
+
+The complete root `make verify-web ARGS='--run-id integrated-t19-final'` run on 2026-11-11 22:16:35–22:18:29 UTC produced **14 passed, 2 failed, 0 skipped**. All twelve existing journeys and both new city/batch/logout cases passed. Both 320 px cases failed because React Native Web does not translate nested `accessibilityState.expanded` to `aria-expanded`. The parent changed the timestamp toggle to the explicit `aria-expanded` prop, which the installed React Native native typings also support. No assertion was weakened.
+
+With root `.venv/bin` and Node24.6.0 on PATH and the installed Playwright cache, `VERIFY_RUN_ID=integrated-t19-320b npm run test:e2e --prefix apps/mobile -- -g '320 px retains'` passed **2 tests, 0 failed, 0 skipped**, on 2026-11-11 UTC. Both tests ran at320 px and verified keyboard timestamps, expanded state, numeric draft cancel/Apply behavior, offline retained results, retry, and document width. Evidence is `.local/verification/T18/integrated-t19-320b/summary.json`; the failed combined run is preserved under `.local/verification/T01/integrated-t19-final/report.json`. An initial targeted invocation used system Python and failed before starting services due to missing Pydantic; the rerun used the correct virtual environment. This is focused correction evidence, not a claim that the earlier16-case run passed. The final integrated release profile will exercise all cases together again.
