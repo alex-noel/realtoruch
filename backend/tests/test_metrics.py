@@ -398,6 +398,8 @@ def test_t26_postgres_timeout_does_not_poison_api(tmp_path, record, monkeypatch)
 
 
 def test_t26_postgres_readiness_and_search_fallback(tmp_path, record, monkeypatch):
+    from contextlib import nullcontext
+
     from realtoruch import search
 
     with isolated_sql("postgres", tmp_path) as (databases, admin):
@@ -414,8 +416,10 @@ def test_t26_postgres_readiness_and_search_fallback(tmp_path, record, monkeypatc
             search_client = TestClient(search.app)
             monkeypatch.setattr(
                 api.httpx,
-                "get",
-                lambda url, *, params, timeout: search_client.get("/v1/search", params=params),
+                "stream",
+                lambda method, url, *, params, headers, timeout: nullcontext(
+                    search_client.get("/v1/search", params=params)
+                ),
             )
             client = TestClient(api.app)
             assert search_client.get("/readyz").status_code == 503
