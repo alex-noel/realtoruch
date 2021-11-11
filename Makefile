@@ -1,4 +1,4 @@
-.PHONY: install dev live collect test web-build compose-check
+.PHONY: install dev live journey journey-event collect test web-build compose-check
 install:
 	python3.12 -m venv .venv
 	.venv/bin/pip install -r backend/requirements-dev.lock -e './backend[dev]'
@@ -7,6 +7,10 @@ dev:
 	.venv/bin/python scripts/dev.py
 live:
 	.venv/bin/python scripts/dev.py --live
+journey:
+	.venv/bin/python scripts/dev.py --journey
+journey-event:
+	.venv/bin/python scripts/journey.py $(ARGS)
 collect:
 	.venv/bin/python scripts/collect.py $(ARGS)
 test:

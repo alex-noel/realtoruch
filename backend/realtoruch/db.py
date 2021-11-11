@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
 from .settings import get_settings
 
 
@@ -63,3 +64,6 @@ def init_db():
     from . import models  # noqa: F401
 
     Base.metadata.create_all(engine)
+    from .migrations import upgrade_local
+
+    upgrade_local(engine)

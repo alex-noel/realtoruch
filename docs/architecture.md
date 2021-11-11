@@ -13,6 +13,8 @@ flowchart LR
   sql --> outbox[Transactional outbox worker]
   outbox --> es[(Private Elasticsearch)]
   es --> search[Public read-only search service]
+  sql --> alerts[Alert evaluator + email/push dispatcher]
+  alerts --> mailbox[Confirmed email / optional device push]
   sql --> api[Public REST API]
   sql --> history[History / market medians]
   history --> api
@@ -32,6 +34,7 @@ flowchart LR
 | Search | Validated search parameters translated to Elasticsearch queries | Read-only index API key |
 | Collector | Portal discovery/parsers, feeds and JSON-LD URLs, oldest-first rechecks | Bigtable and the observation topic; no SQL identity |
 | Dataflow | Normalize, conservatively merge, keep observations and recompute signals | Rental writer identity |
+| Alerts | Evaluate saved areas and favorite prices; durable inbox; email and push retries | Rental alert/account-state reads; notification/delivery writes; SMTP and optional push credentials |
 | Indexer / retention | Deliver SQL outbox; expire old contact fingerprints and stale source status | Rental maintenance identity; index writer key |
 
 Bigtable is a source archive and recheck-state store. Cloud SQL is the canonical store. The public search endpoint is backed by Elasticsearch, but neither arbitrary query DSL nor port 9200 is exposed to the internet. Auth and rental data use separate databases and IAM users on the same initial Cloud SQL instance.
@@ -40,11 +43,23 @@ Bigtable is a source archive and recheck-state store. Cloud SQL is the canonical
 
 An exact source key is `(source, external_id)`. Cross-source matches require the same building address, compatible area and room count, non-conflicting floor, and a corroborating phone fingerprint or image URL. Coordinates, when provided, must be within 100 m. A phone alone never merges homes. This deliberately misses uncertain duplicates. Two genuinely distinct, otherwise identical units in the same building can still be ambiguous; a human merge/split review console is a follow-on requirement.
 
-Dataflow processes at-least-once events. A deterministic receipt, source update, canonical update, observation, and outbox insert commit in one database transaction. PostgreSQL advisory locks serialize canonical decisions within a city. Older/equal observations cannot overwrite newer state. Transient SQL errors are retried by Dataflow; invalid messages go to a dead-letter topic as hashes and error codes, not raw contact details. A single indexer reads the current canonical document when retrying an outbox event. Do not scale the indexer beyond one replica without adding per-property index versioning/locking.
+Dataflow processes at-least-once events. A deterministic receipt, source update, canonical update, observation, and outbox insert commit in one database transaction. PostgreSQL advisory locks serialize canonical decisions within a city. Older/equal observations cannot overwrite newer state. Transient SQL errors are retried by Dataflow; invalid messages go to a dead-letter topic as hashes and error codes, not raw contact details. Indexed source-URL lookups, due rechecks and pending-outbox scans avoid full-history scans. Pending index writes coalesce under a row lock, including a concurrent ingestion/index-acknowledgement race tested on PostgreSQL. A single indexer reads the current canonical document when retrying an outbox event. Do not scale the indexer beyond one replica without adding per-property index versioning/locking.
 
 Gratka/Morizon cross-posts may also match on their shared internal listing ID plus agreeing city, street, area and rooms, with no conflicting floor/location. The private syndication key is excluded from public serialization.
 
-Each source keeps its own price, commission and status. The displayed canonical record prefers an active source declared private, then the most recent observation. “Private” is a source assertion, not a verified identity. A property remains active while any source is active; missing feed entries and transport errors are not treated as removals. Seven days without a successful observation makes a source unknown. The cloud CronJob/optional worker loop runs every six hours by default; bounded runs do not guarantee every stored advert is revisited in that interval. Local `make collect` is one-shot. Bigtable stores an oldest-first recheck index; SQL supplies the equivalent ordering locally. Collection reports distinguish partial failures from budget-limited successful runs.
+Each source keeps its own price, commission and status. The displayed canonical record prefers an active source declared private, then the most recent observation. “Private” is a source assertion, not a verified identity. A property remains active while any source is active; missing feed entries and transport errors are not treated as removals. Seven days without a successful observation makes a source unknown. The cloud CronJob/optional worker loop runs every six hours by default; bounded runs do not guarantee every stored advert is revisited in that interval. Local `make collect` is one-shot. Providers run independently with up to three workers. Recently checked URLs do not consume the discovery budget. Bigtable stores a city-scoped oldest-first recheck index; SQL supplies the equivalent ordering locally. Collection reports distinguish partial failures from budget-limited successful runs.
+
+## Search, seen state and notification consistency
+
+Saved searches retain the exact simple polygon (3–64 vertices) and filters. SQL uses bounding-box pruning followed by exact point-in-polygon matching, including the boundary. Elasticsearch applies the equivalent `geo_shape` filter to indexed points. Listings without coordinates cannot match a drawn area. The map shows the current result page, not every matching property at once.
+
+An existing result set becomes a silent baseline when a search is saved. Canonical property changes append alert events in the ingestion transaction. A separate evaluator checks affected-city searches, records property-level matches, and commits inbox records and delivery tasks with the event acknowledgement. A PostgreSQL advisory lock prevents concurrent evaluators. Seen history stores the account, canonical property and viewed rent. Overlapping saved searches and same-price reposts share a unique notification identity.
+
+Favorites retain the lowest price observed since the user liked the home. Only a new lower price produces another price alert; price oscillation back to an already notified amount stays quiet. The home remains in favorites when inactive, with its historical details. All discovery queries exclude inactive/unknown properties. Repost recognition still requires corroborating evidence; unknown identity can leave a duplicate, so perfect cross-portal suppression is not claimed.
+
+Unchanged checks update source freshness but retain only one history checkpoint per source per day. Every rent/status change is retained. Processed alert/search events are cleaned after seven days; idempotency receipts follow the existing 90-day retention policy. Email addresses, confirmation tokens and push endpoints stay in private account/delivery tables and never enter public listings or Elasticsearch.
+
+Email opt-in uses the signed account email claim and a single-use confirmation link expiring after one hour. Email remains active when the app is closed or signed out; every message includes an unsubscribe link. Browser/native push is optional. Dispatchers lease tasks, send outside SQL transactions, then acknowledge. Transient failures use bounded exponential backoff; stale/read/removed-search or unliked-home deliveries are cancelled. A successful SMTP response means provider acceptance, not inbox arrival. A crash between provider acceptance and acknowledgement can still cause a repeated transport delivery; stable email Message-IDs and push notification tags limit its impact. Logical new-match/price notifications remain deduplicated in SQL.
 
 ## Privacy and risk signals
 

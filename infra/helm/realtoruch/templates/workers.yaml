@@ -1,4 +1,4 @@
-{{- range $name := list "collector" "indexer" }}
+{{- range $name := list "collector" "indexer" "alerts" }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:

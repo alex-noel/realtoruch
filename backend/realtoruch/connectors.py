@@ -10,7 +10,7 @@ import json
 import os
 import socket
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -69,6 +69,7 @@ class Connector:
             "emitted": 0,
             "inactive": 0,
             "skipped": 0,
+            "fresh_skipped": 0,
             "limited": False,
             "errors": [],
         }
@@ -135,6 +136,13 @@ class Connector:
             }
         )
 
+    def is_due(self, previous):
+        if not previous or self.config.get("force_rechecks"):
+            return True
+        interval = min(10080, max(0, int(self.config.get("recheck_interval_minutes", 0))))
+        observed = datetime.fromisoformat(previous["observed_at"]).replace(tzinfo=None)
+        return observed <= datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=interval)
+
     def portal_records(self):
         if self.config.get("recheck_only") and not self.known_urls:
             return
@@ -151,9 +159,12 @@ class Connector:
             if url in checked:
                 return None
             checked.add(url)
-            self.report["checked"] += 1
             previous = entry.get("previous") if isinstance(entry, dict) else None
             previous = previous or self.previous_lookup(url)
+            if not self.is_due(previous):
+                self.report["fresh_skipped"] += 1
+                return None
+            self.report["checked"] += 1
             try:
                 status, body = self.fetch(url, page=True)
                 if status in (404, 410):
@@ -196,13 +207,23 @@ class Connector:
             if record:
                 yield record
         new_attempts = 0
-        for entry in self.config.get("listing_urls", [])[:max_new]:
+        for entry in self.config.get("listing_urls", []):
+            detail_url = canonical_url(entry["url"] if isinstance(entry, dict) else entry)
+            if detail_url in checked:
+                continue
+            previous = entry.get("previous") if isinstance(entry, dict) else None
+            previous = previous or self.previous_lookup(detail_url)
+            if not self.is_due(previous):
+                self.report["fresh_skipped"] += 1
+                checked.add(detail_url)
+                continue
+            if new_attempts >= max_new:
+                self.report["limited"] = True
+                break
             new_attempts += 1
-            record = check(entry)
+            record = check({"url": detail_url, "previous": previous})
             if record:
                 yield record
-        if len(self.config.get("listing_urls", [])) > max_new:
-            self.report["limited"] = True
         visited = set()
         for seed in self.config.get("search_urls", [])[:10]:
             url = seed
@@ -225,11 +246,16 @@ class Connector:
                 for detail_url in page.urls:
                     if detail_url in checked:
                         continue
+                    previous = self.previous_lookup(detail_url)
+                    if not self.is_due(previous):
+                        self.report["fresh_skipped"] += 1
+                        checked.add(detail_url)
+                        continue
                     if new_attempts >= max_new:
                         self.report["limited"] = True
                         break
                     new_attempts += 1
-                    record = check(detail_url)
+                    record = check({"url": detail_url, "previous": previous})
                     if record:
                         yield record
                 url = page.next_url

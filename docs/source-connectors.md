@@ -94,3 +94,13 @@ DEMO_MODE=false CONNECTORS_CONFIG=config/sources.json .venv/bin/python -m realto
 ```
 
 Use a separate database from the sample catalog. The production collector uses `--cloud`, writing sanitized observations to Bigtable then Pub/Sub. Dataflow handles canonical SQL writes.
+
+## City budgets and freshness
+
+The live configuration defaults to Kraków and includes explicit `search_urls_by_city` entries for Kraków and Warszawa. Select one using `make collect ARGS="--city Kraków"`; unsupported enabled portal/city combinations fail before collection. `--workers 1|2|3` controls concurrent providers, not concurrent requests to the same portal. The default is three. Each source retains its own robots checks, HTTP client and six-requests/minute pace.
+
+`recheck_interval_minutes` defaults to 360 in the live profiles. Both SQL and the Bigtable recheck queue scope by city and prefer older due records. Fresh discoveries are skipped before consuming the new-listing budget; `fresh_skipped` reports those decisions. `--force-rechecks` explicitly overrides freshness. `--recheck-only` performs no discovery, and a fully fresh catalog can complete with zero outbound requests. Concurrent source failures remain isolated and included in the combined report.
+
+The Bigtable queue key now includes the folded city before the observation timestamp. If upgrading an already populated older cloud queue, rebuild its recheck rows from the retained state payloads before relying on city-scoped scheduled rechecks. No such deployed queue exists in this local verification.
+
+On 11 November 2026, two bounded Kraków runs collected 18 adverts per provider (54 total), merged into 41 canonical homes. The second run skipped six fresh adverts per provider and fetched 12 new ones each, with no collection errors. OLX still failed public robots retrieval with 403; no account was created or used. An account's ability to remove that block has not been established, and a bulk-market feed is not inferred from partner account access.

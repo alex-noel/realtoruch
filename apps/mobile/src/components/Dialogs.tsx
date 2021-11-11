@@ -124,7 +124,7 @@ export function FilterDialog({
       setError("Minimum values must be lower than maximum values.");
       return;
     }
-    onApply(draft);
+    onApply({ ...draft, max_price_exclusive: true });
     onClose();
   }
   return (
@@ -151,13 +151,16 @@ export function FilterDialog({
           placeholder="Any"
         />
         <Field
-          label="MAX RENT · PLN"
+          label="RENT BELOW · PLN"
           value={String(draft.max_price ?? "")}
           onChange={(v) => numeric("max_price", v)}
           numeric
           placeholder="Any"
         />
       </View>
+      <Text style={[s.muted, { fontSize: 11 }]}>
+        Rent filters use base rent, excluding building fees and utilities.
+      </Text>
       <View style={[s.row, { gap: 16 }]}>
         <Field
           label="MIN AREA · M²"
@@ -288,6 +291,13 @@ export function DetailDialog({
   const narrow = useWindowDimensions().width < 700;
   return (
     <Panel title="A closer look" wide onClose={onClose}>
+      {home.status !== "active" ? (
+        <Text style={[s.text, { color: c.warning }]}>
+          {home.status === "inactive"
+            ? "Delisted · Kept in your saved homes. It will not appear on the discovery map."
+            : "Availability unconfirmed · This home is hidden from the discovery map until checked."}
+        </Text>
+      ) : null}
       {home.is_demo && (
         <Text style={[s.muted, { color: c.warning }]}>
           SAMPLE HOME · Fictional listing and illustrative photography

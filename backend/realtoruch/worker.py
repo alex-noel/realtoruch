@@ -36,8 +36,10 @@ def state_key(source, url):
 
 
 def recheck_key(data):
+    from .normalization import fold
+
     # Lexically ordered observation time gives the oldest checked advert priority.
-    return f"recheck#{data['source']}#{data['observed_at']}#{state_key(data['source'], data['url']).split('#')[-1]}"
+    return f"recheck#{data['source']}#{fold(data['city'])}#{data['observed_at']}#{state_key(data['source'], data['url']).split('#')[-1]}"
 
 
 def row_payload(row):
@@ -91,8 +93,16 @@ class CollectionFailed(RuntimeError):
 
 
 def source_state(config, cloud):
+    from .normalization import fold
+
     limit = min(500, max(0, int(config.get("max_rechecks", 50))))
     source = config["name"]
+    interval = (
+        0
+        if config.get("force_rechecks")
+        else min(10080, max(0, int(config.get("recheck_interval_minutes", 0))))
+    )
+    cutoff = now() - timedelta(minutes=interval)
     if cloud:
         table = state_table()
 
@@ -102,13 +112,16 @@ def source_state(config, cloud):
         known = []
         if limit:
             prefix = f"recheck#{source}#"
+            if config.get("city"):
+                prefix += fold(config["city"]) + "#"
             for row in table.read_rows(start_key=prefix, end_key=prefix + "\uffff", limit=limit):
                 previous = row_payload(row)
                 if not previous:
                     continue
                 current = lookup(previous["url"])
                 if current and current["observed_at"] == previous["observed_at"]:
-                    known.append({"url": current["url"], "previous": current})
+                    if datetime.fromisoformat(current["observed_at"]) <= cutoff:
+                        known.append({"url": current["url"], "previous": current})
                 else:
                     stale = table.direct_row(row.row_key)
                     stale.delete()
@@ -133,6 +146,8 @@ def source_state(config, cloud):
                 SourceListing.source == source,
                 SourceListing.status != "inactive",
                 Listing.is_demo.is_(False),
+                SourceListing.observed_at <= cutoff,
+                Listing.city == config["city"] if config.get("city") else True,
             )
             .order_by(SourceListing.observed_at, SourceListing.id)
             .limit(limit)
@@ -140,7 +155,7 @@ def source_state(config, cloud):
         return lookup, [{"url": p.url, "previous": p.data} for p in prior]
 
 
-def collect(cloud=False, *, source_names=None, limits=None):
+def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1):
     reports = []
     configurations = load_sources()
     if source_names:
@@ -148,6 +163,37 @@ def collect(cloud=False, *, source_names=None, limits=None):
         if missing:
             raise ValueError("Unknown source selection")
         configurations = [c for c in configurations if c["name"] in source_names]
+    if city:
+        from .schemas import SearchFilters
+
+        city = SearchFilters(city=city).city
+        selected = []
+        for config in configurations:
+            urls = config.get("search_urls_by_city", {}).get(city)
+            if (
+                config.get("enabled")
+                and config.get("mode") == "portal"
+                and not urls
+                and config.get("city") != city
+            ):
+                raise ValueError(f"No configured search for {config['name']} in {city}")
+            selected.append({**config, "city": city, **({"search_urls": urls} if urls else {})})
+        configurations = selected
+    if workers > 1 and len(configurations) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        # Each source keeps its own HTTP session and pacing. SQL transactions stay per observation.
+        def run(config):
+            try:
+                return collect(cloud, source_names=[config["name"]], limits=limits, city=city, workers=1)
+            except CollectionFailed as exc:
+                return exc.reports
+
+        with ThreadPoolExecutor(max_workers=min(3, workers)) as executor:
+            reports = [report for batch in executor.map(run, configurations) for report in batch]
+        if any(report["errors"] for report in reports):
+            raise CollectionFailed(reports)
+        return reports
     for configured in configurations:
         config = {**configured, **(limits or {})}
         if not config.get("enabled"):
@@ -159,6 +205,9 @@ def collect(cloud=False, *, source_names=None, limits=None):
         try:
             if config.get("mode") in ("jsonld", "portal"):
                 lookup, known = source_state(config, cloud)
+                from functools import cache
+
+                lookup = cache(lookup)
                 connector.previous_lookup, connector.known_urls = lookup, known
                 if config["mode"] == "jsonld":
                     entries = []
@@ -293,22 +342,58 @@ def retention():
             recompute_listing(session, session.get(Listing, listing_id))
         session.execute(delete(EventReceipt).where(EventReceipt.received_at < cutoff))
         session.execute(delete(Outbox).where(Outbox.delivered_at < now() - timedelta(days=7)))
+        from .models import AlertEvent
+
+        session.execute(delete(AlertEvent).where(AlertEvent.processed_at < now() - timedelta(days=7)))
+
+
+def alerts_once():
+    from .alerts import process_alerts
+
+    with Session.begin() as session:
+        processed = process_alerts(session)
+    from .push import dispatch_push
+
+    dispatch_push(Session)
+    from .email_alerts import dispatch_email
+
+    dispatch_email(Session)
+    return processed
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["collect", "index", "retention", "migrate"])
+    parser.add_argument(
+        "command", choices=["collect", "index", "alerts", "retention", "migrate", "baseline-searches"]
+    )
     parser.add_argument("--cloud", action="store_true")
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--source", action="append", help="Collect only this configured source; repeatable")
+    parser.add_argument("--city", help="Select a configured city, for example Kraków or Warszawa")
+    parser.add_argument(
+        "--workers", type=int, default=3, choices=[1, 2, 3], help="Independent source workers"
+    )
+    parser.add_argument(
+        "--force-rechecks", action="store_true", help="Ignore the configured freshness interval"
+    )
     parser.add_argument("--max-pages", type=int)
     parser.add_argument("--max-listings", type=int)
     parser.add_argument("--max-rechecks", type=int)
-    parser.add_argument("--recheck-only", action="store_true", help="Refresh stored adverts without discovery")
+    parser.add_argument(
+        "--recheck-only", action="store_true", help="Refresh stored adverts without discovery"
+    )
     parser.add_argument("--report", help="Write a machine-readable collection report")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    if args.command == "baseline-searches":
+        from .alerts import baseline_search
+        from .models import SavedSearch
+
+        with Session.begin() as session:
+            for search in session.scalars(select(SavedSearch)):
+                baseline_search(session, search)
+        return
     if args.command == "migrate":
         if get_settings().environment == "production":
             raise SystemExit(
@@ -328,9 +413,13 @@ def main():
             }
             if args.recheck_only:
                 limits.update(search_urls=[], listing_urls=[], recheck_only=True)
+            if args.force_rechecks:
+                limits["force_rechecks"] = True
             failure = False
             try:
-                reports = collect(args.cloud, source_names=args.source, limits=limits)
+                reports = collect(
+                    args.cloud, source_names=args.source, limits=limits, city=args.city, workers=args.workers
+                )
             except CollectionFailed as exc:
                 reports, failure = exc.reports, True
             if args.report:
@@ -343,11 +432,13 @@ def main():
                 raise SystemExit(1)
         elif args.command == "index":
             index_once()
+        elif args.command == "alerts":
+            alerts_once()
         else:
             retention()
         if not args.loop:
             break
-        time.sleep(5 if args.command == "index" else 21600)
+        time.sleep(5 if args.command in ("index", "alerts") else 21600)
 
 
 if __name__ == "__main__":

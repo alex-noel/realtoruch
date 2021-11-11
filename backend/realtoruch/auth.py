@@ -1,16 +1,18 @@
+import re
 from contextlib import asynccontextmanager
 from datetime import timedelta
-import re
+
 import jwt
 from argon2 import PasswordHasher
-from argon2.exceptions import VerificationError, InvalidHashError
+from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import String, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+
 from .db import make_engine
-from .models import uid, now
+from .models import now, uid
 from .security import install_http, require_user
 from .settings import get_settings
 
@@ -42,6 +44,12 @@ class Credentials(BaseModel):
         value = value.strip().lower()
         if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
             raise ValueError("Enter a valid email address")
+        from email.headerregistry import Address
+
+        try:
+            Address(addr_spec=value)
+        except ValueError:
+            raise ValueError("Enter a single valid email address") from None
         return value
 
 
@@ -63,6 +71,7 @@ def token(user):
     value = jwt.encode(
         {
             "sub": user.id,
+            "email": user.email,
             "iss": settings.jwt_issuer,
             "aud": "realtoruch",
             "iat": issued,

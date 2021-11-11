@@ -1,10 +1,10 @@
 from collections import defaultdict
-from datetime import datetime
 from statistics import median
+
 from sqlalchemy import func, or_, select
-from .models import Listing, SourceListing, Observation, now
+
+from .models import Listing, Observation, SourceListing, now
 from .schemas import SearchFilters
-from .normalization import fold
 
 
 def public_listing(listing, sources):
@@ -83,7 +83,12 @@ def filtered_query(filters: SearchFilters):
         )
     for value, condition in (
         (filters.min_price, Listing.rent_pln >= (filters.min_price or 0)),
-        (filters.max_price, Listing.rent_pln <= (filters.max_price or 0)),
+        (
+            filters.max_price,
+            Listing.rent_pln < (filters.max_price or 0)
+            if filters.max_price_exclusive
+            else Listing.rent_pln <= (filters.max_price or 0),
+        ),
         (filters.min_area, Listing.area_m2 >= (filters.min_area or 0)),
         (filters.max_area, Listing.area_m2 <= (filters.max_area or 0)),
         (filters.rooms, Listing.rooms == filters.rooms),
@@ -100,8 +105,9 @@ def filtered_query(filters: SearchFilters):
         query = query.where(Listing.property_type == filters.property_type)
     if filters.amenity:
         # JSON containment differs by database. Exact quoted token keeps this portable.
-        from sqlalchemy import cast, String
         import json
+
+        from sqlalchemy import String, cast
 
         query = query.where(
             cast(Listing.amenities, String).contains(json.dumps(filters.amenity), autoescape=True)
@@ -109,6 +115,10 @@ def filtered_query(filters: SearchFilters):
     if filters.bbox:
         w, s, e, n = map(float, filters.bbox.split(","))
         query = query.where(Listing.lon.between(w, e), Listing.lat.between(s, n))
+    if filters.polygon:
+        from .geometry import parse_polygon, polygon_sql
+
+        query = query.where(polygon_sql(Listing.lon, Listing.lat, parse_polygon(filters.polygon)))
     return query
 
 

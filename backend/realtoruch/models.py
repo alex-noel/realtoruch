@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from uuid import uuid4
+
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
+
 from .db import Base
 
 
@@ -58,7 +60,11 @@ class Listing(Base):
 
 class SourceListing(Base):
     __tablename__ = "source_listings"
-    __table_args__ = (UniqueConstraint("source", "external_id"),)
+    __table_args__ = (
+        UniqueConstraint("source", "external_id"),
+        Index("ix_source_recheck", "source", "status", "observed_at"),
+        Index("ix_source_lookup", "source", "url"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), index=True)
     source: Mapped[str] = mapped_column(String(40))
@@ -95,6 +101,7 @@ class EventReceipt(Base):
 
 class Outbox(Base):
     __tablename__ = "outbox"
+    __table_args__ = (Index("ix_outbox_pending", "delivered_at", "created_at"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
@@ -106,6 +113,7 @@ class Favorite(Base):
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    price_floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class SavedSearch(Base):
@@ -114,6 +122,7 @@ class SavedSearch(Base):
     user_id: Mapped[str] = mapped_column(String(36), index=True)
     name: Mapped[str] = mapped_column(String(100))
     filters: Mapped[dict] = mapped_column(JSON)
+    city_key: Mapped[str] = mapped_column(String(100), default="", server_default="", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
@@ -125,3 +134,103 @@ class Report(Base):
     reason: Mapped[str] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(String(20), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class SeenPrice(Base):
+    __tablename__ = "seen_prices"
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), primary_key=True)
+    rent_pln: Mapped[int] = mapped_column(Integer, primary_key=True)
+    seen_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class SearchMatch(Base):
+    __tablename__ = "search_matches"
+    search_id: Mapped[str] = mapped_column(
+        ForeignKey("saved_searches.id", ondelete="CASCADE"), primary_key=True
+    )
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class AlertEvent(Base):
+    __tablename__ = "alert_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    __table_args__ = (Index("ix_notification_inbox", "user_id", "created_at"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(String(36))
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"))
+    search_id: Mapped[str | None] = mapped_column(
+        ForeignKey("saved_searches.id", ondelete="SET NULL"), nullable=True
+    )
+    dedupe_key: Mapped[str] = mapped_column(String(64), unique=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    title: Mapped[str] = mapped_column(String(240))
+    rent_pln: Mapped[int] = mapped_column(Integer)
+    previous_rent_pln: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    kind: Mapped[str] = mapped_column(String(10))
+    data: Mapped[dict] = mapped_column(JSON)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class PushDelivery(Base):
+    __tablename__ = "push_deliveries"
+    __table_args__ = (
+        UniqueConstraint("notification_id", "subscription_id"),
+        Index("ix_push_due", "status", "next_attempt_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    notification_id: Mapped[str] = mapped_column(ForeignKey("notifications.id"))
+    subscription_id: Mapped[str] = mapped_column(ForeignKey("push_subscriptions.id"))
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    receipt_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class EmailSubscription(Base):
+    __tablename__ = "email_subscriptions"
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(254))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    verification_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    unsubscribe_token: Mapped[str] = mapped_column(String(64), unique=True)
+
+
+class EmailDelivery(Base):
+    __tablename__ = "email_deliveries"
+    __table_args__ = (Index("ix_email_due", "status", "next_attempt_at"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("email_subscriptions.user_id"))
+    notification_id: Mapped[str | None] = mapped_column(
+        ForeignKey("notifications.id"), nullable=True, unique=True
+    )
+    confirmation_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

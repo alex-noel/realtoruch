@@ -1,12 +1,14 @@
 import time
 from collections import OrderedDict, deque
+
 import jwt
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
+
 from .settings import get_settings
 
 
-def require_user(request: Request):
+def require_claims(request: Request):
     value = request.headers.get("authorization", "")
     if not value.startswith("Bearer "):
         raise HTTPException(401, "Sign in to continue", headers={"WWW-Authenticate": "Bearer"})
@@ -20,9 +22,13 @@ def require_user(request: Request):
             audience="realtoruch",
             options={"require": ["exp", "iat", "sub", "iss", "aud"]},
         )
-        return payload["sub"]
+        return payload
     except jwt.InvalidTokenError:
         raise HTTPException(401, "Session expired or invalid", headers={"WWW-Authenticate": "Bearer"})
+
+
+def require_user(request: Request):
+    return require_claims(request)["sub"]
 
 
 def install_http(app, *, auth=False):

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Literal
+
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 
@@ -56,6 +57,7 @@ class SearchFilters(BaseModel):
     district: str = Field(default="", max_length=100)
     min_price: int | None = Field(default=None, ge=0)
     max_price: int | None = Field(default=None, ge=0)
+    max_price_exclusive: bool = False
     min_area: float | None = Field(default=None, ge=0)
     max_area: float | None = Field(default=None, ge=0)
     rooms: int | None = Field(default=None, ge=1, le=100)
@@ -66,8 +68,27 @@ class SearchFilters(BaseModel):
     amenity: str = Field(default="", max_length=60)
     sort: Literal["newest", "price_asc", "price_desc", "area_desc"] = "newest"
     bbox: str | None = Field(default=None, max_length=100)
+    polygon: str | None = Field(default=None, max_length=5000)
     page: int = Field(default=1, ge=1, le=10000)
     page_size: int = Field(default=24, ge=1, le=100)
+
+    @field_validator("city")
+    @classmethod
+    def city_spelling(cls, value):
+        from .normalization import fold
+
+        return {"krakow": "Kraków", "warszawa": "Warszawa"}.get(fold(value), value.strip())
+
+    @field_validator("polygon")
+    @classmethod
+    def valid_polygon(cls, value):
+        if value:
+            import json
+
+            from .geometry import parse_polygon
+
+            return json.dumps(parse_polygon(value), separators=(",", ":"))
+        return None
 
     @model_validator(mode="after")
     def ranges(self):
