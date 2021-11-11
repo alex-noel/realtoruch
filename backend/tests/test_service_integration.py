@@ -196,7 +196,7 @@ def test_auth_recovery_on_versioned_postgres_schema(pg_engine, monkeypatch):
 
 
 def test_registry_rejects_checksum_drift_and_rolls_back(pg_engine):
-    from realtoruch.migrations import apply_postgres
+    from realtoruch.migrations import apply_postgres, load_registry
     with pg_engine.connect() as connection:
         transaction = connection.begin()
         connection.execute(text("UPDATE realtoruch_migrations SET checksum='bad' WHERE database_name='rentals' AND version='001'"))
@@ -205,7 +205,7 @@ def test_registry_rejects_checksum_drift_and_rolls_back(pg_engine):
         transaction.rollback()
     with pg_engine.begin() as connection:
         apply_postgres(connection, 'rentals')
-        assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == 4
+        assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == len(load_registry()["rentals"])
 
 
 
@@ -261,7 +261,7 @@ def test_registry_upgrades_tracked_baseline_preserving_rows(pg_engine, tmp_path)
             apply_postgres(connection, 'rentals')
             apply_postgres(connection, 'rentals')
             assert connection.scalar(text("SELECT id FROM event_receipts")) == 'keep'
-            assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == 4
+            assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == len(load_registry()["rentals"])
     finally:
         with pg_engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA IF EXISTS {schema} CASCADE'))

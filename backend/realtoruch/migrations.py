@@ -68,7 +68,7 @@ def upgrade_local(engine, database="rentals"):
     """Run immutable versioned SQLite-only callbacks; never execute PostgreSQL DDL."""
     if engine.dialect.name != "sqlite" or database not in {"rentals", "auth"}:
         raise ValueError("SQLite and a known database are required")
-    hooks = {"rentals": [("001", _baseline_local)], "auth": []}[database]
+    hooks = {"rentals": [("001", _baseline_local), ("008", _delivery_rentals_local)], "auth": [("005", _delivery_auth_local)]}[database]
     versions = [version for version, _ in hooks]
     if versions != sorted(set(versions)):
         raise ValueError("Duplicate or out-of-order local hooks")
@@ -120,6 +120,22 @@ def _baseline_local(engine):
             for search in session.scalars(select(SavedSearch)):
                 baseline_search(session, search)
 
+
+
+def _add_claim_columns(engine, tables):
+    with engine.begin() as connection:
+        inspector = inspect(connection)
+        for table in tables:
+            if table in inspector.get_table_names() and "claim_token" not in {c["name"] for c in inspector.get_columns(table)}:
+                connection.execute(text(f"ALTER TABLE {table} ADD COLUMN claim_token VARCHAR(64)"))
+
+
+def _delivery_rentals_local(engine):
+    _add_claim_columns(engine, ("email_deliveries", "push_deliveries"))
+
+
+def _delivery_auth_local(engine):
+    _add_claim_columns(engine, ("auth_jobs",))
 
 def main():
     import argparse
