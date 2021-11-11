@@ -1,0 +1,388 @@
+{
+  "started_at": "2026-11-11T20:00:52.148920+00:00",
+  "integration_branch": "codex/core-sprint-2026-11",
+  "baseline": "2d9a22d",
+  "worker_assignments": 4,
+  "max_concurrent_workers_with_integrator": 3,
+  "cloud_deployment": "excluded",
+  "push": "not authorized for this implementation run",
+  "tasks": [
+    {
+      "id": "T01",
+      "status": "IN_PROGRESS",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "high",
+      "depends": [],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T02",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "depends": [
+        "T01"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T03",
+      "status": "PLANNED",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "high",
+      "depends": [
+        "T01"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T04",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "depends": [
+        "T03"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T05",
+      "status": "IN_PROGRESS",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "depends": [],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T06",
+      "status": "PLANNED",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "medium",
+      "depends": [
+        "T05"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T07",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "depends": [
+        "T03",
+        "T04",
+        "T05"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T08",
+      "status": "PLANNED",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "xhigh",
+      "depends": [
+        "T01"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T09",
+      "status": "IN_PROGRESS",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "high",
+      "depends": [],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T10",
+      "status": "PLANNED",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "xhigh",
+      "depends": [
+        "T08",
+        "T09"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T11",
+      "status": "PLANNED",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "high",
+      "depends": [
+        "T10"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T12",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "depends": [
+        "T08",
+        "T11"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T13",
+      "status": "PLANNED",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "xhigh",
+      "depends": [
+        "T01"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T14",
+      "status": "PLANNED",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "high",
+      "depends": [
+        "T01"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T15",
+      "status": "PLANNED",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "xhigh",
+      "depends": [
+        "T10",
+        "T13",
+        "T14"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T16",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "depends": [
+        "T10"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T17",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "depends": [
+        "T14",
+        "T16"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T18",
+      "status": "PLANNED",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "high",
+      "depends": [
+        "T01",
+        "T14",
+        "T02"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T19",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "depends": [
+        "T03",
+        "T14"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T20",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "depends": [
+        "T17",
+        "T19",
+        "T18"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T21",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "depends": [
+        "T14"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T25",
+      "status": "PLANNED",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "high",
+      "depends": [
+        "T08",
+        "T11",
+        "T12"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T26",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "depends": [
+        "T03",
+        "T08",
+        "T13"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T27",
+      "status": "PLANNED",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "depends": [
+        "T11",
+        "T15"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T28",
+      "status": "PLANNED",
+      "model": "gpt-6.1-terra",
+      "reasoning_effort": "high",
+      "depends": [
+        "T02",
+        "T08",
+        "T13",
+        "T15",
+        "T26"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    },
+    {
+      "id": "T32",
+      "status": "PLANNED",
+      "model": "parent integrator",
+      "reasoning_effort": "independent review",
+      "depends": [
+        "T01",
+        "T02",
+        "T03",
+        "T04",
+        "T05",
+        "T06",
+        "T07",
+        "T08",
+        "T09",
+        "T10",
+        "T11",
+        "T12",
+        "T13",
+        "T14",
+        "T15",
+        "T16",
+        "T17",
+        "T18",
+        "T19",
+        "T20",
+        "T21",
+        "T25",
+        "T26",
+        "T27",
+        "T28"
+      ],
+      "worker_commit": null,
+      "integrated_commit": null,
+      "review": null,
+      "evidence": []
+    }
+  ]
+}
