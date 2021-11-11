@@ -67,9 +67,10 @@ def matching_property(candidate, data, sources):
     ):
         return "Shared Morizon–Gratka listing identity, street, area and rooms"
     # Missing floors are uncertainty, not corroboration. Require both contact
-    # and photo with the same known floor and nearby coordinates for reposts
-    # without a unit number. Even this remains heuristic, not proof of identity.
-    if (address and candidate_address == address and candidate.floor is not None
+    # and photo with the same known floor, building and nearby coordinates for
+    # reposts without a unit number. A street alone is still too broad.
+    # Even this remains heuristic, not proof of identity.
+    if (same_address and candidate.floor is not None
         and data["floor"] is not None and same_phone and same_image
         and distance is not None and distance <= 50):
         return "Same address, known floor, contact, photo and nearby location"
