@@ -20,3 +20,6 @@ retention:
   schedule: "30 2 * * *"
 sources:
   sources: []
+network:
+  # Replace with the allocated private service range before deployment review.
+  sqlCidr: 10.0.0.0/8

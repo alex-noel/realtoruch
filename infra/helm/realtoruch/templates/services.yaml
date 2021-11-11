@@ -21,6 +21,7 @@ spec:
       labels: { app: {{ $name }} }
     spec:
       serviceAccountName: {{ $name }}
+      terminationGracePeriodSeconds: 30
       nodeSelector: { workload: core }
       securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
       containers:
@@ -44,7 +45,7 @@ spec:
             failureThreshold: 30
             periodSeconds: 5
           readinessProbe:
-            httpGet: { path: {{ if eq $name "auth" }}/healthz{{ else }}/readyz{{ end }}, port: 8000 }
+            httpGet: { path: /readyz, port: 8000 }
             periodSeconds: 10
           livenessProbe:
             httpGet: { path: /healthz, port: 8000 }
@@ -89,6 +90,8 @@ spec:
   securityPolicy: { name: {{ $.Values.securityPolicy }} }
   healthCheck: { type: HTTP, requestPath: /healthz, port: 8000 }
   timeoutSec: 30
+  customResponseHeaders:
+    headers: ["Cache-Control: private, no-store"]
   logging: { enable: true, sampleRate: 0.1 }
 ---
 apiVersion: policy/v1
