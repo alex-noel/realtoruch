@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select, text, update
 
+from .account_data import guard_account_write
 from .alerts import insert_once
 from .db import get_session
 from .ingest import PROPERTY_FIELDS, lock_identity, recompute_listing
@@ -119,6 +120,7 @@ def merge(
     listing_id: str, body: MergeBody, moderator=Depends(require_moderator), session=Depends(get_session)
 ):
     lock_identity(session)
+    guard_account_write(session, moderator)
     session.expire_all()
     source_id, target_id = resolve_id(session, listing_id), resolve_id(session, body.target_id)
     if source_id == target_id:
@@ -223,6 +225,7 @@ def split(
     listing_id: str, body: SplitBody, moderator=Depends(require_moderator), session=Depends(get_session)
 ):
     lock_identity(session)
+    guard_account_write(session, moderator)
     session.expire_all()
     candidate = session.get(Listing, resolve_id(session, listing_id))
     if candidate and session.bind.dialect.name == "postgresql":
