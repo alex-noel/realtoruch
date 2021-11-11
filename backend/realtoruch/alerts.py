@@ -66,43 +66,55 @@ def create_notification(session, home, user_id, kind, *, search_id=None, previou
     return item
 
 
-def process_alerts(session, limit=100):
+def process_alerts(session, limit=100, *, listing_ids=None, created_notifications=None):
     """Caller owns transaction. Inbox records and event acknowledgements commit together."""
     from .ingest import lock_identity
     lock_identity(session, shared=True)
+    if session.bind.dialect.name == "sqlite":
+        # Reserve the writer before reading events or canonical state. A merge
+        # must not race a stale evaluator that read before its first write.
+        connection = session.connection()
+        if not connection.connection.driver_connection.in_transaction:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+        else:
+            connection.exec_driver_sql("UPDATE alert_events SET id=id WHERE 0")
     if session.bind.dialect.name == "postgresql":
         from sqlalchemy import text
 
         # One evaluator prevents concurrent search/favorite events from duplicating an alert.
         if not session.scalar(text("SELECT pg_try_advisory_xact_lock(761994031)")):
             return 0
+    pending = select(AlertEvent).where(AlertEvent.processed_at.is_(None))
+    if listing_ids is not None:
+        pending = pending.where(AlertEvent.listing_id.in_(listing_ids))
     events = session.scalars(
-        select(AlertEvent)
-        .where(AlertEvent.processed_at.is_(None))
+        pending
         .order_by(AlertEvent.created_at, AlertEvent.id)
         .limit(limit)
         .with_for_update(skip_locked=True)
     ).all()
     for listing_id in dict.fromkeys(event.listing_id for event in events):
         home = session.get(Listing, listing_id)
-        if home.status != "active":
+        if home.status != "active" or home.hidden:
             continue
         price_alert_users = set()
         favorites = session.scalars(
             select(Favorite).where(Favorite.listing_id == listing_id).with_for_update()
-        ).all()
+        ).yield_per(100)
         for favorite in favorites:
             if favorite.price_floor is None:
                 favorite.price_floor = home.rent_pln
             elif home.rent_pln < favorite.price_floor:
-                create_notification(
+                notification = create_notification(
                     session, home, favorite.user_id, "price_drop", previous=favorite.price_floor
                 )
+                if notification is not None and created_notifications is not None:
+                    created_notifications.append(notification)
                 favorite.price_floor = home.rent_pln
                 price_alert_users.add(favorite.user_id)
         searches = session.scalars(
             select(SavedSearch).where(SavedSearch.city_key.in_(["", fold(home.city)]))
-        ).all()
+        ).yield_per(100)
         for search in searches:
             if session.get(SearchMatch, (search.id, home.id)):
                 continue
@@ -116,7 +128,9 @@ def process_alerts(session, limit=100):
             insert_once(session, SearchMatch, {"search_id": search.id, "listing_id": home.id})
             seen = session.get(SeenPrice, (search.user_id, home.id, home.rent_pln))
             if not seen and search.user_id not in price_alert_users:
-                create_notification(session, home, search.user_id, "new_match", search_id=search.id)
+                notification = create_notification(session, home, search.user_id, "new_match", search_id=search.id)
+                if notification is not None and created_notifications is not None:
+                    created_notifications.append(notification)
     for event in events:
         event.processed_at = now()
     session.flush()
