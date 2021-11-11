@@ -2,7 +2,7 @@
 
 ## Identity and outcome
 
-- Status: IMPLEMENTED_LOCAL. Hosted run and required-check settings remain pending G07.
+- Current status: VERIFIED locally and in the authorized hosted run; see the final acceptance update below. Required-check/branch-protection settings remain a maintainer decision.
 - Reviewed base: `0882aeff04ac55bef504448c6bd512b8d2c216c6`.
 - Implementation: `b7230d7252abf17cee9317c9ac666a45ab26b098` and `db3481762ec888108eef4f1c949f0aafd0bf1ec7`, created with `python3 scripts/commit.py`. Author and committer times match on both commits.
 - Actual verification date: 2026-11-11 Europe/Warsaw, approximately 21:31–21:43 CET.
@@ -71,3 +71,7 @@ G07 is pending. Hosted run URL and result are unset. The maintainer can authoriz
 ## Integrator acceptance
 
 Parent reviewed workflow permissions, pins, triggers, artifact allowlists and audit comparison behavior, then independently ran actionlint, fatal Python lint and Compose validation. Combined runner environment passed242 offline tests (50 explicit service-only skips), TypeScript, and82 real-service/race tests with zero skips on2026-11-11. Reports: `.local/verification/T01/integrated-t02-offline/report.json` and `integrated-t02-services/report.json`. Hosted G07 remains unrun; no push was performed.
+
+## Authorized hosted acceptance — 12 November 2026
+
+The user explicitly authorized the integration-branch push. [Run 43119698856](https://github.com/alex-noel/realtoruch/actions/runs/43119698856) passed all four jobs on `d56ae2313f34c574877e16050ea3affd67b064b6`, including fresh locked installs, fatal lint, unit/type checks, dependency audit, real services, production web/browser and both native JS exports. The application-identical grant/test follow-up `a17cf16f4e6c3c33d629684fd6a75685eb147b53` passed the current full service profile. Earlier run43115090311 failed an obsolete oversized-title test; b88bc5d corrected the fixture without relaxing production limits. Branch protection remains a maintainer setting; no default-branch merge or deployment occurred. This update supersedes earlier hosted-pending notes.

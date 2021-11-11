@@ -1,6 +1,14 @@
 # Verification record
 
-The current implementation was verified locally on 11 November 2026, including a browser-driven rental journey, email previews, PostgreSQL and Elasticsearch. No cloud resources were applied and no code or images were pushed.
+## Integrated candidate — 12 November 2026
+
+Status **LOCAL_PARTIAL**, candidate `a17cf16f4e6c3c33d629684fd6a75685eb147b53`. Checks passed: 392 offline Python tests (115 explicit service-only skips), 240 real PostgreSQL/Elasticsearch tests with zero skips, 122 frontend unit tests, strict TypeScript and 36 production-browser cases with zero skips. [Hosted CI](https://github.com/alex-noel/realtoruch/actions/runs/43119698856) passed all four jobs on application-identical `d56ae2313f34c574877e16050ea3affd67b064b6`, including native JS exports and dependency audit; the final grant/test follow-up passed the full current service profile. Exact compatible revisions are recorded in the report. No cloud deployment was performed; the user explicitly authorized the GitHub push.
+
+The 72-hour soak remains incomplete and its immutable pin predates the final parser/identity changes. Automatic OLX collection, installed-device acceptance, external inbox/push delivery and deployed infrastructure/SLA remain open. Current counts, UTC times, fixes and all limitations are in [release readiness](release-readiness.md), [T32 evidence](verification/T32-evidence.json) and the [core acceptance index](verification/core-acceptance.json).
+
+## Historical pre-sprint verification — 11 November 2026
+
+The records and screenshots below describe earlier bounded checks and catalog snapshots. Their test counts, bundle sizes and source results are historical; the dated integrated summary above is authoritative. No Git push had occurred at the time of these earlier checks.
 
 | Check | Result |
 | --- | --- |

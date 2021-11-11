@@ -2,7 +2,7 @@
 
 ## Identity and outcome
 
-- Task: T10, status IMPLEMENTED_LOCAL; independent identity/concurrency review remains mandatory.
+- Task: T10, current status VERIFIED for the specified local cases after independent T32 review and correction regressions; see the final acceptance update below.
 - Base: `4e6f00be92a058251db5dc72e870174e773f70c0`; result is the commit containing this report, created using `python3 scripts/commit.py`.
 - Actual work and test date: 2026-11-11, Europe/Warsaw (CET, UTC+01:00). Git dates are intentionally different under repository policy.
 - Corrects unsafe missing-floor building matches, serializes identity corrections with writers and short index phases, and retains correction state and genuine pending events.
@@ -57,3 +57,7 @@ All commands run from this worktree with Python 3.12.9, Node 24.6.0, macOS 15.7.
 Parent integration review accepted the conservative matcher and correction guards. Independent verification on the combined integration checkout: 19 targeted tests and 90 real PostgreSQL/Elasticsearch service/race tests passed with zero skips (`.local/verification/T01/integrated-t10-review/report.json`). No holdout tuning or additional holdout evaluation was performed by the parent.
 
 This implementation is conservative but not a proof of real-world home identity: distinct same-floor units can share contact and photos. The global writer gate adds contention. The synthetic holdout is finite and does not cover all real layouts. Legacy alert events and notifications lack source attribution. Outstanding work blocks splitting; terminal/read historical notifications remain unchanged on the retained pre-correction combined card and cannot be attributed to either separated source. Concurrent merges/splits, pending deliveries, account closure, retention, profile changes, index acknowledgements and future writers require independent integration review. T04's validator shortcut must join the exclusive gate; T15 must coordinate account-lock order. The T08 reference hardware performance benchmark remains unverified.
+
+## T32 acceptance update — 12 November 2026
+
+Independent review and the current combined profiles passed on `a17cf16f4e6c3c33d629684fd6a75685eb147b53`. The final [frozen synthetic report](dedupe-final.json) supersedes the earlier matcher metrics; automated determinism tests reuse the corpus, so it is not an untouched statistical holdout. T08 controlled resource-budget convergence passed. Correction-alert fix `d56ae23` evaluates scoped pre-merge genuine work and silently baselines corrected prices/matches for merge and both split homes. Historical floors never rise; backlog/partial-drain rejection rolls back all effects. [Current review, semantics and tests](T32-handoff.md) supersede the original integration-pending statements above.

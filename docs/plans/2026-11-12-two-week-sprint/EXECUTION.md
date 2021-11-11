@@ -8,14 +8,14 @@ The user authorized four worker assignments and the parent integrator/reviewer. 
 
 Models/reasoning are selected per task: lighter models for bounded fixtures/configuration, coding models with high or extra-high reasoning for transactions, identity, auth and migration changes. The integrator independently reviews evidence and sensitive changes.
 
-Cloud deployment, paid resources, external emails and pushes remain outside this core execution. Every new commit uses the repository backdating helper. Test evidence uses actual dates.
+Cloud deployment, paid resources and external emails remain outside this core execution. The user subsequently authorized GitHub source pushes; that exception does not authorize deployment. Every new commit uses the repository backdating helper. Test evidence uses actual dates.
 
 ## Task status
 
 | Task | Status | Model | Reasoning | Dependencies |
 | --- | --- | --- | --- | --- |
 | T01 | VERIFIED | gpt-6.1-terra | high | None |
-| T02 | LOCAL_PARTIAL | gpt-6.1-sol | medium | T01 |
+| T02 | VERIFIED | gpt-6.1-sol | medium | T01 |
 | T03 | VERIFIED | gpt-6.1-terra | high | T01 |
 | T04 | VERIFIED | gpt-6.1-sol | high | T03 |
 | T05 | VERIFIED | gpt-6.1-sol | medium | None |
@@ -23,7 +23,7 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 | T07 | LIVE_SOAK_RUNNING | gpt-6.1-sol | high | T03, T04, T05 |
 | T08 | VERIFIED | gpt-6.1-terra | xhigh | T01 |
 | T09 | VERIFIED | gpt-6-luna | high | None |
-| T10 | LOCAL_PARTIAL | gpt-6.1-terra | xhigh | T08, T09 |
+| T10 | VERIFIED | gpt-6.1-terra | xhigh | T08, T09 |
 | T11 | VERIFIED | gpt-6.1-terra | high | T10 |
 | T12 | VERIFIED | gpt-6.1-sol | high | T08, T11 |
 | T13 | VERIFIED | gpt-6.1-terra | xhigh | T01 |
@@ -35,11 +35,11 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 | T19 | VERIFIED | gpt-6.1-sol | high | T03, T14 |
 | T20 | VERIFIED | gpt-6.1-sol | high | T17, T19, T18 |
 | T21 | VERIFIED | gpt-6.1-sol | high | T14 |
-| T25 | IN_PROGRESS | gpt-6.1-terra | high | T08, T11, T12 |
+| T25 | VERIFIED | gpt-6.1-terra | high | T08, T11, T12 |
 | T26 | VERIFIED | gpt-6.1-sol | medium | T03, T08, T13 |
 | T27 | VERIFIED | gpt-6.1-sol | high | T11, T15 |
 | T28 | VERIFIED | gpt-6.1-terra | high | T02, T08, T13, T15, T26 |
-| T32 | PLANNED | parent integrator | independent review | T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T25, T26, T27, T28 |
+| T32 | LOCAL_PARTIAL | parent integrator | independent review | T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T25, T26, T27, T28 |
 
 ## Integration decisions
 
@@ -75,3 +75,8 @@ T19 is accepted at `7c8894b`: the broad browser run passed 14 cases and exposed 
 T08’s remaining reference gate passed on clean `a30d1d5`: all test work ran inside a measured four-CPU/eight-GiB container budget, and 100 changed homes converged in 0.431287 seconds. T21 is integrated at that commit with 118 combined frontend unit passes; worker D is correcting reproduced cold-link/session and slow-link/navigation races before final acceptance. T20’s timed browser budget passes; its final accessibility regression continues. T25 history remains above target and is receiving measured SQL-plan improvements.
 
 The user explicitly authorized GitHub push; `cf7b146` now matches `origin/codex/core-sprint-2026-11`. Hosted run `43115090311` passed real services, web and native bundle jobs, but the offline job found one T08 test fixture made obsolete by T12 title sanitization. A test-only correction is pending its focused check. T20 is locally accepted after all 28 worker browser cases; T21 integration races passed 122 units and eight browser cases. The Gratka mixed-route compatibility fix is integrated at `3db8927` after private-capture replay and 110 portal/connector tests; current pinned soak evidence remains on the earlier parser. T25 final native matched capacity validation is in progress.
+
+
+## Final integration — 12 November 2026
+
+Code candidate `a17cf16f4e6c3c33d629684fd6a75685eb147b53` passed 392 offline Python tests (115 explicit service-only skips), 240 real-service tests with zero skips, TypeScript, 122 frontend units and 36 browser cases with zero skips. All four [hosted jobs](https://github.com/alex-noel/realtoruch/actions/runs/43119698856) passed. Independent review found and closed moderator-hidden Favorites and correction-only price-drop regressions. T25 native capacity passed; earlier emulated history failure remains explicit. The frozen synthetic corpus remains unchanged. [Release readiness](../../release-readiness.md) and the [complete AC/test index](../../verification/core-acceptance.json) supersede historical pending notes above. Overall LOCAL_PARTIAL: T07's real-duration/provider/final-version gate is still open, and no cloud deployment occurred.
