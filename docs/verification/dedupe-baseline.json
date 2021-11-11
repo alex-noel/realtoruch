@@ -1,11 +1,11 @@
 {
-  "code_git_sha": "7184752495b4f9257812550958f6d542bc309c10",
+  "code_git_sha": "15252caa99837ef187b2866aea1cbfd275814289",
   "dataset_pair_count": 220,
   "dataset_path": "backend/tests/fixtures/dedupe/pairs.jsonl",
   "dataset_sha256": "511c5f6c7ef1e4a16bffb706ddd94e30a18e8c13423ea37eea0bd541da40940c",
   "evaluated_pair_count": 220,
-  "evaluator_sha256": "ef3d597e005ada243e2630ab24a969c5b760631b93718392ab8a78ef1a27ae64",
-  "generated_at_utc": "2026-11-11T20:11:27.414041+00:00",
+  "evaluator_sha256": "4ca7f2ae7c1380a0f8d8d86745b640f253e26b5a0b9adcec9b6a23228262905a",
+  "generated_at_utc": "2026-11-11T20:20:44.912286+00:00",
   "ingestion_fault_injection": {
     "forced_merge": {
       "actual_logical_notifications": 1,
@@ -100,9 +100,9 @@
       "duplicate_canonical_count": 2,
       "duplicate_canonical_homes": {
         "home-a": [
+          "canonical-01",
           "canonical-02",
-          "canonical-03",
-          "canonical-01"
+          "canonical-03"
         ]
       },
       "expected_canonical_count": 3,
@@ -522,7 +522,7 @@
   "production_paths_sha256": "f1212025ff84175d858357afa8e54f89de173f3d9c471e1cc8ee10f171f73854",
   "real_market_accuracy_claimed": false,
   "report_version": 1,
-  "run_id": "T09-20261111T201127Z",
+  "run_id": "T09-20261111T202044Z",
   "synthetic_only": true,
   "validation": {
     "families": {

@@ -21,7 +21,7 @@ The evaluator calls `realtoruch.dedupe.matching_property` on every pair. Current
 Production `ingest()` plus `process_alerts()` sequence mode used in-memory SQLite and a synthetic saved search. It ingested one source, two same-price reposts of that home, and two distinct apartments in the same building with known conflicting unit/floor evidence. The correct result is 3 canonical homes and exactly 3 logical `new_match` notifications, one per actual home. Baseline met those exact outcomes: reposts shared a canonical; both distinct units remained separate; notification kinds were `new_match: 3`; no notifications were lost or duplicated. This evaluates user-facing logical inbox notifications, not downstream email transport.
 
 Fault-injection tests use the same production ingestion and alert code. A forced-match matcher collapses all three true homes into one canonical (3 false-merge pairs), emits one notification and loses two expected home notifications. A reject-all matcher creates 5 canonical rows instead of 3, including two duplicate canonical records for the reposted home, and emits 5 `new_match` notifications (2 extras). Thus sequence metrics reveal both false merges/lost notifications and duplicate canonicals/excess notifications; these injected results are diagnostic tests, not production baseline results.
-Machine/runtime: macOS 15.6 Darwin arm64 (`uname -a`: Darwin 24.6.0, Apple T6041); Python 3.12.9; repository `.venv`; pytest from that locked environment. No cloud services, live portals or external mail were used. No schema or migration changes were required.
+Machine/runtime: macOS 15.7.7 Darwin arm64 (`uname -a`: Darwin 24.6.0, Apple T6041); Python 3.12.9; repository `.venv`; pytest from that locked environment. No cloud services, live portals or external mail were used. No schema or migration changes were required.
 
 ## Reproduction and artifacts
 
@@ -33,7 +33,7 @@ PYTHONPATH=backend /Users/alexnoel/Documents/ChatGPT/realtoruch/.venv/bin/python
 PYTHONPATH=backend /Users/alexnoel/Documents/ChatGPT/realtoruch/.venv/bin/python scripts/evaluate_dedupe.py --help
 ```
 
-Evaluation run ID: `T09-20261111T201127Z`; report generated `2026-11-11T20:11:27.414041+00:00` (20:11:27 UTC / 21:11:27 Europe/Warsaw). Dataset SHA-256: `511c5f6c7ef1e4a16bffb706ddd94e30a18e8c13423ea37eea0bd541da40940c`. Evaluator SHA-256: `ef3d597e005ada243e2630ab24a969c5b760631b93718392ab8a78ef1a27ae64`. Production matching source Git SHA: `ae893a6adba99617fe883bb9e81967566616124b`; combined source path SHA-256: `f1212025ff84175d858357afa8e54f89de173f3d9c471e1cc8ee10f171f73854`. Workspace Git SHA captured at run: `7184752495b4f9257812550958f6d542bc309c10`. No random seed is used. Full per-label, per-family metrics and ordered failure IDs are in [dedupe-baseline.json](dedupe-baseline.json); source dataset is `backend/tests/fixtures/dedupe/pairs.jsonl`.
+Evaluation run ID: `T09-20261111T201127Z`; report generated `2026-11-11T20:11:27.414041+00:00` (20:11:27 UTC / 21:11:27 Europe/Warsaw). Dataset SHA-256: `511c5f6c7ef1e4a16bffb706ddd94e30a18e8c13423ea37eea0bd541da40940c`. Evaluator SHA-256: `4ca7f2ae7c1380a0f8d8d86745b640f253e26b5a0b9adcec9b6a23228262905a`. Production matching source Git SHA: `ae893a6adba99617fe883bb9e81967566616124b`; combined source path SHA-256: `f1212025ff84175d858357afa8e54f89de173f3d9c471e1cc8ee10f171f73854`. Workspace Git SHA captured at run: `7184752495b4f9257812550958f6d542bc309c10`. No random seed is used. Full per-label, per-family metrics and ordered failure IDs are in [dedupe-baseline.json](dedupe-baseline.json); source dataset is `backend/tests/fixtures/dedupe/pairs.jsonl`.
 
 ### Acceptance criteria
 
@@ -72,3 +72,9 @@ This is a synthetic behavioral baseline, not a market estimate. The generated ca
 Recursive validation rejects raw phone/email field names anywhere in candidate, incoming, source, and other nested fields; provenance must be nonempty text. The report includes per-partition prediction coverage (`predicted == expected`); an evaluator exception aborts instead of silently removing a pair from metric denominators. Final report coverage was 220/220 overall, 100/100 development, and 120/120 holdout. Precision is represented as JSON `null` when there are zero positive predictions.
 
 Initial verification attempts: the first pytest invocation used a nonexistent worktree-relative `.venv/bin/pytest` (exit 127); it was corrected to the repository environment Python `-m pytest`. An intermediate syntax error while adding partition metrics caused one collection failure; fixed before final run. Final commands listed above were rerun successfully.
+
+## Integrator acceptance
+
+Parent repeated all 9 evaluator tests successfully, added a repeated reject-all sequence assertion, and sorted normalized canonical labels so fault-injection reports do not depend on random UUID order. The frozen dataset remains byte-identical. Platform was independently checked as macOS 15.7.7 arm64. Scoped Ruff checks use the repository backend configuration, avoiding unrelated host settings.
+
+The current JSON artifact was regenerated at `2026-11-11T20:20:44.912286+00:00` against integration base `15252caa99837ef187b2866aea1cbfd275814289` with evaluator SHA-256 `4ca7f2ae7c1380a0f8d8d86745b640f253e26b5a0b9adcec9b6a23228262905a`. It supersedes earlier artifact metadata; production matching behavior is unchanged.
