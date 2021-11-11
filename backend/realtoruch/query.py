@@ -294,8 +294,9 @@ def market_history(session, city="", district="", region="", months=12):
     end = now()
     absolute_month = end.year * 12 + end.month - 1 - (months - 1)
     start = datetime(absolute_month // 12, absolute_month % 12 + 1, 1)
-    month = (func.to_char(Observation.observed_at, "YYYY-MM")
-             if session.bind.dialect.name == "postgresql"
+    postgres = session.bind.dialect.name == "postgresql"
+    month = (func.date_trunc("month", Observation.observed_at)
+             if postgres
              else func.strftime("%Y-%m", Observation.observed_at))
     source_rank = func.row_number().over(
         partition_by=(month, Observation.source_listing_id),
@@ -306,23 +307,59 @@ def market_history(session, city="", district="", region="", months=12):
         Observation.source_listing_id.label("source_id"), Observation.id.label("observation_id"),
         Observation.observed_at.label("observed_at"), Observation.status.label("status"),
         Observation.rent_pln.label("rent"), Listing.area_m2.label("area"),
-        Listing.is_demo.label("demo"), source_rank.label("source_rank"),
+        Listing.is_demo.label("demo"),
+        *(() if postgres else (source_rank.label("source_rank"),)),
     ).join(Listing, Observation.listing_id == Listing.id).where(
         Observation.observed_at >= start, Observation.observed_at <= end, Listing.hidden.is_(False),
     )
     for value, column in ((city, Listing.city), (district, Listing.district), (region, Listing.region)):
         if value:
             observations = observations.where(column == value)
-    sources = observations.subquery()
-    home_rank = func.row_number().over(
-        partition_by=(sources.c.month, sources.c.home_id),
-        order_by=(sources.c.observed_at.desc(), sources.c.source_id.desc(), sources.c.observation_id.desc()),
-    )
-    active = select(sources, home_rank.label("home_rank")).where(
-        sources.c.source_rank == 1, sources.c.status == "active"
-    ).subquery()
-    homes = select(active).where(active.c.home_rank == 1).subquery()
+    if postgres:
+        from sqlalchemy.dialects.postgresql import distinct_on
+        # The registered schema's deterministic default collation has bytewise
+        # equality. C changes grouping order only; tie-breakers retain their
+        # original database collation.
+        source_key = Observation.source_listing_id.collate("C")
+        observations = observations.ext(distinct_on(month, source_key)).order_by(
+            month, source_key, Observation.observed_at.desc(), Observation.id.desc())
+        sources = observations.subquery()
+        home_key = sources.c.home_id.collate("C")
+        homes = select(sources).where(sources.c.status == "active").ext(
+            distinct_on(sources.c.month, home_key)).order_by(
+            sources.c.month, home_key, sources.c.observed_at.desc(),
+            sources.c.source_id.desc(), sources.c.observation_id.desc()).subquery()
+    else:
+        sources = observations.subquery()
+        home_rank = func.row_number().over(
+            partition_by=(sources.c.month, sources.c.home_id),
+            order_by=(sources.c.observed_at.desc(), sources.c.source_id.desc(), sources.c.observation_id.desc()),
+        )
+        active = select(sources, home_rank.label("home_rank")).where(
+            sources.c.source_rank == 1, sources.c.status == "active"
+        ).subquery()
+        homes = select(active).where(active.c.home_rank == 1).subquery()
     per_m2 = cast(homes.c.rent, Float) / homes.c.area
+    if session.bind.dialect.name == "postgresql":
+        rows = session.execute(select(
+            homes.c.month,
+            func.percentile_cont(0.5).within_group(cast(homes.c.rent, Float)).label("rent"),
+            func.percentile_cont(0.5).within_group(per_m2).label("per_m2"),
+            func.count().label("n"),
+            func.max(cast(homes.c.demo, Integer)).label("demo"),
+        ).group_by(homes.c.month).order_by(homes.c.month)).all()
+    else:
+        rows = _history_sqlite_medians(session, homes, per_m2)
+    return {
+        "points": [{"month": row.month.strftime("%Y-%m") if postgres else row.month, "median_rent_pln": row.rent,
+                    "median_per_m2": round(row.per_m2, 2), "sample_size": row.n,
+                    "is_demo": bool(row.demo)} for row in rows],
+        "methodology": "Median advertised base rent (PLN), excluding fees. Current UTC calendar month and preceding months through the query time; latest observation per source/month, then latest active source per canonical property/month. Per-m² uses current canonical area. Months without observations are not interpolated. This is an observed sample, not signed lease prices or a census. Small samples are shown explicitly.",
+        "city": city, "district": district, "region": region,
+    }
+
+
+def _history_sqlite_medians(session, homes, per_m2):
     ranked = select(
         homes.c.month, homes.c.rent, per_m2.label("per_m2"), homes.c.demo,
         func.count().over(partition_by=homes.c.month).label("n"),
@@ -331,20 +368,13 @@ def market_history(session, city="", district="", region="", months=12):
     ).subquery()
     def middle(rank):
         return (rank * 2 >= ranked.c.n) & (rank * 2 <= ranked.c.n + 2)
-    rows = session.execute(select(
+    return session.execute(select(
         ranked.c.month,
         func.avg(case((middle(ranked.c.rent_rank), cast(ranked.c.rent, Float)))).label("rent"),
         func.avg(case((middle(ranked.c.area_rank), ranked.c.per_m2))).label("per_m2"),
         func.max(ranked.c.n).label("n"),
         func.max(cast(ranked.c.demo, Integer)).label("demo"),
     ).group_by(ranked.c.month).order_by(ranked.c.month)).all()
-    return {
-        "points": [{"month": row.month, "median_rent_pln": row.rent,
-                    "median_per_m2": round(row.per_m2, 2), "sample_size": row.n,
-                    "is_demo": bool(row.demo)} for row in rows],
-        "methodology": "Median advertised base rent (PLN), excluding fees. Current UTC calendar month and preceding months through the query time; latest observation per source/month, then latest active source per canonical property/month. Per-m² uses current canonical area. Months without observations are not interpolated. This is an observed sample, not signed lease prices or a census. Small samples are shown explicitly.",
-        "city": city, "district": district, "region": region,
-    }
 
 
 def market_summary(session, city=""):
