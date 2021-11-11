@@ -25,12 +25,13 @@ def claim(factory, config):
         ).rowcount
         state = session.get(SourcePollState, source)
         if not changed:
+            backoff = state.retry_after if state.retry_after and state.retry_after > now() else None
             return None, {
                 "source": source,
                 "status": "deferred",
                 "errors": [],
-                "reason": "backoff" if state.retry_after and state.retry_after > now() else "already_running",
-                "retry_after": (state.retry_after or state.lease_until).isoformat() + "Z",
+                "reason": "backoff" if backoff else "already_running",
+                "retry_after": (backoff or state.lease_until or now()).isoformat() + "Z",
             }
         run = CollectionRun(id=lease_id, source=source, city=config.get("city", ""), status="running")
         session.add(run)
@@ -103,6 +104,45 @@ class LeaseHeartbeat:
             self.lost.set()
             raise LeaseLost("Collection lease could not be verified") from exc
 
+    def _change_timing(self, change):
+        if self.lost.is_set():
+            raise LeaseLost("Collection lease could not be renewed")
+        try:
+            with self.factory.begin() as session:
+                guard(session, self.source, self.lease_id)
+                state = session.get(SourcePollState, self.source)
+                instant = now()
+                if state.lease_until <= instant:
+                    raise LeaseLost("Collection lease expired during request scheduling")
+                return change(state, instant)
+        except Exception as exc:
+            self.lost.set()
+            raise LeaseLost("Collection request timing could not be verified") from exc
+
+    def reserve_request(self, delay):
+        """Return time to wait or reserve one request start and commit before HTTP."""
+        def reserve(state, instant):
+            if state.next_allowed_request and state.next_allowed_request > instant:
+                return (state.next_allowed_request - instant).total_seconds()
+            state.next_allowed_request = instant + timedelta(seconds=delay)
+            return 0
+
+        return self._change_timing(reserve)
+
+    def extend_pacing(self, deadline):
+        def extend(state, _):
+            if not state.next_allowed_request or deadline > state.next_allowed_request:
+                state.next_allowed_request = deadline
+
+        self._change_timing(extend)
+
+    def defer_requests(self, deadline):
+        def defer(state, _):
+            if not state.retry_after or deadline > state.retry_after:
+                state.retry_after = deadline
+
+        self._change_timing(defer)
+
     def close(self):
         self.stop_event.set()
         self.thread.join()
@@ -123,8 +163,9 @@ def finish(factory, source, lease_id, report):
             if locked:
                 session.refresh(state)
                 failures = state.failures + 1
-                values.update(failures=failures, retry_after=now() + timedelta(
-                    minutes=min(360, 15 * 2 ** min(failures - 1, 5))))
+                deadline = state.retry_after if report.get("retry_after") else now() + timedelta(
+                    minutes=min(360, 15 * 2 ** min(failures - 1, 5)))
+                values.update(failures=failures, retry_after=deadline)
         else:
             values.update(failures=0, retry_after=None, last_success_at=now())
         owned = session.execute(update(SourcePollState).where(

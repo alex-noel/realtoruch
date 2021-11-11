@@ -125,6 +125,36 @@ def recompute_listing(session, listing, *, new_property=False, identity_correcti
     queue_listing(session, listing.id)
 
 
+def record_history(session, source, data, observed_at, *, changed):
+    # Keep every change and one unchanged daily checkpoint.
+    latest = session.scalar(
+        select(Observation.observed_at)
+        .where(Observation.source_listing_id == source.id)
+        .order_by(Observation.observed_at.desc())
+        .limit(1)
+    )
+    if changed or not latest or latest.date() < observed_at.date():
+        session.add(Observation(
+            listing_id=source.listing_id, source_listing_id=source.id, observed_at=observed_at,
+            rent_pln=data["rent_pln"], fees_pln=data.get("fees_pln"), status=source.status, changed=changed,
+        ))
+
+
+def record_unchanged_check(session, source, observed_at):
+    """Advance freshness after the caller locked and revalidated this exact source row."""
+    if source.observed_at >= observed_at:
+        return
+    listing = session.get(Listing, source.listing_id)
+    source.observed_at = observed_at
+    source.data = {**source.data, "observed_at": observed_at.isoformat()}
+    record_history(session, source, source.data, observed_at, changed=False)
+    # Selecting a different crosspost based only on check time could manufacture
+    # a price change. Only the freshness fields and search projection advance.
+    listing.last_seen = max(listing.last_seen, observed_at)
+    from .indexing import queue_listing
+    queue_listing(session, listing.id)
+
+
 def ingest(session, raw: RawListing):
     """Caller owns transaction. Receipt, canonical update, history and outbox commit atomically."""
     lock_identity(session)
@@ -190,25 +220,7 @@ def ingest(session, raw: RawListing):
     source.data, source.phone_hash = data, data["phone_hash"]
     source.url, source.status, source.observed_at = str(raw.url), raw.status, observed_at
     session.flush()
-    # Keep all changes and one unchanged daily checkpoint for historical aggregates.
-    latest_history = session.scalar(
-        select(Observation.observed_at)
-        .where(Observation.source_listing_id == source.id)
-        .order_by(Observation.observed_at.desc())
-        .limit(1)
-    )
-    if changed or not latest_history or latest_history.date() < observed_at.date():
-        session.add(
-            Observation(
-                listing_id=listing.id,
-                source_listing_id=source.id,
-                observed_at=observed_at,
-                rent_pln=raw.rent_pln,
-                fees_pln=raw.fees_pln,
-                status=raw.status,
-                changed=changed,
-            )
-        )
+    record_history(session, source, data, observed_at, changed=changed)
     session.flush()
     affected = {listing.id}
     if (

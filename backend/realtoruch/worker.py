@@ -4,12 +4,13 @@ import logging
 import time
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from .connectors import Connector, load_sources
 from .db import Session, init_db
-from .ingest import ingest, recompute_listing
-from .models import EventReceipt, Listing, Outbox, SourceListing, now
+from .fetch_state import CachedPage, Validators, url_key
+from .ingest import ingest, lock_identity, recompute_listing, record_unchanged_check
+from .models import CollectionFetchState, EventReceipt, Listing, Outbox, SourceListing, now
 from .normalization import normalize
 from .query import serialize_many
 from .search import INDEX, es_client
@@ -30,9 +31,7 @@ def state_table():
 
 
 def state_key(source, url):
-    import hashlib
-
-    return f"state#{source}#{hashlib.sha256(url.encode()).hexdigest()}"
+    return f"state#{source}#{url_key(url)}"
 
 
 def recheck_key(data):
@@ -47,7 +46,63 @@ def row_payload(row):
     return json.loads(cells[0].value) if cells else None
 
 
-def publish(raw):
+class RepresentationChanged(RuntimeError):
+    """A 304 no longer has the validated representation used by the request."""
+
+
+def write_state(table, key, data):
+    row = table.direct_row(key)
+    row.set_cell("raw", "payload", json.dumps(data, sort_keys=True).encode())
+    row.commit()
+
+
+class CloudTiming:
+    """Persist timing within the existing single-run CronJob coordination boundary."""
+
+    def __init__(self, table, source):
+        self.table, self.key = table, f"provider-timing#{source}"
+        data = row_payload(table.read_row(self.key))
+        self.data = data if isinstance(data, dict) else {}
+
+    def deadline(self, field):
+        value = self.data.get(field)
+        if isinstance(value, str):
+            try:
+                deadline = datetime.fromisoformat(value)
+                return deadline if deadline.tzinfo is None else None
+            except ValueError:
+                pass
+        return None
+
+    def _extend(self, field, deadline):
+        previous = self.deadline(field)
+        if not previous or deadline > previous:
+            self.data[field] = deadline.isoformat()
+            write_state(self.table, self.key, self.data)
+
+    def reserve_request(self, delay):
+        instant, deadline = now(), self.deadline("next_allowed_request")
+        if deadline and deadline > instant:
+            return (deadline - instant).total_seconds()
+        self.extend_pacing(instant + timedelta(seconds=delay))
+        return 0
+
+    def extend_pacing(self, deadline):
+        self._extend("next_allowed_request", deadline)
+
+    def defer_requests(self, deadline):
+        self._extend("retry_after", deadline)
+
+
+def invalidate_cloud_fetch(source, url):
+    table, key = state_table(), state_key(source, url)
+    previous = row_payload(table.read_row(key))
+    if previous and "_fetch" in previous:
+        del previous["_fetch"]
+        write_state(table, key, previous)
+
+
+def publish(raw, validator=None):
     import hashlib
 
     from google.cloud import pubsub_v1
@@ -59,6 +114,8 @@ def publish(raw):
     table = state_table()
     key = state_key(raw.source, str(raw.url))
     previous = row_payload(table.read_row(key))
+    if isinstance(validator, CachedPage):
+        raise RepresentationChanged("Cloud publication cannot guarantee an existing canonical representation")
     if previous and datetime.fromisoformat(previous["observed_at"]) >= raw.observed_at:
         return
     # HMAC only: no raw phone enters Bigtable or Pub/Sub.
@@ -77,9 +134,9 @@ def publish(raw):
         due = table.direct_row(recheck_key(normalized))
         due.set_cell("raw", "payload", data)
         due.commit()
-    state = table.direct_row(key)
-    state.set_cell("raw", "payload", data)
-    state.commit()
+    if isinstance(validator, Validators):
+        normalized["_fetch"] = validator.for_payload(normalized)
+    write_state(table, key, normalized)
     if previous and recheck_key(previous) != recheck_key(normalized):
         old = table.direct_row(recheck_key(previous))
         old.delete()
@@ -90,6 +147,44 @@ class CollectionFailed(RuntimeError):
     def __init__(self, reports):
         self.reports = reports
         super().__init__("One or more sources failed; inspect the collection report")
+
+
+def source_at_url(source, url):
+    return (select(SourceListing).where(SourceListing.source == source, SourceListing.url == url)
+            .order_by(SourceListing.observed_at.desc(), SourceListing.id).limit(1))
+
+
+def verify_reuse(session, raw, validator):
+    lock_identity(session)
+    if session.bind.dialect.name == "postgresql":
+        # Match ingest's lock order before locking the source row. Dataflow and
+        # other observation writers do not necessarily hold the collector lease.
+        session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:city))"), {"city": raw.city.casefold()})
+    current = session.scalar(source_at_url(raw.source, str(raw.url)).with_for_update())
+    state = session.get(CollectionFetchState, (raw.source, url_key(str(raw.url))))
+    if (not current or current.status != "active" or current.external_id != raw.external_id
+            or not state or state.source_listing_id != current.id
+            or not validator.matches(current.data, state.validators)):
+        raise RepresentationChanged("Stored representation changed after the conditional request")
+    return current
+
+
+def save_fetch_state(session, raw, validator):
+    key = (raw.source, url_key(str(raw.url)))
+    state = session.get(CollectionFetchState, key)
+    if not isinstance(validator, Validators):
+        if state:
+            session.delete(state)
+        return
+    current = session.scalar(select(SourceListing).where(
+        SourceListing.source == raw.source, SourceListing.external_id == raw.external_id,
+    ))
+    metadata = validator.for_payload(current.data)
+    if state:
+        state.source_listing_id, state.validators = current.id, metadata
+    else:
+        session.add(CollectionFetchState(source=key[0], url_hash=key[1],
+                                         source_listing_id=current.id, validators=metadata))
 
 
 def source_state(config, cloud):
@@ -130,13 +225,13 @@ def source_state(config, cloud):
 
     def lookup(url):
         with Session() as session:
-            prior = session.scalar(
-                select(SourceListing).where(
-                    SourceListing.source == source,
-                    SourceListing.url == url,
-                )
-            )
-            return prior.data if prior and not prior.data.get("is_demo") else None
+            prior = session.scalar(source_at_url(source, url))
+            if not prior or not isinstance(prior.data, dict) or prior.data.get("is_demo"):
+                return None
+            state = session.get(CollectionFetchState, (source, url_key(url)))
+            if state and state.source_listing_id == prior.id and prior.status == "active":
+                return {**prior.data, "_fetch": state.validators}
+            return prior.data
 
     with Session() as session:
         prior = session.scalars(
@@ -213,9 +308,33 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
         connector = Connector(config)
         if lease:
             connector.progress = lease.check
+            connector.timing = lease
+
+        def invalidate(url):
+            if cloud:
+                invalidate_cloud_fetch(config["name"], url)
+                return
+            with Session.begin() as session:
+                guard(session, config["name"], run_id)
+                session.execute(delete(CollectionFetchState).where(
+                    CollectionFetchState.source == config["name"], CollectionFetchState.url_hash == url_key(url),
+                ))
+
+        connector.invalidate_cache = invalidate
         started = now().isoformat() + "Z"
         ingested = 0
         try:
+            if cloud:
+                timing = CloudTiming(state_table(), config["name"])
+                deadline = timing.deadline("retry_after")
+                if deadline and deadline > now():
+                    reports.append({"source": config["name"], "status": "deferred", "errors": [],
+                                    "reason": "backoff", "retry_after": deadline.isoformat() + "Z"})
+                    continue
+                connector.timing = timing
+                # Pub/Sub acknowledgement alone does not prove that the canonical
+                # row exists in SQL. A cloud 304 cannot safely advance freshness.
+                connector.allow_conditional = False
             if config.get("mode") in ("jsonld", "portal"):
                 lookup, known = source_state(config, cloud)
                 from functools import cache
@@ -234,12 +353,20 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
             for raw in connector.records():
                 if lease:
                     lease.check()
+                validator = getattr(connector, "observation_validator", None)
                 if cloud:
-                    publish(raw)
+                    publish(raw, validator)
                 else:
                     with Session.begin() as session:
                         guard(session, config["name"], run_id)
-                        ingest(session, raw)
+                        if isinstance(validator, CachedPage):
+                            current = verify_reuse(session, raw, validator)
+                            record_unchanged_check(session, current, raw.observed_at)
+                        else:
+                            result = ingest(session, raw)
+                            if (config.get("mode") in ("jsonld", "portal")
+                                    and result["status"] in ("updated", "checked")):
+                                save_fetch_state(session, raw, validator)
                 ingested += 1
         except Exception as exc:
             if lease and isinstance(exc, LeaseLost):

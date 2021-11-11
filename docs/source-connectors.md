@@ -131,9 +131,27 @@ The file must be at most 5 MB and less than 24 hours old. Its modification time 
 
 ## Local lease ownership and restart
 
-SQL collection uses one 30-minute lease per provider, shared by all cities. A single heartbeat scheduler per provider renews every 60 seconds, including while discovery yields nothing, requests are pacing, or HTTP is in flight. Before each HTTP request the worker checks ownership; ingestion takes a conditional provider-row lock in the same transaction as the observation. A lost or unverifiable lease stops the run with `interrupted` / `lease_lost`. A request already in flight can finish, but its result cannot commit after takeover. Completion updates health only if its token is still current and unexpired; the historical run is marked interrupted otherwise. An initial pacing interval on every run preserves the configured provider budget across consecutive city runs, while different providers remain independent.
+SQL collection uses one 30-minute lease per provider, shared by all cities. A single heartbeat scheduler per provider renews every 60 seconds, including while discovery yields nothing, requests are pacing, or HTTP is in flight. Before each HTTP request the worker reserves a provider-wide request slot under its current lease token. The deadline includes the effective robots crawl delay and request rate and survives city changes and restarts. Sleeping and HTTP happen outside the transaction. Ingestion takes a conditional provider-row lock in the same transaction as the observation. A lost or unverifiable lease stops the run with `interrupted` / `lease_lost`. A request already in flight can finish, but its result cannot commit after takeover. Completion updates health only if its token is still current and unexpired; the historical run is marked interrupted otherwise.
 
-After a crash, wait for lease expiration and any retry backoff, then restart the ordinary local command, for example `make collect ARGS="--city Kraków"`. Replaying an observation is idempotent. An HTTP failure alone is not a removal. The SQL lease protocol does not coordinate the `--cloud` Bigtable/Pub/Sub path; cloud coordination requires a separate contract and is unchanged here. Network-level cancellation and atomicity between a lease check and an external server are not guaranteed.
+After a crash, wait for lease expiration and any retry backoff, then restart the ordinary local command, for example `make collect ARGS="--city Kraków"`. Replaying an observation is idempotent. An HTTP failure alone is not a removal. The SQL lease protocol does not coordinate the `--cloud` Bigtable/Pub/Sub path. Network-level cancellation and atomicity between a lease check and an external server are not guaranteed.
+
+## Conditional checks and request reports
+
+SQL collectors recheck supported public portal and JSON-LD detail pages with `If-None-Match` or `If-Modified-Since` after a valid 200 for the same source, URL, and request variant. Migration `rentals/005` stores bounded validator fields and a digest of the normalized listing privately, without storing HTML or request headers. A 304 can refresh only the still matching source row. It advances the source and home check time and keeps one unchanged daily checkpoint without changing the displayed price or creating alerts. An unsolicited or mismatched 304 gets one unconditional attempt within the same two-attempt budget. Feed, search, and robots requests do not use listing validators.
+
+429 and 503 responses with a valid `Retry-After` stop the provider and persist the parsed deadline. Without a valid header, SQL uses its ordinary failure backoff. Timeouts and 502 may be retried once with jitter after the provider pacing interval. A 403 stops immediately. Bigtable accepts older flat state rows and newer rows with optional private `_fetch` metadata; archives, recheck queue rows and Pub/Sub events keep their original shape. Cloud requests stay unconditional because Pub/Sub acceptance alone does not establish a canonical SQL row. Bigtable provider timing survives restarts under the existing single CronJob assumption; it does not provide a cross-worker lease.
+
+An attempted run report adds these counters to the existing `checked`, `fresh_skipped`, and `ingested` fields. Counters may overlap, and disabled/deferred reports have no network attempts.
+
+| Field | Meaning |
+| --- | --- |
+| `network_attempts` | Every outbound HTTP attempt, including robots, redirects returned by the source, timeouts, retries, and conditional GETs. |
+| `robots_attempts` | HTTP attempts for `robots.txt`, including its retries. |
+| `conditional_attempts` | Detail attempts sent with one or both validator headers. |
+| `retry_attempts` | Second attempts following a timeout, 502, or uninterpretable 304. |
+| `responses_304` / `reused_304` | 304 responses seen / 304 responses with a representation accepted by the connector. `ingested` counts results that also passed the worker's commit boundary. |
+| `body_bytes` | Decoded body bytes consumed across all attempts, including bytes read before a stream fails or hits the 5 MB cap. A 304 contributes zero. |
+| `retry_after` | UTC deadline persisted from a valid provider Retry-After, when present. |
 
 ## OLX onboarding preflight (T06)
 
