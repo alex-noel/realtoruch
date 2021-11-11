@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline-first OLX access and sample-mapping preflight; never enables collection."""
 import argparse
+import ipaddress
 import json
 import math
 import os
@@ -38,8 +39,16 @@ def validate_url(url, hosts, *, resolve=False):
             or parsed.port not in (None, 443) or parsed.query):
         raise ValueError("URL must be query-free HTTPS on an exact approved host")
     # Reject local/private destinations before the HTTP client can connect.
+    host = parsed.hostname.rstrip(".").lower()
+    if host == "localhost" or host.endswith((".localhost", ".local")):
+        raise ValueError("Source host must be public")
+    try:
+        literal_ip = ipaddress.ip_address(host)
+    except ValueError:
+        literal_ip = None
+    if literal_ip is not None and not literal_ip.is_global:
+        raise ValueError("Source host must be public")
     if resolve:
-        import ipaddress
         for result in socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM):
             if not ipaddress.ip_address(result[4][0]).is_global:
                 raise ValueError("Source host resolves to a non-public address")
