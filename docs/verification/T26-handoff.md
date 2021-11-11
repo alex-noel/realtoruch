@@ -1,6 +1,6 @@
 # T26 handoff — Operational metrics and runbooks
 
-- Status: IMPLEMENTED_LOCAL; local acceptance below, pending the integrator's independent privacy and operations review.
+- Status: VERIFIED locally after the integrator's independent privacy/operations review and combined service verification.
 - Base: `fbbd6d95c8f0432200e3a4677eeb53fa113041cb`. Implementation: `cdcc56eeb0db94955c3480552d8be6461f8f5fad`, created with `python3 scripts/commit.py`; author and committer dates both `2021-11-11T22:03:45+01:00`.
 - Actual work and verification: 2026-11-11 Europe/Warsaw (CET), including PostgreSQL restore at 22:01 CET. Evidence dates describe actual work, independently of Git timestamps.
 - Outcome: Operators can scrape private queue and collection snapshots, check each service's required dependencies, and diagnose six incidents without reading private account or listing content.
@@ -52,3 +52,17 @@ Earlier verification caught two fixture mistakes: an omitted required notificati
 ## Parent review
 
 Private diagnostics, bounded labels, transaction limits, lock cleanup and ingress boundaries were independently reviewed. `integrated-t26-review` passed 105 real-service tests with zero skips on the combined T04/T10/T11/T13 base. A separate local run passed all six SQLite/Helm tests (four PostgreSQL tests intentionally deselected). The whole offline suite exposed an obsolete assertion that anonymous `/metrics` remained public; it was updated to require the intended 403, while the dedicated metrics suite verifies authorized content and denial before SQL access. Rental email currently remains claimable when configured disabled and fails at the sender; metrics reflect that existing behavior, unlike auth mail which is excluded from claims. This task did not silently change transport behavior.
+
+## Parent integration correction
+
+The T12 combined service check exposed an eligibility mismatch in the original
+index diagnostics. The indexer does not defer an outbox row whose creation time
+is in the future, but metrics and the runbook did. Parent commit `b4ae272` removes
+that diagnostic restriction, retains held 400/413 behavior and clamps negative
+ages to zero. The real PostgreSQL/Elasticsearch runbook case now deliberately
+sets a pending row one hour ahead, proves it is reported ready with zero age,
+and proves the normal indexer drains it. Both-engine queue fixtures include the
+same distinction from future scheduled email/push jobs. Four focused SQLite
+cases passed; the final `integrated-t12-final` profile passed 188 tests without
+failures or skips on 2026-11-11. This closes the intermittent runbook failure
+without claiming its precise clock cause or altering worker eligibility.

@@ -1,6 +1,6 @@
 # T12 handoff — Public rental search
 
-- Status: IMPLEMENTED_LOCAL; independent API/data review and integration are pending.
+- Status: VERIFIED locally after parent API/data review and combined service verification; see parent review below.
 - Base: `3fbab65e9bfd6bd46e6cddbea9566dbe20e64d48` (reviewed T08/T11 plus the shared core).
 - Implementation: `e2d8a7d23834e1a8e25178d5d342896c89ee1390` (author and committer `2021-11-11T22:41:39+01:00`) and `6ae45671d783724d313b3eb6262dd6ed8a2b5fef` (author and committer `2021-11-11T22:44:27+01:00`), both created with `python3 scripts/commit.py`. Actual work and verification: 2026-11-11, Europe/Warsaw (CET). The handoff is a separate documentation commit.
 - Outcome: Anonymous REST listings remain available on search failure when SQL is available, with current visible homes and explicit fallback metadata. The application search proxy validates its own output and identifies it as eventually consistent.
@@ -58,3 +58,24 @@ Fixture data is synthetic: a 12-home structured catalog, 4-home stale index, and
 - The static sort and geometry logic account for [ES geo coordinate quantization](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-geo-bounding-box-query) and use [query-local runtime fields](https://www.elastic.co/guide/en/elasticsearch/painless/8.19/painless-runtime-fields-context.html) on the pinned ES version. These checks prove correctness on fixture data, not T25's reference latency. Runtime filters can add cost for broad polygons and area ranges. Benchmark those workloads in T25. The SQL statement limit begins once a DB connection is acquired; network connection/pool policy is unchanged. Upstream HTTP has per-I/O timeouts and the body deadline is checked on each raw chunk.
 - SQL validates and renders the current candidates, but ES can still omit newly matching homes. T12 does not publish an index-wide timestamp or claim the T08 convergence target on reference hardware. Exact page totals use a single SQL statement snapshot; pages across requests can move with updates.
 - No external T12 gate. Independent API/data/privacy review, downstream T19 consumption and the integrated service regression remain with the integrator.
+
+## Parent integration review
+
+Integrated implementation at `71126e0`; reviewed nested allowlists, current SQL
+visibility/filter checks, deterministic page metadata, exact geometry/amount
+boundaries, source health scope and both HTTP read budgets. The parent requested
+and verified raw-chunk deadline checks, fragment stripping, compatible amenity
+projection and city-specific complete-success timestamps. T15 guards and all
+required service modules were preserved during integration.
+
+Independent targeted runs passed 62 tests with five explicit real-service skips,
+then 43 with the same five skips after the deadline correction. The combined
+real-service profile initially passed 185 tests and failed the T26 index runbook
+case without skips. Parent correction `b4ae272` aligns index diagnostics with
+actual worker eligibility and tests a deliberately future creation timestamp;
+it does not change collector or indexing eligibility. The final combined
+`integrated-t12-final` profile passed 188 tests with zero failures or skips on
+2026-11-11. This includes the T15/T16 concurrency cases, real PostgreSQL and
+Elasticsearch, all public contracts and the corrected runbook. Runtime precision
+filters still require T25 measurement; live collection and deployment are not
+covered by these fixtures.
