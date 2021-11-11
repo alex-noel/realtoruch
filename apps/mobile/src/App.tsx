@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -42,10 +42,8 @@ import { AccountDialog, ResetPasswordDialog } from "./components/AccountDialog";
 import { market } from "./marketplaceApi";
 import {
   DEFAULT_FILTERS,
-  Filters,
   Listing,
   SavedSearch,
-  Summary,
 } from "./types";
 import { c, font, s } from "./theme";
 import { Button, Chip, Field, Panel, money } from "./components/UI";
@@ -58,6 +56,8 @@ import {
   FilterDialog,
 } from "./components/Dialogs";
 import Insights from "./components/Insights";
+import SourceStatus from "./components/SourceStatus";
+import { loadSeenIds, normalizeCity, resultAge, useListingSearch } from "./hooks/useListingSearch";
 
 if (Platform.OS === "web") require("./web.css");
 const MarketplaceDialog = lazy(() => import("./components/MarketplaceDialog"));
@@ -89,16 +89,16 @@ function RentalApp() {
   const desktop = width >= 1100;
   const mobile = width < 680;
   const [tab, setTab] = useState<Tab>("discover");
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [query, setQuery] = useState("");
   const [city, setCity] = useState(DEFAULT_FILTERS.city);
-  const [homes, setHomes] = useState<Listing[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [retry, setRetry] = useState(0);
+  const {
+    filters, page, result, currentPage, loading, failed, sourceData,
+    sourceLoading, sourceFailed, summary, changeFilters, goToPage,
+    retrySearch, retrySources, refresh,
+  } = useListingSearch(DEFAULT_FILTERS);
+  const homes = result?.data.items ?? [];
+  const total = result?.data.total ?? 0;
+  const pageSize = result?.data.page_size ?? 24;
   const [view, setView] = useState<"split" | "list" | "map">("split");
   const [dialog, setDialog] = useState<
     | "auth"
@@ -114,6 +114,7 @@ function RentalApp() {
   const [detail, setDetail] = useState<Listing | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<Listing[]>([]);
+  const favoriteIds = new Set(favorites.map((home) => home.id));
   const [searches, setSearches] = useState<SavedSearch[]>([]);
   const [comparison, setComparison] = useState<Listing[]>([]);
   const [user, setUser] = useState<string | null>(null);
@@ -132,6 +133,7 @@ function RentalApp() {
   const [formError, setFormError] = useState("");
   const [formBusy, setFormBusy] = useState(false);
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+  const [guestSeenIds, setGuestSeenIds] = useState<Set<string>>(new Set());
   const [inbox, setInbox] = useState<Inbox>({
     items: [],
     unread_count: 0,
@@ -154,7 +156,12 @@ function RentalApp() {
         if (generation === sessionGeneration.current) { currentUser.current = me.email; setUser(me.email); }
       }
     } catch (error) {
-      if (error instanceof SessionError && (error.kind === "transient" || error.kind === "storage") && getSessionState() !== "reauth") setSessionState("offline");
+      if (
+        generation === sessionGeneration.current &&
+        error instanceof SessionError &&
+        (error.kind === "transient" || error.kind === "storage") &&
+        getSessionState() !== "reauth"
+      ) setSessionState("offline");
     }
   }
   useEffect(() => {
@@ -162,72 +169,56 @@ function RentalApp() {
       setSessionState(state);
       if (state === "reauth" || state === "signed-out" || state === "storage-cleanup") {
         sessionGeneration.current++;
+        if (currentUser.current) {
+          detailRequest.current++;
+          setDetail(null);
+          setSelected(null);
+          setComparison([]);
+          setContact(undefined);
+          pendingFavorite.current = null;
+        }
+        favoriteBusy.current.clear();
         currentUser.current = null;
         setUser(null);
         setFavorites([]);
         setSearches([]);
         setInbox({ items: [], unread_count: 0, page: 1, page_size: 30 });
         setSeenIds(new Set());
-        setDialog(current => current === "account" || current === "marketplace" ? null : current);
+        setDialog(current =>
+          current === "account" || current === "marketplace" || current === "save-search" || current === "report"
+            ? null
+            : current,
+        );
       }
     });
     void retrySession();
-    return unsubscribe;
+    return () => {
+      sessionGeneration.current++;
+      detailRequest.current++;
+      unsubscribe();
+    };
   }, []);
   useEffect(() => {
     if (Platform.OS === "web")
       document.title = "Realtoruch · A clearer way to rent";
   }, []);
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    api
-      .search(filters, page, controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) {
-          setHomes(result.items);
-          setTotal(result.total);
-          setLoading(false);
-        }
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) {
-          setError(e.message);
-          setLoading(false);
-        }
-      });
-    return () => controller.abort();
-  }, [filters, page, retry]);
+    if (user) refreshAccount();
+  }, [user]);
   useEffect(() => {
     let active = true;
-    api
-      .summary(filters.city)
+    AsyncStorage.getItem("realtoruch.guest-seen.v1")
       .then((value) => {
-        if (active) setSummary(value);
+        if (!active || !value) return;
+        const ids: unknown = JSON.parse(value);
+        if (Array.isArray(ids)) {
+          const saved = ids.filter((id): id is string => typeof id === "string");
+          setGuestSeenIds((current) => new Set([...saved, ...current].slice(-1000)));
+        }
       })
-      .catch(() => {
-        if (active) setSummary(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [filters.city, retry]);
-  useEffect(() => {
-    if (user) refreshAccount();
-    else {
-      setFavorites([]);
-      setSearches([]);
-      setInbox({ items: [], unread_count: 0, page: 1, page_size: 30 });
-      setSeenIds(new Set());
-      AsyncStorage.getItem("realtoruch.guest-seen.v1")
-        .then((value) => {
-          if (!currentUser.current && value)
-            setSeenIds(new Set(JSON.parse(value)));
-        })
-        .catch(() => {});
-    }
-  }, [user]);
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 4500);
@@ -240,51 +231,51 @@ function RentalApp() {
         AppState.currentState === "active" &&
         (Platform.OS !== "web" || document.visibilityState === "visible")
       ) {
-        setRetry((value) => value + 1);
+        refresh();
         if (currentUser.current) refreshAccount();
       }
     }, 15000);
     return () => clearInterval(timer);
   }, []);
-  const stateIds = [...new Set([...homes, ...favorites].map((home) => home.id))]
-    .slice(0, 100)
-    .join(",");
-  useEffect(() => {
-    if (!user || !stateIds) return;
-    let active = true;
-    api
-      .listingState(stateIds.split(","))
-      .then((state) => {
-        if (active)
-          setSeenIds((current) => new Set([...current, ...state.seen_ids]));
+  const stateIds = JSON.stringify(
+    [...new Set((tab === "saved" ? favorites : homes).map((home) => home.id))].sort(),
+  );
+  useLayoutEffect(() => {
+    if (!user || (tab !== "discover" && tab !== "saved") || stateIds === "[]") return;
+    const controller = new AbortController();
+    const generation = sessionGeneration.current;
+    const requested = new Set<string>(JSON.parse(stateIds));
+    loadSeenIds([...requested], controller.signal)
+      .then((ids) => {
+        if (!controller.signal.aborted && isCurrentAccount(generation, user)) {
+          setSeenIds((current) => new Set([
+            ...ids,
+            ...[...current].filter((id) => requested.has(id)),
+          ]));
+        }
       })
-      .catch((e) => {
-        if (active) setToast(e.message);
-      });
-    return () => {
-      active = false;
-    };
-  }, [user, stateIds]);
+      .catch(() => {});
+    return () => controller.abort();
+  }, [user, stateIds, tab]);
   useEffect(() => {
     if (!detail) return;
     const id = detail.id;
     if (user) {
-      let active = true;
+      const controller = new AbortController();
+      const generation = sessionGeneration.current;
       api
-        .seen(id)
+        .seen(id, controller.signal)
         .then(() => {
-          if (!active) return;
+          if (controller.signal.aborted || !isCurrentAccount(generation, user)) return;
           setSeenIds((current) => new Set([...current, id]));
           refreshAccount();
         })
         .catch((e) => {
-          if (active) setToast(e.message);
+          if (!controller.signal.aborted && isCurrentAccount(generation, user)) setToast(e.message);
         });
-      return () => {
-        active = false;
-      };
+      return () => controller.abort();
     }
-    setSeenIds((current) => new Set([...current, id]));
+    setGuestSeenIds((current) => new Set([...current, id]));
     AsyncStorage.getItem("realtoruch.guest-seen.v1")
       .then((value) => {
         const previous: string[] = value ? JSON.parse(value) : [];
@@ -303,7 +294,7 @@ function RentalApp() {
         .catch((e) => setToast(e.message));
     const stop = listenForPush(open, () => {
       if (currentUser.current) refreshAccount();
-      setRetry((value) => value + 1);
+      refresh();
     });
     if (Platform.OS === "web") {
       const id = new URLSearchParams(window.location.search).get("listing");
@@ -353,12 +344,22 @@ function RentalApp() {
     return stop;
   }, []);
 
-  function changeFilters(value: Filters) {
-    setFilters(value);
-    setPage(1);
+  function applyText(nextCity: string, nextQuery: string, debounce = false) {
+    const cityChanged = normalizeCity(nextCity) !== filters.city;
+    changeFilters({
+      ...filters,
+      city: nextCity,
+      q: nextQuery,
+      district: cityChanged ? "" : filters.district,
+      polygon: cityChanged ? undefined : filters.polygon,
+    }, debounce);
+  }
+  function isCurrentAccount(generation: number, email: string | null) {
+    return generation === sessionGeneration.current && currentUser.current === email;
   }
   async function refreshAccount() {
     const expected = currentUser.current;
+    const generation = sessionGeneration.current;
     if (!expected) return;
     try {
       const [saved, searches, notifications] = await Promise.all([
@@ -366,7 +367,7 @@ function RentalApp() {
         api.searches(),
         api.notifications(),
       ]);
-      if (currentUser.current !== expected) return;
+      if (!isCurrentAccount(generation, expected)) return;
       setFavorites(saved.items);
       setSearches(searches.items);
       setInbox((previous) => ({
@@ -381,7 +382,7 @@ function RentalApp() {
         ],
       }));
     } catch (e) {
-      setToast((e as Error).message);
+      if (isCurrentAccount(generation, expected)) setToast((e as Error).message);
     }
   }
   async function toggleFavorite(home: Listing) {
@@ -392,9 +393,11 @@ function RentalApp() {
     }
     if (favoriteBusy.current.has(home.id)) return;
     favoriteBusy.current.add(home.id);
-    const saved = favorites.some((item) => item.id === home.id);
+    const generation = sessionGeneration.current;
+    const saved = favoriteIds.has(home.id);
     try {
       await api.favorite(home.id, !saved);
+      if (!isCurrentAccount(generation, user)) return;
       setFavorites((prev) =>
         saved ? prev.filter((item) => item.id !== home.id) : [...prev, home],
       );
@@ -404,9 +407,9 @@ function RentalApp() {
           : "A good find. Saved to your shortlist.",
       );
     } catch (e) {
-      setToast((e as Error).message);
+      if (isCurrentAccount(generation, user)) setToast((e as Error).message);
     } finally {
-      favoriteBusy.current.delete(home.id);
+      if (isCurrentAccount(generation, user)) favoriteBusy.current.delete(home.id);
     }
   }
   async function signedIn(token: string, email: string) {
@@ -431,7 +434,9 @@ function RentalApp() {
       .then((value) => {
         if (request === detailRequest.current) setDetail(value);
       })
-      .catch((e) => setToast(e.message));
+      .catch((e) => {
+        if (request === detailRequest.current) setToast(e.message);
+      });
   }
   function toggleCompare(home: Listing) {
     if (comparison.some((item) => item.id === home.id))
@@ -737,23 +742,30 @@ function RentalApp() {
               user={user}
               inbox={inbox}
               onSignIn={() => setDialog("auth")}
-              onOpen={(item: RentalNotification) =>
-                api
-                  .detail(item.listing_id)
-                  .then(openHome)
-                  .catch((e) => setToast(e.message))
-              }
+              onOpen={(item: RentalNotification) => {
+                const generation = sessionGeneration.current;
+                return api.detail(item.listing_id)
+                  .then((home) => {
+                    if (isCurrentAccount(generation, user)) openHome(home);
+                  })
+                  .catch((e) => {
+                    if (isCurrentAccount(generation, user)) setToast(e.message);
+                  });
+              }}
               onRead={async (id) => {
+                const generation = sessionGeneration.current;
                 try {
                   await api.readNotification(id);
-                  await refreshAccount();
+                  if (isCurrentAccount(generation, user)) await refreshAccount();
                 } catch (e) {
-                  setToast((e as Error).message);
+                  if (isCurrentAccount(generation, user)) setToast((e as Error).message);
                 }
               }}
               onMore={async () => {
+                const generation = sessionGeneration.current;
                 try {
                   const next = await api.notifications(inbox.page + 1);
+                  if (!isCurrentAccount(generation, user)) return;
                   setInbox((previous) => ({
                     ...next,
                     items: [
@@ -765,7 +777,7 @@ function RentalApp() {
                     ],
                   }));
                 } catch (e) {
-                  setToast((e as Error).message);
+                  if (isCurrentAccount(generation, user)) setToast((e as Error).message);
                 }
               }}
             />
@@ -920,7 +932,11 @@ function RentalApp() {
                         <TextInput
                           accessibilityLabel="City"
                           value={city}
-                          onChangeText={setCity}
+                          onChangeText={(value) => {
+                            setCity(value);
+                            applyText(value, query, true);
+                          }}
+                          onSubmitEditing={() => applyText(city, query)}
                           style={{
                             fontFamily: font,
                             color: c.ink,
@@ -943,18 +959,11 @@ function RentalApp() {
                       <TextInput
                         accessibilityLabel="Search neighborhood, street or keyword"
                         value={query}
-                        onChangeText={setQuery}
-                        onSubmitEditing={() =>
-                          changeFilters({
-                            ...filters,
-                            city: city.trim(),
-                            polygon:
-                              city.trim() !== filters.city
-                                ? undefined
-                                : filters.polygon,
-                            q: query.trim(),
-                          })
-                        }
+                        onChangeText={(value) => {
+                          setQuery(value);
+                          applyText(city, value, true);
+                        }}
+                        onSubmitEditing={() => applyText(city, query)}
                         placeholder="Neighborhood, street, or a little inspiration…"
                         placeholderTextColor={c.muted}
                         style={{
@@ -966,23 +975,7 @@ function RentalApp() {
                         }}
                       />
                     </View>
-                    <Button
-                      onPress={() =>
-                        changeFilters({
-                          ...filters,
-                          city: city.trim(),
-                          polygon:
-                            city.trim() !== filters.city
-                              ? undefined
-                              : filters.polygon,
-                          q: query.trim(),
-                          district:
-                            city.trim() !== filters.city
-                              ? ""
-                              : filters.district,
-                        })
-                      }
-                    >
+                    <Button onPress={() => applyText(city, query)}>
                       Find a home →
                     </Button>
                   </View>
@@ -1082,6 +1075,14 @@ function RentalApp() {
                       </Text>
                     </Pressable>
                   </View>
+                  <SourceStatus
+                    key={filters.city}
+                    city={filters.city}
+                    data={sourceData}
+                    loading={sourceLoading}
+                    failed={sourceFailed}
+                    onRetry={retrySources}
+                  />
                   {summary && (
                     <View
                       style={[
@@ -1140,7 +1141,9 @@ function RentalApp() {
                   <Text style={[s.text, { fontWeight: "600", fontSize: 16 }]}>
                     {tab === "saved"
                       ? `${favorites.length} saved homes`
-                      : `${total} homes in ${filters.city || "Poland"}`}
+                      : result
+                        ? `${total} homes in ${filters.city || "Poland"}`
+                        : `Homes in ${filters.city || "Poland"}`}
                   </Text>
                   {loading && tab === "discover" && (
                     <ActivityIndicator size="small" color={c.green} />
@@ -1216,14 +1219,22 @@ function RentalApp() {
                   </View>
                 )}
               </View>
-              {error && tab === "discover" ? (
-                <View style={[s.card, { padding: 30, gap: 18 }]}>
-                  <Text accessibilityRole="alert" style={s.text}>
-                    {error}
-                  </Text>
-                  <Button onPress={() => setRetry(retry + 1)}>Try again</Button>
+              {tab === "discover" && (failed || (result && !currentPage)) && (
+                <View style={[s.card, { padding: 14, gap: 8, alignItems: "flex-start" }]}>
+                  {failed && (
+                    <Text accessibilityRole="alert" style={s.text}>
+                      Could not update homes. Check your connection and retry.
+                    </Text>
+                  )}
+                  {result && (
+                    <Text accessibilityLiveRegion="polite" style={s.muted}>
+                      Showing previous results loaded {resultAge(result.receivedAt)}.
+                    </Text>
+                  )}
+                  {failed && <Button onPress={retrySearch}>Retry search</Button>}
                 </View>
-              ) : tab === "saved" && !user ? (
+              )}
+              {tab === "saved" && !user ? (
                 <View style={[s.card, { padding: 40, gap: 20 }]}>
                   <Heart size={32} color={c.green} />
                   <Text style={s.title}>Good finds deserve a shortlist.</Text>
@@ -1251,7 +1262,7 @@ function RentalApp() {
                         gap: 16,
                       }}
                     >
-                      {!loading && !visibleHomes.length && (
+                      {(tab === "saved" || (!loading && !failed)) && !visibleHomes.length && (
                         <View style={[s.card, { padding: 36, gap: 18 }]}>
                           <Search size={28} color={c.muted} />
                           <Text style={s.title}>
@@ -1282,32 +1293,32 @@ function RentalApp() {
                           key={home.id}
                           home={home}
                           selected={home.id === selected}
-                          saved={favorites.some((h) => h.id === home.id)}
+                          saved={favoriteIds.has(home.id)}
                           compared={comparison.some((h) => h.id === home.id)}
-                          seen={seenIds.has(home.id)}
+                          seen={(user ? seenIds : guestSeenIds).has(home.id)}
                           onOpen={() => openHome(home)}
                           onSave={() => toggleFavorite(home)}
                           onCompare={() => toggleCompare(home)}
                         />
                       ))}
-                      {tab === "discover" && total > 24 && (
+                      {tab === "discover" && currentPage && total > pageSize && (
                         <View
                           style={[s.row, { justifyContent: "space-between" }]}
                         >
                           <Button
                             outline
                             disabled={page === 1}
-                            onPress={() => setPage((p) => p - 1)}
+                            onPress={() => goToPage(page - 1)}
                           >
                             Previous
                           </Button>
                           <Text style={s.muted}>
-                            Page {page} of {Math.ceil(total / 24)}
+                            Page {page} of {Math.ceil(total / pageSize)}
                           </Text>
                           <Button
                             outline
-                            disabled={page * 24 >= total}
-                            onPress={() => setPage((p) => p + 1)}
+                            disabled={page * pageSize >= total}
+                            onPress={() => goToPage(page + 1)}
                           >
                             Next
                           </Button>
@@ -1509,7 +1520,7 @@ function RentalApp() {
             setDetail(null);
           }}
           onSave={() => toggleFavorite(detail)}
-          saved={favorites.some((h) => h.id === detail.id)}
+          saved={favoriteIds.has(detail.id)}
           onReport={() => openDialog(user ? "report" : "auth")}
           onContact={(advert) => {
             setContact(advert);
@@ -1530,7 +1541,7 @@ function RentalApp() {
             onClose={() => {
               setDialog(null);
               setContact(undefined);
-              setRetry((v) => v + 1);
+              refresh();
               refreshAccount();
             }}
             onOpenHome={(id) => {
