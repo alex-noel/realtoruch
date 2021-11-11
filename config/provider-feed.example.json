@@ -1,0 +1,29 @@
+{
+  "source": "olx",
+  "enabled": false,
+  "mode": "feed",
+  "city": "Kraków",
+  "feed_url": "",
+  "allowed_hosts": ["approved-provider.example"],
+  "token_env": "OLX_FEED_TOKEN",
+  "requests_per_minute": 6,
+  "max_pages": 1,
+  "mapping": {
+    "external_id": "stable provider listing identifier",
+    "url": "canonical public listing URL on an approved host",
+    "title": "advertised title",
+    "city": "must be Kraków for this profile",
+    "area_m2": "numeric area in square metres",
+    "rooms": "positive integer room count",
+    "rent_pln": "advertised monthly base rent in whole PLN",
+    "fees_pln": "monthly fees in PLN or null when unknown",
+    "commission_pln": "commission in PLN; null means unknown, zero means known zero",
+    "status": "active, inactive only with explicit provider removal evidence, or unknown",
+    "observed_at": "provider observation/check time in ISO-8601 UTC"
+  },
+  "pagination": "next_url must be HTTPS on an exact allowed host; preflight samples at most one page",
+  "removals": "absence from a page is not removal; require an explicit inactive item and newer observed_at",
+  "permitted_reuse": "Obtain written provider permission for automated access, storage, display, retention and redistribution before enabling collection.",
+  "authentication": "Set OLX_FEED_TOKEN in the process environment or an ignored local env file. Never put credentials in URLs or tracked config.",
+  "provider_capability": "This is an example contract only. It does not assert OLX offers a partner feed or that an account API covers marketplace listings."
+}

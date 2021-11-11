@@ -17,6 +17,7 @@
       "name": "olx",
       "enabled": false,
       "mode": "feed",
+      "city": "Kraków",
       "feed_url": "",
       "allowed_hosts": [
         "www.olx.pl",
