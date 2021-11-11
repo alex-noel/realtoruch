@@ -63,6 +63,14 @@ def test_offline_default_makes_no_http_requests(monkeypatch):
     assert report["state"] == "ready_offline"
 
 
+@pytest.mark.parametrize("host", ["127.0.0.1", "10.0.0.1", "localhost", "service.local", "::1"])
+def test_offline_preflight_rejects_explicit_private_hosts_without_dns(monkeypatch, host):
+    monkeypatch.setattr("scripts.source_preflight.socket.getaddrinfo", lambda *a, **kw: pytest.fail("DNS called"))
+    url_host = f"[{host}]" if ":" in host else host
+    errors, _ = validate_config(profile(allowed_hosts=[host], feed_url=f"https://{url_host}/feed"))
+    assert errors
+
+
 def test_invalid_hosts_and_missing_token_do_not_leak_secret(monkeypatch):
     monkeypatch.setenv("T06_TEST_TOKEN", "canary-secret-value")
     errors, missing = validate_config(profile(feed_url="http://127.0.0.1/feed?token=canary-secret-value"))
