@@ -265,3 +265,75 @@ def test_registry_upgrades_tracked_baseline_preserving_rows(pg_engine, tmp_path)
     finally:
         with pg_engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA IF EXISTS {schema} CASCADE'))
+
+
+def test_t03_postgres_claim_and_takeover_fence(pg_engine, record):
+    from threading import Barrier
+    from sqlalchemy import func
+    from realtoruch.collection_health import LeaseLost, claim, finish, guard
+    from realtoruch.models import CollectionRun, EventReceipt, SourcePollState
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    start = Barrier(2)
+
+    def contender(city):
+        start.wait(timeout=10)
+        return claim(factory, {"name": "otodom", "city": city})
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(contender, ["Kraków", "Warszawa"]))
+    assert sum(bool(lease) for lease, _ in results) == 1
+    assert [deferred["reason"] for _, deferred in results if deferred] == ["already_running"]
+    old = next(lease for lease, _ in results if lease)
+    # Simulate a completed in-flight response, then expire and replace its owner.
+    response_ready, resumed = Barrier(2), Barrier(2)
+
+    def old_response():
+        response_ready.wait(timeout=10)
+        resumed.wait(timeout=10)
+        with pytest.raises(LeaseLost), factory.begin() as db:
+            guard(db, "otodom", old)
+            ingest(db, record)
+        finish(factory, "otodom", old, {"status": "succeeded", "errors": []})
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(old_response)
+        response_ready.wait(timeout=10)
+        with factory.begin() as db:
+            db.get(SourcePollState, "otodom").lease_until = now() - timedelta(seconds=1)
+        new, _ = claim(factory, {"name": "otodom", "city": "Warszawa"})
+        with factory.begin() as db:
+            state = db.get(SourcePollState, "otodom")
+            state.failures, state.retry_after, state.last_success_at = 2, now() + timedelta(hours=1), now()
+            expected = (state.lease_id, state.lease_until, state.failures, state.retry_after, state.last_success_at)
+        resumed.wait(timeout=10)
+        pending.result(timeout=10)
+    with factory() as db:
+        state = db.get(SourcePollState, "otodom")
+        assert new == state.lease_id
+        assert (state.lease_id, state.lease_until, state.failures, state.retry_after, state.last_success_at) == expected
+        assert db.get(CollectionRun, old).status == "interrupted"
+        assert db.scalar(select(func.count()).select_from(EventReceipt)) == 0
+
+
+def test_t03_postgres_replay_after_interruption(pg_engine, record):
+    from sqlalchemy import func
+    from realtoruch.collection_health import claim, guard
+    from realtoruch.models import AlertEvent, EventReceipt, Observation, SourceListing, SourcePollState
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    old, _ = claim(factory, {"name": "otodom"})
+    with factory.begin() as db:
+        guard(db, "otodom", old)
+        ingest(db, record)
+    with factory.begin() as db:
+        db.get(SourcePollState, "otodom").lease_until = now() - timedelta(seconds=1)
+    new, _ = claim(factory, {"name": "otodom"})
+    with factory() as db:
+        before = [db.scalar(select(func.count()).select_from(m)) for m in (EventReceipt, Observation, SourceListing, AlertEvent)]
+    with factory.begin() as db:
+        guard(db, "otodom", new)
+        ingest(db, record)
+    with factory() as db:
+        after = [db.scalar(select(func.count()).select_from(m)) for m in (EventReceipt, Observation, SourceListing, AlertEvent)]
+    assert after == before
