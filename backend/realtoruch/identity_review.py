@@ -238,11 +238,22 @@ def split(
     sources = session.scalars(select(SourceListing).where(SourceListing.listing_id == home.id)).all()
     if len(sources) < 2:
         raise HTTPException(422, "A home must keep at least one source")
-    prior_events = list(
-        session.scalars(
-            select(AlertEvent.id).where(AlertEvent.listing_id == home.id, AlertEvent.processed_at.is_(None))
-        )
-    )
+    # Legacy events and notifications describe the combined home, not a source.
+    # Do not guess where outstanding user-facing work belongs after a split.
+    notification_ids = select(Notification.id).where(Notification.listing_id == home.id)
+    pending_event = session.scalar(select(AlertEvent.id).where(
+        AlertEvent.listing_id == home.id, AlertEvent.processed_at.is_(None)).limit(1))
+    unread = session.scalar(select(Notification.id).where(
+        Notification.listing_id == home.id, Notification.read_at.is_(None)).limit(1))
+    terminal = ("sent", "failed", "cancelled")
+    pending_email = session.scalar(select(EmailDelivery.id).where(
+        EmailDelivery.notification_id.in_(notification_ids),
+        EmailDelivery.status.not_in(terminal)).limit(1))
+    pending_push = session.scalar(select(PushDelivery.id).where(
+        PushDelivery.notification_id.in_(notification_ids),
+        PushDelivery.status.not_in(terminal)).limit(1))
+    if pending_event or unread or pending_email or pending_push:
+        raise HTTPException(409, "Pending alert state prevents this split; retry after it is resolved")
     new = Listing(
         **{key: getattr(home, key) for key in PROPERTY_FIELDS},
         first_seen=home.first_seen,
@@ -268,15 +279,6 @@ def split(
     for favorite in session.scalars(select(Favorite).where(Favorite.listing_id == new.id)):
         favorite.price_floor = min(favorite.price_floor or new.rent_pln, new.rent_pln)
     session.flush()
-    session.execute(
-        update(AlertEvent)
-        .where(
-            AlertEvent.listing_id.in_([home.id, new.id]),
-            AlertEvent.processed_at.is_(None),
-            ~AlertEvent.id.in_(prior_events),
-        )
-        .values(processed_at=now())
-    )
     session.add(
         IdentityDecision(
             moderator_id=moderator,

@@ -172,3 +172,79 @@ def test_merge_preserves_pending_genuine_drop_without_identity_alert(client, aut
     assert session.get(Favorite, (uid, target)).price_floor == record.rent_pln - 200
     assert session.get(SeenPrice, (uid, target, record.rent_pln))
     assert client.get(f"/v1/listings/{source}").json()["id"] == target
+
+
+def test_split_blocks_pending_unattributed_price_drop(client, auth_client, session, record, monkeypatch):
+    from sqlalchemy import func
+    from realtoruch.models import (
+        AlertEvent, EmailDelivery, EmailSubscription, Observation, PushDelivery,
+        PushSubscription, SearchRevision,
+    )
+
+    uid, headers = account(auth_client, "split-pending-reviewer")
+    monkeypatch.setattr(get_settings(), "moderator_user_ids", uid)
+    home = ingest(session, record)["listing_id"]
+    other = record.model_copy(update={"external_id": "split-pending", "address": "Other 104"})
+    duplicate = ingest(session, other)["listing_id"]
+    source_id = session.scalar(select(SourceListing.id).where(SourceListing.listing_id == duplicate))
+    assert client.post(f"/v1/moderation/listings/{duplicate}/merge", headers=headers, json={
+        "target_id": home, "reason": "Initially reviewed as one combined property."
+    }).status_code == 200
+    client.put(f"/v1/me/favorites/{home}", headers=headers)
+    process_alerts(session)
+    session.commit()
+    ingest(session, other.model_copy(update={"rent_pln": record.rent_pln - 200, "observed_at": now()}))
+    session.commit()
+    body = {"source_id": source_id, "reason": "Later review shows distinct source identity."}
+    pending = session.scalars(select(AlertEvent.id).where(AlertEvent.listing_id == home, AlertEvent.processed_at.is_(None))).all()
+    assert pending
+    def counts():
+        return tuple(session.scalar(select(func.count()).select_from(model)) for model in (
+            Listing, SourceListing, Observation, Favorite, IdentityDecision, AlertEvent, Notification,
+            EmailDelivery, PushDelivery,
+        ))
+    def reject_unchanged():
+        before = counts()
+        revision = session.get(SearchRevision, home).revision
+        response = client.post(f"/v1/moderation/listings/{home}/split", headers=headers, json=body)
+        assert response.status_code == 409 and "Pending alert state" in response.json()["detail"]
+        assert counts() == before and session.get(SearchRevision, home).revision == revision
+        assert session.get(SourceListing, source_id).listing_id == home
+        assert session.get(Favorite, (uid, home)).price_floor in (record.rent_pln, record.rent_pln - 200)
+    reject_unchanged()
+    assert session.scalars(select(AlertEvent.id).where(AlertEvent.listing_id == home, AlertEvent.processed_at.is_(None))).all() == pending
+    process_alerts(session)
+    session.commit()
+    notification = session.scalar(select(Notification).where(Notification.user_id == uid))
+    assert notification.kind == "price_drop" and notification.rent_pln == record.rent_pln - 200
+    reject_unchanged()  # Unread inbox item, even with no transport.
+    notification.read_at = now()
+    session.add(EmailSubscription(user_id=uid, email="synthetic@example.test", enabled=True,
+                                  verified_at=now(), unsubscribe_token="synthetic-token"))
+    session.add(PushSubscription(id="t10-synthetic-push", user_id=uid, kind="expo", data={}))
+    session.flush()
+    email = EmailDelivery(user_id=uid, notification_id=notification.id, status="retry", claim_token="email-claim")
+    push = PushDelivery(subscription_id="t10-synthetic-push", notification_id=notification.id,
+                        status="receipt", claim_token="push-claim")
+    session.add_all([email, push])
+    session.commit()
+    reject_unchanged()  # Claimed retry and accepted push receipt both remain pending.
+    assert email.status == "retry" and email.claim_token == "email-claim"
+    assert push.status == "receipt" and push.claim_token == "push-claim"
+    email.status, email.claim_token = "sent", None
+    session.commit()
+    reject_unchanged()  # Receipt remains pending after email drain.
+    push.status, push.claim_token = "sent", None
+    session.commit()
+    original = {key: getattr(notification, key) for key in (
+        "id", "listing_id", "kind", "title", "rent_pln", "previous_rent_pln", "dedupe_key", "read_at"
+    )}
+    response = client.post(f"/v1/moderation/listings/{home}/split", headers=headers, json=body)
+    assert response.status_code == 200, response.text
+    assert session.get(SourceListing, source_id).listing_id == response.json()["listing_id"]
+    session.refresh(notification)
+    assert {key: getattr(notification, key) for key in original} == original
+    inbox = client.get("/v1/me/notifications", headers=headers).json()["items"]
+    assert len(inbox) == 1 and inbox[0]["id"] == notification.id and inbox[0]["listing_id"] == home
+    process_alerts(session)
+    assert session.scalar(select(func.count()).select_from(Notification)) == 1
