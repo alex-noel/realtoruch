@@ -68,6 +68,8 @@ def create_notification(session, home, user_id, kind, *, search_id=None, previou
 
 def process_alerts(session, limit=100):
     """Caller owns transaction. Inbox records and event acknowledgements commit together."""
+    from .ingest import lock_identity
+    lock_identity(session, shared=True)
     if session.bind.dialect.name == "postgresql":
         from sqlalchemy import text
 

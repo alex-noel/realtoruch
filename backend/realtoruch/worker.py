@@ -288,6 +288,8 @@ def retention():
     settings = get_settings()
     cutoff = now() - timedelta(days=settings.contact_retention_days)
     with Session.begin() as session:
+        from .ingest import lock_identity
+        lock_identity(session)
         affected = set()
         changed_phones = set()
         for source in session.scalars(
@@ -320,7 +322,7 @@ def retention():
                     select(SourceListing.listing_id).where(SourceListing.phone_hash.in_(changed_phones))
                 ).all()
             )
-        for listing_id in affected:
+        for listing_id in sorted(affected):
             recompute_listing(session, session.get(Listing, listing_id))
         from .models import CollectionRun
 

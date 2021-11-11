@@ -54,6 +54,8 @@ A removal from one portal does not deactivate a property still active on another
 
 Manual correction must preserve aliases, seen prices, favorites, favorite price floors, source histories and genuine pending alerts, while avoiding spurious “new home” alerts caused only by identity correction. Moderator actions remain auditable and do not expose private audit reasons in public DTOs.
 
+Reviewed T10 decision: legacy alert events and notifications do not identify their contributing source. A split therefore returns a recoverable 409 while the combined card has unprocessed alert events, unread notifications or nonterminal email/push deliveries. The rejected attempt changes no state. Once this work drains and notifications are read, retrying the split succeeds without a correction-only alert. Terminal/read historical notifications stay unchanged on the retained original card; they must not be presented as attributable to a particular separated source. Canonical writers take the identity advisory gate before city, source, account or preference locks; consumers that protect a short canonical snapshot use its shared mode. Network I/O remains outside canonical transactions.
+
 ## Canonical eight-step acceptance sequence
 
 Use synthetic data and a local file mail transport. Match notifications by kind/logical event ID; account-verification and opt-in-confirmation emails are separate from the rental-alert count.

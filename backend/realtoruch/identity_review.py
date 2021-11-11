@@ -8,7 +8,7 @@ from sqlalchemy import delete, select, text, update
 
 from .alerts import insert_once
 from .db import get_session
-from .ingest import PROPERTY_FIELDS, recompute_listing
+from .ingest import PROPERTY_FIELDS, lock_identity, recompute_listing
 from .marketplace import require_moderator
 from .models import (
     Advert,
@@ -118,9 +118,11 @@ def evidence(listing_id: str, _=Depends(require_moderator), session=Depends(get_
 def merge(
     listing_id: str, body: MergeBody, moderator=Depends(require_moderator), session=Depends(get_session)
 ):
+    lock_identity(session)
+    session.expire_all()
     source_id, target_id = resolve_id(session, listing_id), resolve_id(session, body.target_id)
     if source_id == target_id:
-        raise HTTPException(422, "Choose two different homes")
+        raise HTTPException(409, "Home identity has changed; reload before correcting")
     candidate, other = session.get(Listing, source_id), session.get(Listing, target_id)
     if not candidate or not other:
         raise HTTPException(404, "Home not found")
@@ -178,9 +180,13 @@ def merge(
     source.status, source.hidden = "inactive", True
     target.first_seen = min(source.first_seen, target.first_seen)
     session.flush()
-    recompute_listing(session, target)
     from .indexing import queue_listing
-    queue_listing(session, source_id)
+    # Queue in ID order; recomputation itself queues the target revision.
+    if source_id < target_id:
+        queue_listing(session, source_id)
+    recompute_listing(session, target, identity_correction=True)
+    if source_id > target_id:
+        queue_listing(session, source_id)
     session.execute(
         update(AlertEvent)
         .where(
@@ -216,6 +222,8 @@ def merge(
 def split(
     listing_id: str, body: SplitBody, moderator=Depends(require_moderator), session=Depends(get_session)
 ):
+    lock_identity(session)
+    session.expire_all()
     candidate = session.get(Listing, resolve_id(session, listing_id))
     if candidate and session.bind.dialect.name == "postgresql":
         session.execute(
@@ -226,15 +234,26 @@ def split(
     )
     source = session.get(SourceListing, body.source_id)
     if not home or not source or source.listing_id != home.id:
-        raise HTTPException(404, "Source not found on this home")
+        raise HTTPException(409, "Source identity has changed; reload before correcting")
     sources = session.scalars(select(SourceListing).where(SourceListing.listing_id == home.id)).all()
     if len(sources) < 2:
         raise HTTPException(422, "A home must keep at least one source")
-    prior_events = list(
-        session.scalars(
-            select(AlertEvent.id).where(AlertEvent.listing_id == home.id, AlertEvent.processed_at.is_(None))
-        )
-    )
+    # Legacy events and notifications describe the combined home, not a source.
+    # Do not guess where outstanding user-facing work belongs after a split.
+    notification_ids = select(Notification.id).where(Notification.listing_id == home.id)
+    pending_event = session.scalar(select(AlertEvent.id).where(
+        AlertEvent.listing_id == home.id, AlertEvent.processed_at.is_(None)).limit(1))
+    unread = session.scalar(select(Notification.id).where(
+        Notification.listing_id == home.id, Notification.read_at.is_(None)).limit(1))
+    terminal = ("sent", "failed", "cancelled")
+    pending_email = session.scalar(select(EmailDelivery.id).where(
+        EmailDelivery.notification_id.in_(notification_ids),
+        EmailDelivery.status.not_in(terminal)).limit(1))
+    pending_push = session.scalar(select(PushDelivery.id).where(
+        PushDelivery.notification_id.in_(notification_ids),
+        PushDelivery.status.not_in(terminal)).limit(1))
+    if pending_event or unread or pending_email or pending_push:
+        raise HTTPException(409, "Pending alert state prevents this split; retry after it is resolved")
     new = Listing(
         **{key: getattr(home, key) for key in PROPERTY_FIELDS},
         first_seen=home.first_seen,
@@ -255,20 +274,11 @@ def split(
     # on existing shortlists and suppress alerts caused solely by this correction.
     copy_preferences(session, home.id, new.id, move=False)
     session.flush()
-    recompute_listing(session, home)
-    recompute_listing(session, new)
+    for listing in sorted((home, new), key=lambda row: row.id):
+        recompute_listing(session, listing, identity_correction=True)
     for favorite in session.scalars(select(Favorite).where(Favorite.listing_id == new.id)):
         favorite.price_floor = min(favorite.price_floor or new.rent_pln, new.rent_pln)
     session.flush()
-    session.execute(
-        update(AlertEvent)
-        .where(
-            AlertEvent.listing_id.in_([home.id, new.id]),
-            AlertEvent.processed_at.is_(None),
-            ~AlertEvent.id.in_(prior_events),
-        )
-        .values(processed_at=now())
-    )
     session.add(
         IdentityDecision(
             moderator_id=moderator,

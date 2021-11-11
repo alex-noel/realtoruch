@@ -466,3 +466,316 @@ def test_profile_change_reindexes_public_only(pg_engine, record, monkeypatch):
         assert 'After' in payload
         for secret in ('draft-canary', '700100101', 'phone_hash', 'email', 'password'):
             assert secret not in payload
+
+
+def test_t10_opposite_merges_serialize_without_alias_cycle(pg_engine, record):
+    import threading
+    from fastapi import HTTPException
+    from realtoruch.identity_review import MergeBody, merge
+    from realtoruch.models import ListingAlias, SourceListing
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    with factory.begin() as session:
+        a = ingest(session, record)["listing_id"]
+        b = ingest(session, record.model_copy(update={"external_id": "t10-second", "address": "Other 88"}))["listing_id"]
+    barrier = threading.Barrier(2)
+    def attempt(source, target):
+        with factory() as session:
+            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            barrier.wait(timeout=5)
+            try:
+                return merge(source, MergeBody(target_id=target, reason="Reviewed identity evidence carefully"), "moderator", session)["listing_id"]
+            except HTTPException as exc:
+                session.rollback()
+                return exc.status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(attempt, a, b)
+        second = pool.submit(attempt, b, a)
+        results = [first.result(timeout=12), second.result(timeout=12)]
+    assert results.count(409) == 1
+    survivor = next(value for value in results if value != 409)
+    with factory() as session:
+        aliases = session.scalars(select(ListingAlias)).all()
+        assert len(aliases) == 1 and aliases[0].listing_id == survivor and aliases[0].old_id != survivor
+        assert set(session.scalars(select(SourceListing.listing_id)).all()) == {survivor}
+
+
+def test_t10_reverse_batch_writer_waits_before_snapshot(pg_engine, record):
+    import threading
+    from realtoruch import indexing
+    from realtoruch.models import SearchRevision
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    with factory.begin() as session:
+        ids = sorted([
+            ingest(session, record)["listing_id"],
+            ingest(session, record.model_copy(update={"external_id": "t10-batch", "address": "Other 99"}))["listing_id"],
+        ])
+    held, release, trying = threading.Event(), threading.Event(), threading.Event()
+    def writer():
+        with factory.begin() as session:
+            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            from realtoruch.ingest import lock_identity
+            lock_identity(session)
+            indexing.queue_listing(session, ids[1])
+            held.set()
+            assert release.wait(5)
+            indexing.queue_listing(session, ids[0])
+    def reader():
+        assert held.wait(5)
+        with factory.begin() as session:
+            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            trying.set()
+            return indexing.snapshot(session, ids)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        w = pool.submit(writer)
+        r = pool.submit(reader)
+        assert trying.wait(5)
+        release.set()
+        w.result(timeout=10)
+        docs = r.result(timeout=10)
+    with factory() as session:
+        assert {item[0]: item[1] for item in docs} == dict(session.execute(select(SearchRevision.listing_id, SearchRevision.revision)).all())
+
+
+def test_t10_correction_rollback_and_retry_are_atomic(pg_engine, record, monkeypatch):
+    from realtoruch.identity_review import MergeBody, merge
+    from realtoruch.models import Favorite, IdentityDecision, ListingAlias, Observation, SearchRevision, SourceListing
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    with factory.begin() as session:
+        a = ingest(session, record)["listing_id"]
+        b = ingest(session, record.model_copy(update={"external_id": "t10-rollback", "address": "Other 101"}))["listing_id"]
+        session.add(Favorite(user_id="rollback-user", listing_id=b, price_floor=2500))
+    with factory() as session:
+        revisions = dict(session.execute(select(SearchRevision.listing_id, SearchRevision.revision)).all())
+        before_sources = dict(session.execute(select(SourceListing.id, SourceListing.listing_id)).all())
+        before_observations = dict(session.execute(select(Observation.id, Observation.listing_id)).all())
+    with factory() as session:
+        def fail_commit():
+            session.flush()
+            raise RuntimeError("injected before commit")
+        monkeypatch.setattr(session, "commit", fail_commit)
+        with pytest.raises(RuntimeError, match="injected"):
+            merge(b, MergeBody(target_id=a, reason="Reviewed correction before rollback test"), "moderator", session)
+        session.rollback()
+    with factory() as session:
+        assert session.get(ListingAlias, b) is None
+        assert session.get(Favorite, ("rollback-user", b)).price_floor == 2500
+        assert not session.scalars(select(IdentityDecision)).all()
+        assert dict(session.execute(select(SearchRevision.listing_id, SearchRevision.revision)).all()) == revisions
+        assert dict(session.execute(select(SourceListing.id, SourceListing.listing_id)).all()) == before_sources
+        assert dict(session.execute(select(Observation.id, Observation.listing_id)).all()) == before_observations
+    with factory() as session:
+        assert merge(b, MergeBody(target_id=a, reason="Reviewed correction before rollback test"), "moderator", session)["listing_id"] == a
+    with factory() as session:
+        assert session.get(ListingAlias, b).listing_id == a
+        assert session.get(Favorite, ("rollback-user", a)).price_floor == 2500
+        assert len(session.scalars(select(IdentityDecision)).all()) == 1
+
+
+def test_t10_published_edit_serializes_with_merge(pg_engine, record):
+    import threading
+    from test_marketplace import DRAFT
+    from realtoruch.identity_review import MergeBody, merge
+    from realtoruch.ingest import lock_identity
+    from realtoruch.marketplace import AdvertBody, EditBody, edit_advert, publish_observation
+    from realtoruch.models import Advert, AdvertiserProfile, ListingAlias, SearchRevision, SourceListing
+    from realtoruch.settings import get_settings
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    with factory.begin() as session:
+        target = ingest(session, record.model_copy(update={"city": DRAFT["city"], "is_demo": get_settings().demo_mode}))["listing_id"]
+        profile = AdvertiserProfile(user_id="t10-owner", name="Owner", kind="private")
+        session.add(profile)
+        session.flush()
+        advert = Advert(user_id=profile.user_id, draft=DRAFT, state="published")
+        session.add(advert)
+        session.flush()
+        publish_observation(session, advert, profile, "active")
+        source, advert_id = advert.listing_id, advert.id
+    assert source != target
+    held, release, trying = threading.Event(), threading.Event(), threading.Event()
+    def edit():
+        with factory() as session:
+            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            lock_identity(session)
+            held.set()
+            assert release.wait(5)
+            body = EditBody(version=1, advert=AdvertBody(**{**DRAFT, "rent_pln": 4200}))
+            return edit_advert(advert_id, body, "t10-owner", session)
+    def correct():
+        assert held.wait(5)
+        with factory() as session:
+            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            trying.set()
+            return merge(source, MergeBody(target_id=target, reason="Reviewed published advert identity"), "moderator", session)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a = pool.submit(edit)
+        b = pool.submit(correct)
+        assert trying.wait(5)
+        release.set()
+        assert a.result(timeout=10)["version"] == 2
+        assert b.result(timeout=10)["listing_id"] == target
+    with factory() as session:
+        assert session.get(Advert, advert_id).listing_id == target
+        assert session.get(ListingAlias, source).listing_id == target
+        ad_source = session.scalar(select(SourceListing).where(SourceListing.external_id == advert_id, SourceListing.source == "realtoruch"))
+        assert ad_source.listing_id == target and ad_source.data["rent_pln"] == 4200
+        assert session.get(SearchRevision, source).revision >= 2
+        assert session.get(SearchRevision, target).revision >= 2
+
+
+def test_t10_preference_write_serializes_with_merge(pg_engine, record):
+    import threading
+    from realtoruch.api import mark_seen, save_favorite
+    from realtoruch.identity_review import MergeBody, merge
+    from realtoruch.ingest import lock_identity
+    from realtoruch.models import Favorite, SeenPrice
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    with factory.begin() as session:
+        a = ingest(session, record)["listing_id"]
+        b = ingest(session, record.model_copy(update={"external_id": "t10-pref", "address": "Other 102"}))["listing_id"]
+    held, release, trying = threading.Event(), threading.Event(), threading.Event()
+    def preference():
+        with factory() as session:
+            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            lock_identity(session, shared=True)
+            held.set()
+            assert release.wait(5)
+            save_favorite(b, "t10-pref-user", session)
+        with factory() as session:
+            mark_seen(b, "t10-pref-user", session)
+    def correct():
+        assert held.wait(5)
+        with factory() as session:
+            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            trying.set()
+            return merge(b, MergeBody(target_id=a, reason="Reviewed concurrent preference correction"), "moderator", session)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        one = pool.submit(preference)
+        two = pool.submit(correct)
+        assert trying.wait(5)
+        release.set()
+        one.result(timeout=10)
+        assert two.result(timeout=10)["listing_id"] == a
+    with factory() as session:
+        assert session.get(Favorite, ("t10-pref-user", a))
+        assert session.get(Favorite, ("t10-pref-user", b)) is None
+        assert session.get(SeenPrice, ("t10-pref-user", a, record.rent_pln))
+        assert session.get(SeenPrice, ("t10-pref-user", b, record.rent_pln)) is None
+
+
+def test_t10_split_rollback_and_retry_are_atomic(pg_engine, record, monkeypatch):
+    from realtoruch.alerts import process_alerts
+    from realtoruch.identity_review import MergeBody, SplitBody, merge, split
+    from realtoruch.models import Favorite, IdentityDecision, Observation, SearchRevision, SourceListing
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    with factory.begin() as session:
+        a = ingest(session, record)["listing_id"]
+        b = ingest(session, record.model_copy(update={"external_id": "t10-split-rollback", "address": "Other 103"}))["listing_id"]
+        source_id = session.scalar(select(SourceListing.id).where(SourceListing.listing_id == b))
+        session.add(Favorite(user_id="split-rollback-user", listing_id=a, price_floor=2600))
+    with factory() as session:
+        merge(b, MergeBody(target_id=a, reason="Initial mistaken identity to be corrected"), "moderator", session)
+    with factory.begin() as session:
+        process_alerts(session)
+    with factory() as session:
+        revisions = dict(session.execute(select(SearchRevision.listing_id, SearchRevision.revision)).all())
+        sources = dict(session.execute(select(SourceListing.id, SourceListing.listing_id)).all())
+        observations = dict(session.execute(select(Observation.id, Observation.listing_id)).all())
+        decisions = [d.id for d in session.scalars(select(IdentityDecision)).all()]
+    with factory() as session:
+        def fail_commit():
+            session.flush()
+            raise RuntimeError("injected before split commit")
+        monkeypatch.setattr(session, "commit", fail_commit)
+        with pytest.raises(RuntimeError, match="injected"):
+            split(a, SplitBody(source_id=source_id, reason="Reconsidered source identity evidence"), "moderator", session)
+        session.rollback()
+    with factory() as session:
+        assert dict(session.execute(select(SearchRevision.listing_id, SearchRevision.revision)).all()) == revisions
+        assert dict(session.execute(select(SourceListing.id, SourceListing.listing_id)).all()) == sources
+        assert dict(session.execute(select(Observation.id, Observation.listing_id)).all()) == observations
+        assert [d.id for d in session.scalars(select(IdentityDecision)).all()] == decisions
+        assert session.get(Favorite, ("split-rollback-user", a)).price_floor == 2600
+    with factory() as session:
+        separated = split(a, SplitBody(source_id=source_id, reason="Reconsidered source identity evidence"), "moderator", session)["listing_id"]
+    with factory() as session:
+        assert session.get(SourceListing, source_id).listing_id == separated
+        assert session.get(Favorite, ("split-rollback-user", separated)).price_floor <= 2600
+        assert len(session.scalars(select(IdentityDecision)).all()) == len(decisions) + 1
+
+
+def test_t10_published_edit_serializes_with_split(pg_engine, record):
+    import threading
+    from test_marketplace import DRAFT
+    from realtoruch.alerts import process_alerts
+    from realtoruch.identity_review import MergeBody, SplitBody, merge, split
+    from realtoruch.ingest import lock_identity
+    from realtoruch.marketplace import AdvertBody, EditBody, edit_advert, publish_observation
+    from realtoruch.models import Advert, AdvertiserProfile, SearchRevision, SourceListing
+    from realtoruch.settings import get_settings
+
+    factory = sessionmaker(pg_engine, expire_on_commit=False)
+    with factory.begin() as session:
+        home = ingest(session, record.model_copy(update={"city": DRAFT["city"], "is_demo": get_settings().demo_mode}))["listing_id"]
+        profile = AdvertiserProfile(user_id="t10-split-owner", name="Owner", kind="private")
+        session.add(profile)
+        session.flush()
+        advert = Advert(user_id=profile.user_id, draft=DRAFT, state="published")
+        session.add(advert)
+        session.flush()
+        publish_observation(session, advert, profile, "active")
+        old_home, advert_id = advert.listing_id, advert.id
+        source_id = session.scalar(select(SourceListing.id).where(SourceListing.source == "realtoruch", SourceListing.external_id == advert_id))
+    with factory() as session:
+        merge(old_home, MergeBody(target_id=home, reason="Initial mistaken identity to be corrected"), "moderator", session)
+    with factory.begin() as session:
+        process_alerts(session)
+    held, release, trying = threading.Event(), threading.Event(), threading.Event()
+    def edit():
+        with factory() as session:
+            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            lock_identity(session)
+            held.set()
+            assert release.wait(5)
+            return edit_advert(advert_id, EditBody(version=1, advert=AdvertBody(**DRAFT)), "t10-split-owner", session)
+    def correct():
+        assert held.wait(5)
+        with factory() as session:
+            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            trying.set()
+            return split(home, SplitBody(source_id=source_id, reason="Reconsidered published advert identity"), "moderator", session)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(edit)
+        second = pool.submit(correct)
+        assert trying.wait(5)
+        release.set()
+        assert first.result(timeout=10)["version"] == 2
+        separated = second.result(timeout=10)["listing_id"]
+    with factory() as session:
+        assert session.get(Advert, advert_id).listing_id == separated
+        assert session.get(SourceListing, source_id).listing_id == separated
+        assert session.get(SearchRevision, home).revision >= 2
+        assert session.get(SearchRevision, separated).revision >= 1
+
+
+def test_t10_split_pending_alert_guard_on_postgres(pg_engine, auth_client, record, monkeypatch):
+    from fastapi.testclient import TestClient
+    from realtoruch.api import app
+    from realtoruch.auth import validate_claims
+    from realtoruch.db import get_session
+    from test_identity_review import test_split_blocks_pending_unattributed_price_drop as flow
+
+    with Session(pg_engine, expire_on_commit=False) as session:
+        app.dependency_overrides[get_session] = lambda: session
+        app.state.validate_claims = validate_claims
+        try:
+            with TestClient(app) as client:
+                flow(client, auth_client, session, record, monkeypatch)
+        finally:
+            app.dependency_overrides.clear()
+            del app.state.validate_claims
