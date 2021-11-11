@@ -29,13 +29,13 @@ Use the full comparison commit SHA for the target branch or previous push tip. A
 make verify
 docker compose config --quiet
 make verify-services
-CI=true EXPO_NO_DOTENV=1 make web-build
+CI=true EXPO_NO_DOTENV=1 EXPO_UNSTABLE_HEADLESS=1 make web-build
 ```
 
 Run the native bundle equivalents from `apps/mobile`, using an owned temporary output directory. The output consists of Metro JavaScript bundles or Hermes bytecode and export metadata.
 
 ```sh
-export CI=true EXPO_OFFLINE=1 EXPO_NO_TELEMETRY=1 EXPO_NO_DOTENV=1
+export CI=true EXPO_OFFLINE=1 EXPO_NO_TELEMETRY=1 EXPO_NO_DOTENV=1 EXPO_UNSTABLE_HEADLESS=1
 output="$(mktemp -d)"
 npm exec --offline -- expo export --platform android --output-dir "$output/android"
 npm exec --offline -- expo export --platform ios --output-dir "$output/ios"
