@@ -263,7 +263,16 @@ def discover_aggregate(source, soup, url):
         if not isinstance(link, str) or not link.strip():
             raise ParseError("Search offer is missing its listing URL")
         value = urljoin(url, link)
-        if urlparse(value).hostname not in PORTAL_HOSTS[source]:
+        parsed = urlparse(value)
+        if parsed.hostname not in PORTAL_HOSTS[source]:
+            continue
+        # Gratka can mix this alternate route into rental results. Its detail
+        # and identity contract is unsupported, so never queue it for fetching.
+        if (
+            source == "gratka"
+            and re.fullmatch(r"/nieruchomosci/[^/]+/oi/[0-9]+", parsed.path.rstrip("/"))
+            and portal_url(source, value)
+        ):
             continue
         if not listing_url(source, value):
             raise ParseError("Unrecognized rental result URL")
