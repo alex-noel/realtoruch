@@ -14,19 +14,19 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 
 | Task | Status | Model | Reasoning | Dependencies |
 | --- | --- | --- | --- | --- |
-| T01 | IN_PROGRESS | gpt-6.1-terra | high | None |
+| T01 | VERIFIED | gpt-6.1-terra | high | None |
 | T02 | PLANNED | gpt-6.1-sol | medium | T01 |
-| T03 | PLANNED | gpt-6.1-terra | high | T01 |
+| T03 | IN_REVIEW | gpt-6.1-terra | high | T01 |
 | T04 | PLANNED | gpt-6.1-sol | high | T03 |
 | T05 | VERIFIED | gpt-6.1-sol | medium | None |
-| T06 | IN_PROGRESS | gpt-6-luna | medium | T05 |
+| T06 | IN_REVIEW | gpt-6-luna | medium | T05 |
 | T07 | PLANNED | gpt-6.1-sol | high | T03, T04, T05 |
-| T08 | PLANNED | gpt-6.1-terra | xhigh | T01 |
-| T09 | IN_PROGRESS | gpt-6-luna | high | None |
+| T08 | IN_PROGRESS | gpt-6.1-terra | xhigh | T01 |
+| T09 | VERIFIED | gpt-6-luna | high | None |
 | T10 | PLANNED | gpt-6.1-terra | xhigh | T08, T09 |
 | T11 | PLANNED | gpt-6.1-terra | high | T10 |
 | T12 | PLANNED | gpt-6.1-sol | high | T08, T11 |
-| T13 | PLANNED | gpt-6.1-terra | xhigh | T01 |
+| T13 | IN_PROGRESS | gpt-6.1-terra | xhigh | T01 |
 | T14 | PLANNED | gpt-6.1-terra | high | T01 |
 | T15 | PLANNED | gpt-6.1-terra | xhigh | T10, T13, T14 |
 | T16 | PLANNED | gpt-6.1-sol | high | T10 |
@@ -52,4 +52,4 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 
 T05 is accepted and integrated as `c4d6062`: 88 targeted tests independently repeated by the parent, plus the worker’s 169-pass offline regression (5 optional service skips). Live provider access remains unverified. T06 starts from this reviewed dependency.
 
-T01 is implemented at `6eaa5f4` but not accepted yet: D is fixing SQL asset packaging and proving clean installation/cleanup. T09 is undergoing requested notification-sequence and fixture-validation corrections. See per-task handoffs and `execution.json` for exact state.
+T01 is accepted at `a74ca26`, including SQL packaging and clean-install/cleanup fixes: the parent independently repeated 9 real-service tests with zero skips. T09 is accepted after notification-sequence and fixture-validation review; its synthetic corpus remains frozen and surfaces 20 ambiguous automatic merges for T10. T03 and T06 await integration review; T08 and T13 are running. See per-task handoffs and `execution.json` for exact state.
