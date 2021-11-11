@@ -5,7 +5,7 @@
 - Task: T09 — labelled duplicate identity evaluation
 - Status: VERIFIED (local implementation and fixture evaluation)
 - Base revision: `2d9a22db7277b16e694dc29bf4e3d72e5df3ac1b`
-- Result commit: `1ac33e99800672c2c0540056930390a0899fed9b` (created with `python3 scripts/commit.py`)
+- Initial result commit: `1ac33e99800672c2c0540056930390a0899fed9b`. Review follow-up commit: `37852d51f5a95ad063d4b5df2e04a95d61d7e1d4` (both created with `python3 scripts/commit.py`)
 - Actual verification date: 2026-11-11, Europe/Warsaw (CET, UTC+01:00)
 - Outcome: added a frozen, synthetic-only labelled dataset and deterministic evaluator that calls the existing production matcher and ingestion path. No production behavior or matching thresholds were changed.
 
