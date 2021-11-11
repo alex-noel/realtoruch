@@ -1,4 +1,6 @@
 import json
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -7,13 +9,14 @@ from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from realtoruch import worker
+from realtoruch import collection_health, worker
 from realtoruch.connectors import Connector, SourceAccessError
 from realtoruch.ingest import ingest
 from realtoruch.models import Listing, Observation, SourceListing
 from realtoruch.portals import (
     ListingUnavailable,
     NotRental,
+    ParseCode,
     ParseError,
     decode_nuxt_property,
     discover,
@@ -83,7 +86,7 @@ def test_actual_portal_shapes_map_required_fields_without_inventing_fees(source)
         assert (raw.rent_pln, raw.fees_pln, raw.deposit_pln) == (4500, 1150, 9000)
         assert raw.phone is None  # The source requires reveal; it wasn't in the document.
     else:
-        assert raw.rent_pln == 5000 and raw.fees_pln is None and raw.phone == "700100101"
+        assert raw.rent_pln == 5000 and raw.fees_pln is None and raw.phone == "000000000"
         assert raw.syndication_key == "morizon-gratka:100001"
 
 
@@ -138,7 +141,8 @@ def test_cross_posted_gratka_and_morizon_merge_without_a_building_number(session
     serialized = json.dumps(result)
     assert (
         "phone_hash" not in serialized
-        and "700100101" not in serialized
+        and "000000000" not in serialized
+        and "000 000 000" not in serialized
         and "syndication_key" not in serialized
     )
     assert not result["items"][0]["is_demo"]
@@ -328,6 +332,8 @@ def test_only_explicit_unambiguous_description_costs_are_used():
         description_costs("Czynsz administracyjny: 900 PLN. Administrative fee: 1000 PLN.")["fees_pln"]
         is None
     )
+    assert description_costs("Prowizja: 500 PLN – 600 PLN. Commission: 500 PLN.")["commission_pln"] is None
+    assert description_costs("Prowizja: 0 PLN.")["commission_pln"] == 0
 
 
 @pytest.mark.parametrize("explicit", [False, True])
@@ -384,3 +390,338 @@ def test_rechecks_are_scoped_to_city_and_freshness(session, record, monkeypatch)
     monkeypatch.setattr(worker, "Session", sessionmaker(session.bind, expire_on_commit=False))
     _, due = worker.source_state(configured(city="Kraków", recheck_interval_minutes=360), False)
     assert [item["previous"]["external_id"] for item in due] == ["krakow-old"]
+
+
+PORTAL_CASES = {
+    "otodom": ("90000001", 4500, 1150, 9000, 35, "agency", "Warszawa", "Wola", 52.235523, 20.992165),
+    "gratka": ("900001", 5000, None, None, 51, "agency", "Warszawa", "Śródmieście", 52.2167206, 21.0169635),
+    "morizon": (
+        "mzn900001",
+        5000,
+        None,
+        None,
+        51,
+        "agency",
+        "Warszawa",
+        "Śródmieście",
+        52.2167206,
+        21.0169635,
+    ),
+    "olx": ("1234567890", 2550, 450, None, 53, "private", "Kraków", "Krowodrza", 50.07159, 19.91757),
+}
+PORTAL_SEARCH = {**SEARCH, "olx": "https://www.olx.pl/nieruchomosci/mieszkania/wynajem/krakow/"}
+PORTAL_DETAIL = {**DETAIL, "olx": "https://www.olx.pl/d/oferta/synthetic-rental-CID3-IDabc123.html"}
+MISSING = object()
+
+
+def detail_variant(source, changes):
+    """Apply synthetic overrides to the provider's existing embedded shape."""
+    soup = BeautifulSoup(fixture(source), "html.parser")
+    selector = {
+        "otodom": "#__NEXT_DATA__",
+        "olx": 'script[type="application/ld+json"]',
+        "gratka": "#__NUXT_DATA__",
+        "morizon": "#__NUXT_DATA__",
+    }[source]
+    node = soup.select_one(selector)
+    state = json.loads(node.get_text())
+    for path, value in changes.items():
+        if source == "otodom":
+            fields = state["props"]["pageProps"]["ad"]
+        elif source == "olx":
+            fields = state
+        else:
+            fields = state[state[0]["propertyData"]]
+        *parents, field = path.split(".")
+        for parent in parents:
+            fields = fields[int(parent) if isinstance(fields, list) else parent]
+            if isinstance(state, list):
+                fields = state[fields]
+        if value is MISSING:
+            fields.pop(int(field) if isinstance(fields, list) else field)
+        elif isinstance(state, list):
+            fields[field] = len(state)
+            state.append(value)
+        else:
+            fields[field] = value
+    node.string = json.dumps(state)
+    return str(soup)
+
+
+def rent_variant(source, amount, currency="PLN"):
+    amount_path, currency_path = {
+        "otodom": ("characteristics.0.value", "characteristics.0.currency"),
+        "gratka": ("price.amount", "price.currency"),
+        "morizon": ("price.amount", "price.currency"),
+        "olx": ("offers.price", "offers.priceCurrency"),
+    }[source]
+    return detail_variant(source, {amount_path: amount, currency_path: currency})
+
+
+def parse_fixture(source, html=None):
+    return parse_detail(
+        source,
+        html if html is not None else fixture(source),
+        PORTAL_DETAIL[source],
+        city=PORTAL_CASES[source][6],
+    )
+
+
+@pytest.mark.parametrize("source", PORTAL_CASES)
+def test_t05_tc01_active_contract_and_changed_rent(source):
+    active = parse_fixture(source)
+    assert (
+        active.external_id,
+        active.rent_pln,
+        active.fees_pln,
+        active.deposit_pln,
+        active.area_m2,
+        active.advertiser_type,
+        active.city,
+        active.district,
+        active.lat,
+        active.lon,
+    ) == PORTAL_CASES[source]
+    assert str(active.url) == PORTAL_DETAIL[source]
+    assert (active.rooms, active.property_type, active.status, active.commission_pln) == (
+        2,
+        "apartment",
+        "active",
+        None,
+    )
+    changed = parse_fixture(source, rent_variant(source, "4200"))
+    assert changed.rent_pln == 4200
+    assert active.model_dump(exclude={"rent_pln", "observed_at"}) == changed.model_dump(
+        exclude={"rent_pln", "observed_at"}
+    )
+
+
+@pytest.mark.parametrize("source", PORTAL_CASES)
+def test_t05_tc02_catalog_empty_pagination_and_access_errors(source, monkeypatch):
+    search = PORTAL_SEARCH[source]
+    page = discover(source, fixture(source, "search"), search)
+    assert page.urls == [PORTAL_DETAIL[source]] and page.next_url == search + "?page=2"
+
+    connector = Connector({"enabled": True, "mode": "portal", "name": source, "search_urls": [search]})
+    try:
+        if source != "olx":
+            empty = discover(source, fixture(source, "empty"), search)
+            assert not empty.urls and empty.next_url is None
+            monkeypatch.setattr(
+                connector, "fetch", lambda *args, **kwargs: (200, fixture(source, "empty").encode())
+            )
+            assert list(connector.records()) == []
+            assert connector.report["search_pages"] == 1 and connector.report["errors"] == []
+    finally:
+        connector.close()
+
+    cases = [
+        (fixture(source, "drift"), ParseCode.UNRECOGNIZED_PAGE),
+        ((FIXTURES / "access-challenge.html").read_text(), ParseCode.ACCESS_CHALLENGE),
+        ((FIXTURES / "consent-interstitial.html").read_text(), ParseCode.ACCESS_CHALLENGE),
+    ]
+    if source == "olx":
+        cases.append((fixture(source, "empty"), ParseCode.UNRECOGNIZED_PAGE))
+    for html, code in cases:
+        connector = Connector({"enabled": True, "mode": "portal", "name": source, "search_urls": [search]})
+        body = html.encode()
+        monkeypatch.setattr(connector, "fetch", lambda *args, body=body, **kwargs: (200, body))
+        try:
+            with pytest.raises(ParseError) as failure:
+                list(connector.records())
+            assert failure.value.code is code
+            assert connector.report["search_pages"] == connector.report["emitted"] == 0
+            assert [(e["stage"], e["code"]) for e in connector.report["errors"]] == [
+                ("discovery", code.value)
+            ]
+        finally:
+            connector.close()
+
+
+@pytest.mark.parametrize("source", PORTAL_CASES)
+@pytest.mark.parametrize(
+    "amount, expected", [("4\xa0999,49", 4999), ("4\u202f999,50", 5000), ("4 999,50", 5000)]
+)
+def test_t05_tc03_polish_amount_rounding(source, amount, expected):
+    assert parse_fixture(source, rent_variant(source, amount)).rent_pln == expected
+
+
+@pytest.mark.parametrize("source", PORTAL_CASES)
+def test_t05_tc03_required_ranges_fail_and_ambiguous_fees_stay_unknown(source):
+    with pytest.raises(ParseError) as error:
+        parse_fixture(source, rent_variant(source, "4 000–5 000"))
+    assert error.value.code is ParseCode.INVALID_AMOUNT
+
+    if source == "otodom":
+        html = detail_variant(
+            source, {"characteristics.1.value": "500–600", "characteristics.3.value": "50,5"}
+        )
+    elif source == "olx":
+        html = fixture(source).replace("450 zł", "500–600 zł").replace("53 m²", "50,5 m²")
+    else:
+        # No structured fee in these base captures; inject a range into the description.
+        html = detail_variant(source, {"description": "Czynsz administracyjny: 500–600 zł.", "area": "50,5"})
+    raw = parse_fixture(source, html)
+    assert raw.area_m2 == 50.5 and raw.fees_pln is None and raw.commission_pln is None
+
+
+@pytest.mark.parametrize("source", PORTAL_CASES)
+@pytest.mark.parametrize("scenario", ["sale", "foreign_currency", "missing_rooms"])
+def test_t05_tc04_ineligible_detail_does_not_enter_collector(source, scenario, monkeypatch):
+    if scenario == "sale":
+        transaction = {
+            "otodom": {"adCategory.type": "SELL"},
+            "olx": {"category": "https://www.olx.pl/nieruchomosci/mieszkania/sprzedaz/"},
+            "gratka": {"transaction": "SELL"},
+            "morizon": {"transaction": "SELL"},
+        }[source]
+        html, code = detail_variant(source, transaction), ParseCode.NOT_RENTAL
+    elif scenario == "foreign_currency":
+        html, code = rent_variant(source, "4500", "EUR"), ParseCode.UNSUPPORTED_CURRENCY
+    else:
+        if source == "olx":
+            html = fixture(source).replace("<p>Liczba pokoi: 2 pokoje</p>", "")
+        else:
+            path = "characteristics.7" if source == "otodom" else "numberOfRoomsCount"
+            html = detail_variant(source, {path: MISSING})
+        code = ParseCode.INVALID_FIELDS
+
+    connector = Connector(
+        {
+            "enabled": True,
+            "mode": "portal",
+            "name": source,
+            "city": PORTAL_CASES[source][6],
+            "listing_urls": [PORTAL_DETAIL[source]],
+        }
+    )
+    monkeypatch.setattr(connector, "fetch", lambda *args, **kwargs: (200, html.encode()))
+    try:
+        assert list(connector.records()) == []
+        if scenario == "sale":
+            assert connector.report["skipped"] == 1
+            assert connector.report["skip_reasons"] == {code.value: 1}
+            assert connector.report["errors"] == []
+        else:
+            assert [(e["stage"], e["code"]) for e in connector.report["errors"]] == [("detail", code.value)]
+        assert connector.report["emitted"] == connector.report["inactive"] == 0
+    finally:
+        connector.close()
+
+
+@pytest.mark.parametrize("source", PORTAL_CASES)
+def test_t05_tc05_only_confirmed_removal_changes_observation(source, session, monkeypatch, caplog):
+    url = PORTAL_DETAIL[source]
+    city = PORTAL_CASES[source][6]
+    removal = {
+        "otodom": {"status": "inactive"},
+        "gratka": {"presentationType": "ARCHIVED"},
+        "morizon": {"status": 410},
+        "olx": {"offers.availability": "https://schema.org/OutOfStock", "url": url},
+    }[source]
+    id_field = {"otodom": "id", "olx": "sku"}.get(source, "idOnFrontend")
+    unavailable = detail_variant(source, removal)
+    mismatch = detail_variant(source, {**removal, id_field: "SYNTHETIC_WRONG_LISTING"})
+    missing_url = detail_variant(source, {**removal, "url": "#unavailable"})
+    challenge = (FIXTURES / "access-challenge.html").read_text().replace("</body>", unavailable + "</body>")
+    canary = "<html>SYNTHETIC_SESSION_TOKEN_000 000 000</html>"
+
+    monkeypatch.setattr(worker, "Session", sessionmaker(session.bind, expire_on_commit=False))
+    config = {"name": source, "enabled": True, "mode": "portal", "city": city, "listing_urls": [url]}
+    monkeypatch.setattr(worker, "load_sources", lambda: [config])
+    caplog.set_level("INFO", logger=worker.log.name)
+    poll_time = datetime(2026, 1, 1)
+    monkeypatch.setattr(collection_health, "now", lambda: poll_time)
+
+    def stub_fetch(body, *, error=None):
+        nonlocal poll_time
+        poll_time += timedelta(days=1)  # Let the real persisted retry window expire.
+
+        def fetch(*args, **kwargs):
+            if error is not None:
+                raise error
+            return 200, body.encode()
+
+        monkeypatch.setattr(Connector, "fetch", fetch)
+
+    stub_fetch(unavailable)
+    report = worker.collect()[0]
+    assert report["skipped"] == 1 and report["emitted"] == report["inactive"] == 0
+    assert session.scalar(select(SourceListing)) is None
+
+    active = parse_fixture(source).model_copy(update={"observed_at": datetime(2026, 1, 1)})
+    ingest(session, active)
+    session.commit()
+    for body, transport, kind, status, code in (
+        ("", SourceAccessError("SYNTHETIC_AUTHORIZATION_CANARY", 403), "SourceAccessError", 403, None),
+        ("", httpx.ReadTimeout("SYNTHETIC_TIMEOUT_CANARY"), "ReadTimeout", None, None),
+        (canary, None, "ParseError", None, ParseCode.UNRECOGNIZED_PAGE),
+        (mismatch, None, "ParseError", None, ParseCode.IDENTITY_MISMATCH),
+        (missing_url, None, "ParseError", None, ParseCode.IDENTITY_MISMATCH),
+        (challenge, None, "ParseError", None, ParseCode.ACCESS_CHALLENGE),
+    ):
+        stub_fetch(body, error=transport)
+        with pytest.raises(worker.CollectionFailed) as failure:
+            worker.collect()
+        report = failure.value.reports[0]
+        assert report["emitted"] == report["ingested"] == report["inactive"] == 0
+        (error,) = report["errors"]
+        assert (error["kind"], error["stage"], error["http_status"], error.get("code")) == (
+            kind,
+            "detail",
+            status,
+            code.value if code else None,
+        )
+        session.expire_all()
+        stored = session.scalar(select(SourceListing))
+        assert (stored.status, stored.observed_at) == ("active", active.observed_at)
+        assert session.scalar(select(Listing)).status == "active"
+        assert [row.status for row in session.scalars(select(Observation))] == ["active"]
+
+    stub_fetch(unavailable)
+    report = worker.collect()[0]
+    assert report["inactive"] == report["ingested"] == 1
+    session.expire_all()
+    stored = session.scalar(select(SourceListing))
+    assert stored.status == "inactive" and stored.observed_at > active.observed_at
+    assert session.scalar(select(Listing)).status == "inactive"
+    assert [row.status for row in session.scalars(select(Observation).order_by(Observation.observed_at))] == [
+        "active",
+        "inactive",
+    ]
+    assert "collection_report" in caplog.text
+    for secret in ("SYNTHETIC_", "000 000 000", "000000000", url):
+        assert secret not in caplog.text
+
+
+def test_t05_tc06_reduced_fixtures_contain_only_non_dialable_contact_canaries():
+    contact = re.compile(r"(?<!\d)(?:\+?48[ .-]?)?(?:\d[ .-]?){8}\d(?!\d)")
+    credentials = re.compile(
+        r"(?:authorization|set-cookie|cookie)\s*:|bearer\s+[a-z0-9]|"
+        r'["\'](?:session(?:id|_id|_token)?|access_token|refresh_token|csrf_token)["\']\s*:',
+        re.IGNORECASE,
+    )
+
+    def strings(value):
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            for field in value.values():
+                yield from strings(field)
+        elif isinstance(value, list):
+            for field in value:
+                yield from strings(field)
+
+    for path in FIXTURES.glob("*.html"):
+        markup = path.read_text()
+        assert len(markup.encode()) < 4096 and not credentials.search(markup), path.name
+        soup = BeautifulSoup(markup, "html.parser")
+        values = []
+        for node in soup.select("script"):
+            assert node.get("src") is None, path.name
+            values.extend(strings(json.loads(node.get_text())))
+            node.decompose()
+        for value in [str(soup), *values]:
+            assert all(re.sub(r"\D", "", match[0]) == "000000000" for match in contact.finditer(value)), (
+                path.name
+            )

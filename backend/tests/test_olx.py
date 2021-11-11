@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from realtoruch.portals import ListingUnavailable, NotRental, ParseError, discover, parse_detail
+from realtoruch.portals import NotRental, ParseCode, ParseError, discover, parse_detail
 
 FIXTURES = Path(__file__).parent / "fixtures/portals"
 URL = "https://www.olx.pl/d/oferta/synthetic-rental-CID3-IDabc123.html"
@@ -30,7 +30,7 @@ def test_olx_public_html_parser_and_pagination():
     "old,new,error",
     [
         ("/wynajem/", "/sprzedaz/", NotRental),
-        ("InStock", "OutOfStock", ListingUnavailable),
+        ("InStock", "OutOfStock", ParseError),
         ("InStock", "PreOrder", ParseError),
         ("2 pokoje", "4 i więcej", ParseError),
         ('"PLN"', '"EUR"', ParseError),
@@ -49,3 +49,10 @@ def test_olx_never_guesses_a_city_or_empty_search():
         discover(
             "olx", "<html>Loading…</html>", "https://www.olx.pl/nieruchomosci/mieszkania/wynajem/krakow/"
         )
+
+
+def test_olx_out_of_stock_without_matching_url_is_not_removal_evidence():
+    detail = (FIXTURES / "olx-detail.html").read_text().replace("InStock", "OutOfStock")
+    with pytest.raises(ParseError) as error:
+        parse_detail("olx", detail, URL, city="Kraków")
+    assert type(error.value) is ParseError and error.value.code is ParseCode.IDENTITY_MISMATCH
