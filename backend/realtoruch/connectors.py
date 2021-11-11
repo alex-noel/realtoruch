@@ -63,11 +63,12 @@ def validate_url(url, allowed_hosts):
 
 
 class Connector:
-    def __init__(self, config, *, previous_lookup=None, known_urls=()):
+    def __init__(self, config, *, previous_lookup=None, known_urls=(), progress=None):
         self.config = config
         self.previous_lookup = previous_lookup or (lambda url: None)
         self.known_urls = known_urls
-        self.last_request = 0.0
+        self.last_request = time.monotonic()
+        self.progress = progress or (lambda: None)
         self.robots = {}
         self.report = {
             "source": config["name"],
@@ -116,6 +117,7 @@ class Connector:
 
     def _download(self, url, headers, delay, limit=5_000_000):
         time.sleep(max(0, self.last_request + delay - time.monotonic()))
+        self.progress()
         self.last_request = time.monotonic()
         # Redirects aren't followed: a trusted host cannot redirect tokens to another origin.
         with self.client.stream("GET", url, headers=headers) as response:

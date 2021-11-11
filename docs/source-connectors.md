@@ -128,3 +128,9 @@ An operator can save a freshly viewed public detail page and import it without n
 ```
 
 The file must be at most 5 MB and less than 24 hours old. Its modification time becomes the observation timestamp; keep captures private and capture again before rechecking. This is a manual ingestion path, not a working scheduled scraper. Automatic robots/search requests still returned 403 on the same day. No OLX account, session cookies, proxy rotation or access-control bypass was used. Approved feeds or an accessible collection path are still needed for continuous OLX updates.
+
+## Local lease ownership and restart
+
+SQL collection uses one 30-minute lease per provider, shared by all cities. A single heartbeat scheduler per provider renews every 60 seconds, including while discovery yields nothing, requests are pacing, or HTTP is in flight. Before each HTTP request the worker checks ownership; ingestion takes a conditional provider-row lock in the same transaction as the observation. A lost or unverifiable lease stops the run with `interrupted` / `lease_lost`. A request already in flight can finish, but its result cannot commit after takeover. Completion updates health only if its token is still current and unexpired; the historical run is marked interrupted otherwise. An initial pacing interval on every run preserves the configured provider budget across consecutive city runs, while different providers remain independent.
+
+After a crash, wait for lease expiration and any retry backoff, then restart the ordinary local command, for example `make collect ARGS="--city Kraków"`. Replaying an observation is idempotent. An HTTP failure alone is not a removal. The SQL lease protocol does not coordinate the `--cloud` Bigtable/Pub/Sub path; cloud coordination requires a separate contract and is unchanged here. Network-level cancellation and atomicity between a lease check and an external server are not guaranteed.

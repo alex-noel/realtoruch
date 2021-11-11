@@ -199,7 +199,7 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
         if not config.get("enabled"):
             reports.append({"source": config["name"], "status": "disabled", "errors": []})
             continue
-        from .collection_health import claim, finish, heartbeat
+        from .collection_health import LeaseHeartbeat, LeaseLost, claim, finish, guard
 
         run_id = None
         if not cloud:
@@ -207,7 +207,12 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
             if deferred:
                 reports.append(deferred)
                 continue
+        lease = LeaseHeartbeat(Session, config["name"], run_id) if run_id else None
+        if lease:
+            lease.start()
         connector = Connector(config)
+        if lease:
+            connector.progress = lease.check
         started = now().isoformat() + "Z"
         ingested = 0
         try:
@@ -227,21 +232,26 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
                         entries.append(entry)
                     connector.config = {**config, "listing_urls": entries}
             for raw in connector.records():
-                if run_id:
-                    heartbeat(Session, config["name"], run_id)
+                if lease:
+                    lease.check()
                 if cloud:
                     publish(raw)
                 else:
                     with Session.begin() as session:
+                        guard(session, config["name"], run_id)
                         ingest(session, raw)
                 ingested += 1
         except Exception as exc:
+            if lease and isinstance(exc, LeaseLost):
+                lease.lost.set()
             # Store class/status only; upstream exceptions may contain raw contact data or secrets.
             if not connector.report["errors"]:
                 connector.note_error(exc, "collection")
             log.error("source_failed source=%s error=%s", config["name"], type(exc).__name__)
         finally:
             connector.close()
+            if lease:
+                lease.close()
         report = {
             **connector.report,
             "ingested": ingested,
@@ -249,8 +259,14 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
             "finished_at": now().isoformat() + "Z",
         }
         report["status"] = ("partial" if ingested else "failed") if report["errors"] else "succeeded"
-        if run_id:
-            finish(Session, config["name"], run_id, report)
+        if lease and lease.lost.is_set():
+            if not report["errors"]:
+                connector.note_error(LeaseLost("Lease renewal failed"), "collection")
+            report.update(status="interrupted", reason="lease_lost")
+        if run_id and not finish(Session, config["name"], run_id, report):
+            report.update(status="interrupted", reason="lease_lost")
+            if not report["errors"]:
+                connector.note_error(LeaseLost("Collection lease was lost"), "collection")
         reports.append(report)
         log.info("collection_report %s", json.dumps(report, sort_keys=True))
     if any(report["errors"] for report in reports):
