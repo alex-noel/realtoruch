@@ -110,7 +110,7 @@ export const market = {
       write("POST", { action: "restore", reason }),
     ),
   publicAdvert: (id: string) =>
-    request<{ listing_id: string }>(`/v1/adverts/${id}`),
+    request<{ listing_id: string }>(`/v1/adverts/${id}`, { anonymous: true }),
   conversations: (cursor?: string, signal?: AbortSignal) =>
     messageRequest<ConversationPage>(
       `/v1/me/conversations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
