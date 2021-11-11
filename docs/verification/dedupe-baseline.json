@@ -1,0 +1,361 @@
+{
+  "code_git_sha": "2d9a22db7277b16e694dc29bf4e3d72e5df3ac1b",
+  "dataset_pair_count": 220,
+  "dataset_path": "backend/tests/fixtures/dedupe/pairs.jsonl",
+  "dataset_sha256": "511c5f6c7ef1e4a16bffb706ddd94e30a18e8c13423ea37eea0bd541da40940c",
+  "evaluated_pair_count": 220,
+  "evaluator_sha256": "19e3181741e5e6c89b380e29b51fa20aa57caba116c650875d72b7aae0b40c71",
+  "generated_at_utc": "2026-11-11T20:04:22.609655+00:00",
+  "ingestion_sequence": {
+    "alert_event_count": 2,
+    "alert_suppressed_for_repost": true,
+    "canonical_count": 2,
+    "canonical_count_correct": true,
+    "expected_alert_event_count": 2,
+    "expected_canonical_count": 2,
+    "identity_outcomes": {
+      "distinct_unit_separate": true,
+      "repost_same_canonical": true
+    },
+    "steps": [
+      {
+        "name": "first source",
+        "status": "updated"
+      },
+      {
+        "name": "same-home repost",
+        "status": "updated"
+      },
+      {
+        "name": "conflicting unit/floor",
+        "status": "updated"
+      }
+    ]
+  },
+  "metrics": {
+    "ambiguous_auto_merge_count": 20,
+    "confusion_known": {
+      "fn": 0,
+      "fp": 0,
+      "tn": 100,
+      "tp": 80
+    },
+    "failure_ids": [
+      "T09-201",
+      "T09-202",
+      "T09-203",
+      "T09-204",
+      "T09-205",
+      "T09-206",
+      "T09-207",
+      "T09-208",
+      "T09-209",
+      "T09-210",
+      "T09-211",
+      "T09-212",
+      "T09-213",
+      "T09-214",
+      "T09-215",
+      "T09-216",
+      "T09-217",
+      "T09-218",
+      "T09-219",
+      "T09-220"
+    ],
+    "per_label": {
+      "ambiguous": {
+        "auto_merge": 20,
+        "no_merge": 20
+      },
+      "different_home": {
+        "auto_merge": 0,
+        "no_merge": 100
+      },
+      "same_home": {
+        "auto_merge": 80,
+        "no_merge": 0
+      }
+    },
+    "per_scenario": {
+      "address_image": {
+        "auto_merge": 20,
+        "count": 20,
+        "failures": []
+      },
+      "building_no_unit": {
+        "auto_merge": 20,
+        "count": 20,
+        "failures": [
+          "T09-201",
+          "T09-202",
+          "T09-203",
+          "T09-204",
+          "T09-205",
+          "T09-206",
+          "T09-207",
+          "T09-208",
+          "T09-209",
+          "T09-210",
+          "T09-211",
+          "T09-212",
+          "T09-213",
+          "T09-214",
+          "T09-215",
+          "T09-216",
+          "T09-217",
+          "T09-218",
+          "T09-219",
+          "T09-220"
+        ]
+      },
+      "city_conflict": {
+        "auto_merge": 0,
+        "count": 20,
+        "failures": []
+      },
+      "missing_address_location": {
+        "auto_merge": 0,
+        "count": 20,
+        "failures": []
+      },
+      "morizon_gratka": {
+        "auto_merge": 20,
+        "count": 20,
+        "failures": []
+      },
+      "resized_image_url": {
+        "auto_merge": 20,
+        "count": 20,
+        "failures": []
+      },
+      "room_area_boundary": {
+        "auto_merge": 0,
+        "count": 20,
+        "failures": []
+      },
+      "same_home_repost": {
+        "auto_merge": 20,
+        "count": 20,
+        "failures": []
+      },
+      "shared_agency_phone": {
+        "auto_merge": 0,
+        "count": 20,
+        "failures": []
+      },
+      "stock_photo": {
+        "auto_merge": 0,
+        "count": 20,
+        "failures": []
+      },
+      "unit_floor_conflict": {
+        "auto_merge": 0,
+        "count": 20,
+        "failures": []
+      }
+    },
+    "precision": 1.0,
+    "prediction_coverage": {
+      "complete": true,
+      "expected": 220,
+      "predicted": 220
+    },
+    "recall": 1.0
+  },
+  "parameters": {
+    "matcher": "realtoruch.dedupe.matching_property",
+    "partition": "all",
+    "seed": null,
+    "thresholds": "production defaults; no tuning"
+  },
+  "partition_metrics": {
+    "development": {
+      "ambiguous_auto_merge_count": 0,
+      "confusion_known": {
+        "fn": 0,
+        "fp": 0,
+        "tn": 20,
+        "tp": 60
+      },
+      "failure_ids": [],
+      "per_label": {
+        "ambiguous": {
+          "auto_merge": 0,
+          "no_merge": 20
+        },
+        "different_home": {
+          "auto_merge": 0,
+          "no_merge": 20
+        },
+        "same_home": {
+          "auto_merge": 60,
+          "no_merge": 0
+        }
+      },
+      "per_scenario": {
+        "address_image": {
+          "auto_merge": 20,
+          "count": 20,
+          "failures": []
+        },
+        "missing_address_location": {
+          "auto_merge": 0,
+          "count": 20,
+          "failures": []
+        },
+        "morizon_gratka": {
+          "auto_merge": 20,
+          "count": 20,
+          "failures": []
+        },
+        "same_home_repost": {
+          "auto_merge": 20,
+          "count": 20,
+          "failures": []
+        },
+        "stock_photo": {
+          "auto_merge": 0,
+          "count": 20,
+          "failures": []
+        }
+      },
+      "precision": 1.0,
+      "prediction_coverage": {
+        "complete": true,
+        "expected": 100,
+        "predicted": 100
+      },
+      "recall": 1.0
+    },
+    "holdout": {
+      "ambiguous_auto_merge_count": 20,
+      "confusion_known": {
+        "fn": 0,
+        "fp": 0,
+        "tn": 80,
+        "tp": 20
+      },
+      "failure_ids": [
+        "T09-201",
+        "T09-202",
+        "T09-203",
+        "T09-204",
+        "T09-205",
+        "T09-206",
+        "T09-207",
+        "T09-208",
+        "T09-209",
+        "T09-210",
+        "T09-211",
+        "T09-212",
+        "T09-213",
+        "T09-214",
+        "T09-215",
+        "T09-216",
+        "T09-217",
+        "T09-218",
+        "T09-219",
+        "T09-220"
+      ],
+      "per_label": {
+        "ambiguous": {
+          "auto_merge": 20,
+          "no_merge": 0
+        },
+        "different_home": {
+          "auto_merge": 0,
+          "no_merge": 80
+        },
+        "same_home": {
+          "auto_merge": 20,
+          "no_merge": 0
+        }
+      },
+      "per_scenario": {
+        "building_no_unit": {
+          "auto_merge": 20,
+          "count": 20,
+          "failures": [
+            "T09-201",
+            "T09-202",
+            "T09-203",
+            "T09-204",
+            "T09-205",
+            "T09-206",
+            "T09-207",
+            "T09-208",
+            "T09-209",
+            "T09-210",
+            "T09-211",
+            "T09-212",
+            "T09-213",
+            "T09-214",
+            "T09-215",
+            "T09-216",
+            "T09-217",
+            "T09-218",
+            "T09-219",
+            "T09-220"
+          ]
+        },
+        "city_conflict": {
+          "auto_merge": 0,
+          "count": 20,
+          "failures": []
+        },
+        "resized_image_url": {
+          "auto_merge": 20,
+          "count": 20,
+          "failures": []
+        },
+        "room_area_boundary": {
+          "auto_merge": 0,
+          "count": 20,
+          "failures": []
+        },
+        "shared_agency_phone": {
+          "auto_merge": 0,
+          "count": 20,
+          "failures": []
+        },
+        "unit_floor_conflict": {
+          "auto_merge": 0,
+          "count": 20,
+          "failures": []
+        }
+      },
+      "precision": 1.0,
+      "prediction_coverage": {
+        "complete": true,
+        "expected": 120,
+        "predicted": 120
+      },
+      "recall": 1.0
+    }
+  },
+  "real_market_accuracy_claimed": false,
+  "report_version": 1,
+  "run_id": "T09-20261111T200422Z",
+  "synthetic_only": true,
+  "validation": {
+    "families": {
+      "address_image": "development",
+      "building_no_unit": "holdout",
+      "city_conflict": "holdout",
+      "missing_address_location": "development",
+      "morizon_gratka": "development",
+      "resized_image_url": "holdout",
+      "room_area_boundary": "holdout",
+      "same_home_repost": "development",
+      "shared_agency_phone": "holdout",
+      "stock_photo": "development",
+      "unit_floor_conflict": "holdout"
+    },
+    "labels": {
+      "ambiguous": 40,
+      "different_home": 100,
+      "same_home": 80
+    },
+    "total": 220
+  }
+}
