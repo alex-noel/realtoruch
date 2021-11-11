@@ -58,6 +58,16 @@ import {
 import Insights from "./components/Insights";
 import SourceStatus from "./components/SourceStatus";
 import { loadSeenIds, normalizeCity, resultAge, useListingSearch } from "./hooks/useListingSearch";
+import {
+  createLinkLifecycle,
+  LINK_SCHEME,
+  listingFromPush,
+  parseIncomingLink,
+  PUBLIC_WEB_URL,
+  sanitizedWebSearch,
+  subscribeToLinks,
+  type LinkFeedback,
+} from "./linking";
 
 if (Platform.OS === "web") require("./web.css");
 const MarketplaceDialog = lazy(() => import("./components/MarketplaceDialog"));
@@ -119,7 +129,9 @@ function RentalApp() {
   const [comparison, setComparison] = useState<Listing[]>([]);
   const [user, setUser] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<SessionState>("signed-out");
-  const [emailMessage, setEmailMessage] = useState("");
+  const [linkFeedback, setLinkFeedback] = useState<LinkFeedback | null>(null);
+  const links = useRef<ReturnType<typeof createLinkLifecycle> | null>(null);
+  const restoringLinkSession = useRef(true);
   const [marketMode, setMarketMode] = useState<"adverts" | "messages">(
     "adverts",
   );
@@ -191,8 +203,14 @@ function RentalApp() {
         );
       }
     });
-    void retrySession();
+    let active = true;
+    void retrySession().finally(() => {
+      if (!active) return;
+      restoringLinkSession.current = false;
+      links.current?.resolveSession(!!currentUser.current);
+    });
     return () => {
+      active = false;
       sessionGeneration.current++;
       detailRequest.current++;
       unsubscribe();
@@ -287,62 +305,110 @@ function RentalApp() {
       .catch(() => {});
   }, [detail?.id, detail?.rent_pln, user]);
   useEffect(() => {
-    const open = (id: string) =>
-      api
-        .detail(id)
-        .then(openHome)
-        .catch((e) => setToast(e.message));
-    const stop = listenForPush(open, () => {
+    const lifecycle = createLinkLifecycle({
+      async navigate(destination, isCurrent) {
+        if (destination.type === "notifications") {
+          ++detailRequest.current;
+          setDetail(null);
+          setDialog(null);
+          setTab("notifications");
+          return;
+        }
+        const owner = currentUser.current;
+        const accountGeneration = sessionGeneration.current;
+        const stillCurrent = () =>
+          isCurrent() &&
+          (destination.type !== "saved-listing" ||
+            (!!owner && currentUser.current === owner && sessionGeneration.current === accountGeneration));
+        const listingId = destination.type === "advert"
+          ? (await market.publicAdvert(destination.id)).listing_id
+          : destination.id;
+        if (!stillCurrent()) return;
+        if (listingFromPush(listingId).type !== "listing")
+          throw new SessionError("http", "This home is unavailable.", 404);
+        const home = await api.detail(listingId);
+        if (!stillCurrent()) return;
+        if (destination.type === "saved-listing") {
+          const saved = await api.favorites();
+          if (!stillCurrent()) return;
+          if (!saved.items.some((favorite) => favorite.id === home.id))
+            throw new SessionError("http", "This home is unavailable in your saved homes.", 404);
+          setTab("saved");
+        }
+        setDialog(null);
+        openHome(home, false);
+      },
+      async consume(action) {
+        if (action.type === "verify-account") {
+          await api.verifyAccount(action.token);
+          return "Email verified. You can return to your account.";
+        }
+        setTab("notifications");
+        const endpoint = action.type === "confirm-email" ? "confirm" : "unsubscribe";
+        await request(
+          `/v1/notifications/email/${endpoint}`,
+          { method: "POST", body: JSON.stringify({ token: action.token }) },
+          false,
+          false,
+        );
+        return endpoint === "confirm"
+          ? "Email alerts are enabled. New matches and lower prices on liked homes will arrive by email."
+          : "Email alerts are disabled. Your saved homes and in-app notifications are still available.";
+      },
+      reset(token) {
+        if (token) {
+          ++detailRequest.current;
+          setDetail(null);
+          setDialog(null);
+        }
+        setResetToken(token);
+      },
+      showLogin: () => setDialog("auth"),
+      feedback: setLinkFeedback,
+      error(error) {
+        if (error instanceof SessionError && error.kind !== "superseded" && error.kind !== "transient") {
+          return { message: error.message, retryable: false };
+        }
+        return { message: "Could not open this link. Check your connection and try again.", retryable: true };
+      },
+    });
+    links.current = lifecycle;
+
+    const web = Platform.OS === "web";
+    const origins = {
+      scheme: LINK_SCHEME,
+      publicWebUrl: PUBLIC_WEB_URL,
+      browserOrigin: web ? window.location.origin : undefined,
+    };
+    const auth = () =>
+      currentUser.current ? "authenticated" : restoringLinkSession.current ? "restoring" : "guest";
+    const receive = (url: string) =>
+      lifecycle.receive(parseIncomingLink(url, origins), auth());
+    let stopLinks: (() => void) | undefined;
+    if (web) {
+      const { href, origin, pathname, search, hash } = window.location;
+      const cleaned = sanitizedWebSearch(search, hash);
+      if (cleaned !== null) window.history.replaceState(null, "", origin + pathname + cleaned);
+      receive(href);
+    } else {
+      stopLinks = subscribeToLinks(Linking, receive);
+    }
+    const stopPush = listenForPush((id) => {
+      lifecycle.receive(listingFromPush(id), auth());
+    }, () => {
       if (currentUser.current) refreshAccount();
       refresh();
     });
-    if (Platform.OS === "web") {
-      const id = new URLSearchParams(window.location.search).get("listing");
-      if (id) open(id);
-      const advert = new URLSearchParams(window.location.search).get("advert");
-      if (advert)
-        market
-          .publicAdvert(advert)
-          .then((r) => open(r.listing_id))
-          .catch((e) => setToast(e.message));
-      const action = new URLSearchParams(window.location.hash.slice(1));
-      const confirm = action.get("confirm_email"),
-        unsubscribe = action.get("unsubscribe_email");
-      const reset = action.get("reset_password"),
-        verify = action.get("verify_account");
-      if (reset || verify) {
-        window.history.replaceState(
-          null,
-          "",
-          window.location.pathname + window.location.search,
-        );
-        if (reset) setResetToken(reset);
-        if (verify)
-          api
-            .verifyAccount(verify)
-            .then((result) => setToast(result.message))
-            .catch((e) => setToast(e.message));
-      }
-      if (confirm || unsubscribe) {
-        window.history.replaceState(
-          null,
-          "",
-          window.location.pathname + window.location.search,
-        );
-        setTab("notifications");
-        request<{ message: string }>(
-          `/v1/notifications/email/${confirm ? "confirm" : "unsubscribe"}`,
-          {
-            method: "POST",
-            body: JSON.stringify({ token: confirm || unsubscribe }),
-          },
-        )
-          .then((result) => setEmailMessage(result.message))
-          .catch((e) => setEmailMessage(e.message));
-      }
-    }
-    return stop;
+    return () => {
+      lifecycle.close();
+      links.current = null;
+      stopLinks?.();
+      stopPush();
+    };
   }, []);
+  useEffect(() => {
+    if (user) links.current?.resolveSession(true);
+  }, [user]);
 
   function applyText(nextCity: string, nextQuery: string, debounce = false) {
     const cityChanged = normalizeCity(nextCity) !== filters.city;
@@ -425,10 +491,11 @@ function RentalApp() {
     setSeenIds(new Set());
     setUser(email);
   }
-  function openHome(home: Listing) {
+  function openHome(home: Listing, hydrate = true) {
     const request = ++detailRequest.current;
     setSelected(home.id);
     setDetail(home);
+    if (!hydrate) return;
     api
       .detail(home.id)
       .then((value) => {
@@ -736,9 +803,17 @@ function RentalApp() {
           }}
           keyboardShouldPersistTaps="handled"
         >
+          {linkFeedback && (
+            <View style={[s.card, { padding: 14, gap: 8, alignItems: "flex-start" }]}>
+              <Text accessibilityRole="alert" style={s.text}>{linkFeedback.message}</Text>
+              <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
+                {linkFeedback.retry && <Button onPress={linkFeedback.retry}>Retry link</Button>}
+                <Button outline onPress={() => setLinkFeedback(null)}>Dismiss link message</Button>
+              </View>
+            </View>
+          )}
           {tab === "notifications" ? (
             <NotificationInbox
-              message={emailMessage}
               user={user}
               inbox={inbox}
               onSignIn={() => setDialog("auth")}
@@ -1588,14 +1663,14 @@ function RentalApp() {
       {resetToken && (
         <ResetPasswordDialog
           token={resetToken}
-          onClose={() => setResetToken(null)}
+          onClose={() => { links.current?.finishReset(resetToken, false); }}
           onComplete={(message) => {
+            const activeLink = links.current?.finishReset(resetToken, true);
             setToken(null);
             currentUser.current = null;
             setUser(null);
-            setResetToken(null);
             setToast(message);
-            setDialog("auth");
+            if (activeLink) setDialog("auth");
           }}
         />
       )}
@@ -1604,6 +1679,7 @@ function RentalApp() {
           onClose={() => {
             setDialog(null);
             pendingFavorite.current = null;
+            if (!currentUser.current) links.current?.clearPending();
             if (currentUser.current && contact) setDialog("marketplace");
           }}
           onSuccess={async (token, email) => {
