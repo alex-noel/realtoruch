@@ -5,7 +5,8 @@
     {"version": "003", "file": "003_email_alerts.sql"},
     {"version": "004", "file": "004_marketplace_rentals.sql"},
     {"version": "006", "file": "006_search_revision.sql"},
-    {"version": "008", "file": "008_delivery_leases.sql"}
+    {"version": "008", "file": "008_delivery_leases.sql"},
+    {"version": "010", "file": "010_message_read_cursors.sql"}
   ],
   "auth": [
     {"version": "001", "file": "001_auth.sql"},

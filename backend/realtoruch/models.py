@@ -270,13 +270,19 @@ class Advert(Base):
 
 class Conversation(Base):
     __tablename__ = "conversations"
-    __table_args__ = (UniqueConstraint("advert_id", "renter_id"),)
+    __table_args__ = (
+        UniqueConstraint("advert_id", "renter_id"),
+        Index("ix_conversations_renter_order", "renter_id", "updated_at", "id"),
+        Index("ix_conversations_owner_order", "owner_id", "updated_at", "id"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     advert_id: Mapped[str] = mapped_column(ForeignKey("adverts.id"))
     renter_id: Mapped[str] = mapped_column(String(36), index=True)
     owner_id: Mapped[str] = mapped_column(String(36), index=True)
     renter_read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     owner_read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    renter_read_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    owner_read_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     blocked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
@@ -287,6 +293,7 @@ class Message(Base):
     __table_args__ = (
         UniqueConstraint("conversation_id", "sender_id", "client_id"),
         Index("ix_message_thread", "conversation_id", "created_at"),
+        Index("ix_message_thread_order", "conversation_id", "created_at", "id"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
