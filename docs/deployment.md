@@ -1,6 +1,6 @@
-# Deployment preparation (not executed)
+# Deployment preparation
 
-Terraform was validated locally. Helm templates were rendered and Docker Compose configuration was checked. No cloud project, resource, deployment, image registry push or git push was created. These instructions describe remaining operator work; they are not an authorization to deploy.
+Local checks passed for Docker Compose, Terraform with cached providers and Helm with the collector both disabled and enabled. Representative SQL grants were exercised on disposable PostgreSQL. Reviewed source commits were pushed to the authorized GitHub branch `codex/core-sprint-2026-11`. Cloud infrastructure remains undeployed, and container images and web and native apps remain unpublished. [Configuration and role checks](verification/T28-handoff.md)
 
 ## Local development
 
@@ -12,7 +12,9 @@ For the PostgreSQL + Elasticsearch local topology, start Docker Desktop, then us
 
 ## Physical mobile devices
 
-The same app code exports iOS and Android JavaScript bundles. Run `make mobile-check` to report prerequisites. This machine currently lacks full Xcode and Android SDK/platform tools, a maps key and production HTTPS endpoints. An actual native build still needs those tools, signing and device/simulator QA. Set the frontend's `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_AUTH_URL` to reachable HTTPS services, or your computer's LAN IP for development. For LAN testing, launch the Python services with `--host 0.0.0.0` and explicitly set CORS to your web preview origin if needed; the default dev launcher binds only localhost. Use `npx expo start --lan`, and launch through a compatible Expo Go or a development build. iOS uses Apple Maps; Android builds require a restricted `GOOGLE_MAPS_ANDROID_API_KEY`, read by `app.config.js`. Never put server secrets in `EXPO_PUBLIC_*` variables. Native tokens use SecureStore; browser access tokens stay in memory and refresh tokens use HttpOnly cookies. Web and auth should be on the same HTTPS site (for example `rentals.example.com` and `api.rentals.example.com`) for SameSite=Strict cookies.
+The iOS and Android JavaScript exports passed. Run `make mobile-check` to check the current machine for Xcode and Android SDK tools. Testing the registered custom scheme requires development builds installed on devices or simulators. Physical device builds need platform signing. Universal Links and Android App Links also require an HTTPS domain and platform association files. iOS uses Apple Maps. Android builds use a restricted `GOOGLE_MAPS_ANDROID_API_KEY` read by `app.config.js`. [Mobile prerequisites and test steps](mobile-validation.md)
+
+Set `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_AUTH_URL` to reachable HTTPS services. For LAN development, use your computer's LAN IP, launch the Python services with `--host 0.0.0.0` and set CORS to your web preview origin if needed. The default launcher binds only to localhost. Start Expo with `npx expo start --lan`. Keep server secrets out of `EXPO_PUBLIC_*` variables. Native tokens use SecureStore. Browser access tokens stay in memory and refresh tokens use HttpOnly cookies. Use the same HTTPS site for web and auth, such as `rentals.example.com` and `api.rentals.example.com`, for SameSite=Strict cookies.
 
 ## Cloud sequence
 
