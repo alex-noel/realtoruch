@@ -30,3 +30,11 @@ load-check:
 	.venv/bin/python scripts/load_check.py $(ARGS)
 mobile-check:
 	.venv/bin/python scripts/mobile_check.py $(ARGS)
+
+.PHONY: verify verify-services verify-web
+verify:
+	.venv/bin/python scripts/verify.py offline $(ARGS)
+verify-services:
+	.venv/bin/python scripts/verify.py services $(ARGS)
+verify-web:
+	.venv/bin/python scripts/verify.py web $(ARGS)

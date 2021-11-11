@@ -5,6 +5,8 @@ COPY backend/pyproject.toml backend/setup.py ./
 COPY backend/requirements-runtime.lock ./
 COPY backend/realtoruch ./realtoruch
 RUN pip install --no-cache-dir -r requirements-runtime.lock .
+COPY infra/sql /app/infra/sql
+ENV REALTORUCH_SQL_DIR=/app/infra/sql
 COPY config /config
 ENV CONNECTORS_CONFIG=/config/sources.json
 RUN useradd --uid 10001 --create-home app

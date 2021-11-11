@@ -36,13 +36,8 @@ def pg_engine():
     with admin.connect() as connection:
         connection.execute(text(f"CREATE SCHEMA {schema}"))
         connection.execute(text(f"SET search_path TO {schema}"))
-        for migration in (
-            "001_rentals.sql",
-            "002_alerts.sql",
-            "003_email_alerts.sql",
-            "004_marketplace_rentals.sql",
-        ):
-            connection.exec_driver_sql((root / "infra/sql" / migration).read_text())
+        from realtoruch.migrations import apply_postgres
+        apply_postgres(connection, "rentals")
     engine = create_engine(
         os.environ["TEST_POSTGRES_URL"], connect_args={"options": f"-csearch_path={schema}"}
     )
@@ -80,6 +75,8 @@ def test_index_update_is_not_lost_during_concurrent_ingestion(pg_engine, record,
     from test_rental_journey import home
 
     from realtoruch.settings import get_settings
+
+    monkeypatch.setattr(worker, "INDEX", "verify_" + os.environ.get("VERIFY_RUN_ID", "test").replace("-", "_"))
 
     monkeypatch.setattr(get_settings(), "elasticsearch_url", os.environ["TEST_ELASTICSEARCH_URL"])
     factory = sessionmaker(pg_engine, expire_on_commit=False)
@@ -183,11 +180,9 @@ def test_auth_recovery_on_versioned_postgres_schema(pg_engine, monkeypatch):
     from realtoruch import auth, auth_jobs
     from test_accounts import test_verification_reset_mail_retry_and_single_use as flow
 
-    root = Path(__file__).resolve().parents[2]
-    with pg_engine.connect() as connection:
-        for name in ("001_auth.sql", "004_accounts_auth.sql"):
-            connection.exec_driver_sql((root / "infra/sql" / name).read_text())
-        connection.commit()
+    from realtoruch.migrations import apply_postgres
+    with pg_engine.begin() as connection:
+        apply_postgres(connection, "auth")
     factory = sessionmaker(pg_engine, expire_on_commit=False)
     monkeypatch.setattr(auth, "auth_engine", pg_engine)
     monkeypatch.setattr(auth, "AuthSession", factory)
@@ -198,3 +193,75 @@ def test_auth_recovery_on_versioned_postgres_schema(pg_engine, monkeypatch):
     monkeypatch.setattr(test_accounts, "AuthSession", factory)
     with TestClient(auth.app) as client:
         flow(client, monkeypatch)
+
+
+def test_registry_rejects_checksum_drift_and_rolls_back(pg_engine):
+    from realtoruch.migrations import apply_postgres
+    with pg_engine.connect() as connection:
+        transaction = connection.begin()
+        connection.execute(text("UPDATE realtoruch_migrations SET checksum='bad' WHERE database_name='rentals' AND version='001'"))
+        with pytest.raises(ValueError, match='checksum'):
+            apply_postgres(connection, 'rentals')
+        transaction.rollback()
+    with pg_engine.begin() as connection:
+        apply_postgres(connection, 'rentals')
+        assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == 4
+
+
+
+def test_registry_postgres_transaction_rolls_back(pg_engine):
+    from realtoruch.migrations import apply_postgres
+    schema = 'rollback_' + uuid4().hex
+    with pg_engine.connect() as connection:
+        transaction = connection.begin()
+        connection.execute(text(f'CREATE SCHEMA {schema}'))
+        connection.execute(text(f'SET LOCAL search_path TO {schema}'))
+        apply_postgres(connection, 'rentals')
+        transaction.rollback()
+        assert connection.scalar(text('SELECT count(*) FROM pg_namespace WHERE nspname=:schema'), {'schema': schema}) == 0
+
+
+def test_registry_refuses_untracked_existing_schema(pg_engine):
+    from realtoruch.migrations import apply_postgres
+    schema = 'untracked_' + uuid4().hex
+    with pg_engine.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA {schema}'))
+        connection.execute(text(f'CREATE TABLE {schema}.event_receipts (id text PRIMARY KEY)'))
+        connection.execute(text(f"INSERT INTO {schema}.event_receipts VALUES ('keep')"))
+    try:
+        with pytest.raises(ValueError, match="Untracked PostgreSQL schema"):
+            with pg_engine.begin() as connection:
+                connection.execute(text(f'SET LOCAL search_path TO {schema}'))
+                apply_postgres(connection, 'rentals')
+        with pg_engine.connect() as connection:
+            assert connection.scalar(text(f'SELECT id FROM {schema}.event_receipts')) == 'keep'
+            assert connection.scalar(text('SELECT to_regclass(:name)'), {'name': schema + '.realtoruch_migrations'}) is None
+    finally:
+        with pg_engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA {schema} CASCADE'))
+
+
+def test_registry_upgrades_tracked_baseline_preserving_rows(pg_engine, tmp_path):
+    import json
+    from realtoruch.migrations import apply_postgres, load_registry
+
+    schema = 'upgrade_' + uuid4().hex
+    registry = load_registry()
+    registry['rentals'] = registry['rentals'][:1]
+    baseline = tmp_path / 'baseline.json'
+    baseline.write_text(json.dumps(registry))
+    try:
+        with pg_engine.begin() as connection:
+            connection.execute(text(f'CREATE SCHEMA {schema}'))
+            connection.execute(text(f'SET LOCAL search_path TO {schema}'))
+            apply_postgres(connection, 'rentals', baseline)
+            connection.execute(text("INSERT INTO event_receipts VALUES ('keep', CURRENT_TIMESTAMP)"))
+        with pg_engine.begin() as connection:
+            connection.execute(text(f'SET LOCAL search_path TO {schema}'))
+            apply_postgres(connection, 'rentals')
+            apply_postgres(connection, 'rentals')
+            assert connection.scalar(text("SELECT id FROM event_receipts")) == 'keep'
+            assert connection.scalar(text("SELECT count(*) FROM realtoruch_migrations WHERE database_name='rentals'")) == 4
+    finally:
+        with pg_engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA IF EXISTS {schema} CASCADE'))
