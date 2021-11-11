@@ -25,7 +25,7 @@ from .models import (
 )
 from .normalization import fold
 from .push import PushBody
-from .query import market_history, search_db, serialize_many
+from .query import market_history, market_summary, search_db, serialize_many
 from .schemas import RawListing, SearchFilters
 from .security import install_http, require_user
 from .settings import get_settings
@@ -132,33 +132,7 @@ def history(
 
 @app.get("/v1/market/summary", tags=["Public"])
 def summary(city: str = "", session=Depends(get_session)):
-    query = select(Listing).where(Listing.status == "active")
-    if city:
-        query = query.where(Listing.city == city)
-    homes = session.scalars(query).all()
-    from statistics import median
-
-    ids = [home.id for home in homes]
-    source_count = (
-        session.scalar(
-            select(func.count())
-            .select_from(SourceListing)
-            .where(SourceListing.listing_id.in_(ids), SourceListing.status == "active")
-        )
-        if ids
-        else 0
-    )
-    return {
-        "homes": len(homes),
-        "source_listings": source_count,
-        "duplicates_removed": source_count - len(homes),
-        "private_homes": sum(home.advertiser_type == "private" for home in homes),
-        "median_rent_pln": median(home.rent_pln for home in homes) if homes else None,
-        "demo": any(home.is_demo for home in homes),
-        "districts": sorted({home.district for home in homes if home.district}),
-        "cities": sorted(set(session.scalars(select(Listing.city).distinct()).all())),
-    }
-
+    return market_summary(session, city)
 
 @app.get("/v1/sources", tags=["Public"])
 def sources(city: str = Query("", max_length=100), session=Depends(get_session)):

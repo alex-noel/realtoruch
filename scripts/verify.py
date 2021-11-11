@@ -112,7 +112,7 @@ def main():
             else:
                 raise RuntimeError('Services did not become ready within 120 seconds')
         xml = dest / 'results.xml'
-        suites = ['backend/tests/test_service_integration.py', 'backend/tests/test_delivery_races.py'] if args.profile == 'services' else ['backend/tests']
+        suites = ['backend/tests/test_service_integration.py', 'backend/tests/test_delivery_races.py', 'backend/tests/test_market_history.py'] if args.profile == 'services' else ['backend/tests']
         result = command([sys.executable, '-m', 'pytest', *suites, '--junitxml', str(xml)], check=False)
         if xml.exists():
             root = ET.parse(xml).getroot()
