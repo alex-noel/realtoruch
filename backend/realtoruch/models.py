@@ -4,6 +4,7 @@ from uuid import uuid4
 from sqlalchemy import (
     JSON,
     Boolean,
+    BigInteger,
     DateTime,
     Float,
     ForeignKey,
@@ -59,6 +60,12 @@ class Listing(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
+class SearchRevision(Base):
+    __tablename__ = "search_revisions"
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), primary_key=True)
+    revision: Mapped[int] = mapped_column(BigInteger, default=1, server_default="1")
+
+
 class SourceListing(Base):
     __tablename__ = "source_listings"
     __table_args__ = (
@@ -107,6 +114,7 @@ class Outbox(Base):
     listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_index_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Favorite(Base):

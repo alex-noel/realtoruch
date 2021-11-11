@@ -12,7 +12,7 @@ app = FastAPI(
     description="Read-only search backed by private Elasticsearch. Arbitrary Elasticsearch DSL and administrative routes are not exposed.",
 )
 install_http(app)
-INDEX = "rentals-v1"
+INDEX = "rentals-search"
 
 
 def es_client():

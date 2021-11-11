@@ -159,8 +159,15 @@ def save_profile(body: ProfileBody, claims=Depends(require_claims), session=Depe
     if not profile:
         profile = AdvertiserProfile(user_id=claims["sub"])
         session.add(profile)
+    changed_public = profile.name != body.name or profile.kind != body.kind
     profile.name, profile.kind, profile.description = body.name, body.kind, body.description
     profile.updated_at = now()
+    if changed_public:
+        from .indexing import queue_listing
+        for listing_id in sorted(set(session.scalars(select(Advert.listing_id).where(
+            Advert.user_id == claims["sub"], Advert.state == "published", Advert.listing_id.is_not(None)
+        )).all())):
+            queue_listing(session, listing_id)
     session.commit()
     return {"profile": advertiser_data(profile)}
 
