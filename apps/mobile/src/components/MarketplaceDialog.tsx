@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Linking, ScrollView, Text, View } from "react-native";
 import { market, Advert, Draft, Profile, Report } from "../marketplaceApi";
 import { c, s } from "../theme";
 import { Listing } from "../types";
 import { Button, Chip, Field, Panel, money } from "./UI";
-import PropertyMap from "./PropertyMap";
+import PropertyMap from "./DeferredPropertyMap";
+import { readCoordinate } from "./coordinates";
 import { MessagesPanel } from "./MessagesPanel";
 import { InboxModel } from "./messagesState";
 
@@ -204,7 +205,11 @@ function AdvertDesk({
         Publish a rental, keep its history, and speak with interested renters.
         Verify your account email before publishing.
       </Text>
-      <Button outline onPress={() => setProfileOpen(!profileOpen)}>
+      <Button
+        outline
+        expanded={profileOpen}
+        onPress={() => setProfileOpen(!profileOpen)}
+      >
         {profile
           ? `${profile.name} · Edit profile`
           : "Create advertiser profile"}
@@ -216,7 +221,7 @@ function AdvertDesk({
             value={profileDraft.name}
             onChange={(name) => setProfileDraft((p) => ({ ...p, name }))}
           />
-          <View style={[s.row, { gap: 8 }]}>
+          <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
             <Chip
               label="Private owner"
               selected={profileDraft.kind === "private"}
@@ -260,7 +265,7 @@ function AdvertDesk({
       {adverts.map((advert) => (
         <View key={advert.id} style={[s.card, { padding: 20, gap: 12 }]}>
           <Text style={[s.title, { fontSize: 19 }]}>{advert.advert.title}</Text>
-          <Text style={s.muted}>
+          <Text aria-live="polite" style={s.muted}>
             {advert.hidden ? "HIDDEN AFTER REVIEW" : advert.state.toUpperCase()}{" "}
             · {money(advert.advert.rent_pln)} · {advert.advert.city}
           </Text>
@@ -354,7 +359,14 @@ function AdvertEditor({
   const [draft, setDraft] = useState<Draft>(
     () => initial?.advert || { ...emptyDraft },
   );
-  const [pinned, setPinned] = useState(!!initial);
+  const [latitude, setLatitude] = useState(initial ? String(draft.lat) : "");
+  const [longitude, setLongitude] = useState(initial ? String(draft.lon) : "");
+  const lat = readCoordinate(latitude, 90);
+  const lon = readCoordinate(longitude, 180);
+  const pinned = lat !== null && lon !== null;
+  const invalidLat = !!latitude.trim() && lat === null;
+  const invalidLon = !!longitude.trim() && lon === null;
+  const locationErrorId = useId();
   const change = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
   return (
@@ -388,8 +400,32 @@ function AdvertEditor({
           onChange={(v) => change(key, v)}
         />
       ))}
-      <Text style={s.label}>
-        TAP THE MAP TO PIN THE HOME{pinned ? " · LOCATION SET" : ""}
+      <Text style={s.label}>ENTER COORDINATES OR PIN THE HOME ON THE MAP</Text>
+      <Field
+        label="Location latitude"
+        value={latitude}
+        onChange={setLatitude}
+        numeric
+        errorId={invalidLat ? locationErrorId : undefined}
+      />
+      <Field
+        label="Location longitude"
+        value={longitude}
+        onChange={setLongitude}
+        numeric
+        errorId={invalidLon ? locationErrorId : undefined}
+      />
+      {(invalidLat || invalidLon) && (
+        <Text
+          nativeID={locationErrorId}
+          accessibilityRole="alert"
+          style={{ color: c.warning }}
+        >
+          Enter a latitude from −90 to 90 and a longitude from −180 to 180.
+        </Text>
+      )}
+      <Text aria-live="polite" style={s.muted}>
+        {pinned ? "Location set" : "Location required to save the advert"}
       </Text>
       <View style={{ height: 340 }}>
         <PropertyMap
@@ -398,10 +434,10 @@ function AdvertEditor({
           onSelect={() => {}}
           city={draft.city}
           onPolygonChange={() => {}}
-          pin={pinned ? [draft.lon, draft.lat] : undefined}
+          pin={pinned ? [lon, lat] : undefined}
           onPinChange={([lon, lat]) => {
-            setDraft((d) => ({ ...d, lon, lat }));
-            setPinned(true);
+            setLongitude(String(lon));
+            setLatitude(String(lat));
           }}
         />
       </View>
@@ -470,8 +506,11 @@ function AdvertEditor({
           !draft.rooms
         }
         onPress={() =>
+          pinned &&
           onSave({
             ...draft,
+            lat,
+            lon,
             images: draft.images.map((v) => v.trim()).filter(Boolean),
             amenities: draft.amenities.filter(Boolean),
           })

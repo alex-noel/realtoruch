@@ -1,6 +1,5 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import {
-  Image,
   Linking,
   Pressable,
   Text,
@@ -14,6 +13,7 @@ import ShieldAlert from "lucide-react-native/icons/shield-alert";
 import { api } from "../api";
 import { Filters, Listing } from "../types";
 import { c, s } from "../theme";
+import { ListingPhoto } from "./ListingCard";
 import { Button, Chip, Field, Panel, money } from "./UI";
 
 export function AuthDialog({
@@ -150,6 +150,7 @@ export function FilterDialog({
 }) {
   const [draft, setDraft] = useState(initial);
   const [error, setError] = useState("");
+  const errorId = useId();
   const edit = (key: keyof Filters, value: unknown) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const numeric = (key: keyof Filters, value: string) =>
@@ -187,6 +188,11 @@ export function FilterDialog({
           onChange={(v) => numeric("min_price", v)}
           numeric
           placeholder="Any"
+          errorId={
+            error && (draft.min_price ?? 0) > (draft.max_price ?? Infinity)
+              ? errorId
+              : undefined
+          }
         />
         <Field
           label="RENT BELOW · PLN"
@@ -194,6 +200,11 @@ export function FilterDialog({
           onChange={(v) => numeric("max_price", v)}
           numeric
           placeholder="Any"
+          errorId={
+            error && (draft.min_price ?? 0) > (draft.max_price ?? Infinity)
+              ? errorId
+              : undefined
+          }
         />
       </View>
       <Text style={[s.muted, { fontSize: 11 }]}>
@@ -206,6 +217,11 @@ export function FilterDialog({
           onChange={(v) => numeric("min_area", v)}
           numeric
           placeholder="Any"
+          errorId={
+            error && (draft.min_area ?? 0) > (draft.max_area ?? Infinity)
+              ? errorId
+              : undefined
+          }
         />
         <Field
           label="MAX AREA · M²"
@@ -213,6 +229,11 @@ export function FilterDialog({
           onChange={(v) => numeric("max_area", v)}
           numeric
           placeholder="Any"
+          errorId={
+            error && (draft.min_area ?? 0) > (draft.max_area ?? Infinity)
+              ? errorId
+              : undefined
+          }
         />
       </View>
       <View style={{ gap: 10 }}>
@@ -303,7 +324,11 @@ export function FilterDialog({
         />
       </View>
       {!!error && (
-        <Text accessibilityRole="alert" style={{ color: "#A3422D" }}>
+        <Text
+          nativeID={errorId}
+          accessibilityRole="alert"
+          style={{ color: "#A3422D" }}
+        >
           {error}
         </Text>
       )}
@@ -344,15 +369,15 @@ export function DetailDialog({
         </Text>
       )}
       {home.images[photo] && (
-        <Image
-          source={{ uri: home.images[photo] }}
-          accessibilityLabel={
+        <ListingPhoto
+          uri={home.images[photo]}
+          alt={
             home.is_demo
               ? "Illustrative apartment interior"
               : `Photo ${photo + 1} of ${home.title}`
           }
-          style={{ width: "100%", height: narrow ? 230 : 340 }}
-          resizeMode="cover"
+          width={narrow ? 560 : 1000}
+          height={narrow ? 230 : 340}
         />
       )}
       {home.images.length > 1 && (
@@ -374,7 +399,12 @@ export function DetailDialog({
         <Text style={s.title}>{home.title}</Text>
         <Text style={s.muted}>
           {home.address} · {home.area_m2} m² · {home.rooms} rooms ·{" "}
-          {home.status}
+          {home.status} ·{" "}
+          {home.advertiser_type === "private"
+            ? "Direct offer"
+            : home.advertiser_type === "agency"
+              ? "Agency"
+              : "Advertiser type unconfirmed"}
         </Text>
       </View>
       <View
@@ -383,6 +413,7 @@ export function DetailDialog({
           {
             padding: 20,
             flexDirection: narrow ? "column" : "row",
+            flexWrap: "wrap",
             gap: 24,
             justifyContent: "space-between",
           },
@@ -438,7 +469,12 @@ export function DetailDialog({
         <Text style={[s.title, { fontSize: 20 }]}>One home. Every source.</Text>
         {home.sources.map((source, i) => (
           <View key={source.name + i} style={[s.card, { padding: 16, gap: 6 }]}>
-            <View style={[s.row, { justifyContent: "space-between", gap: 12 }]}>
+            <View
+              style={[
+                s.row,
+                { justifyContent: "space-between", gap: 12, flexWrap: "wrap" },
+              ]}
+            >
               <Text style={[s.text, { fontWeight: "700" }]}>
                 {source.name === "realtoruch"
                   ? "Realtoruch"
@@ -472,7 +508,7 @@ export function DetailDialog({
               key={flag.code}
               style={{ padding: 16, backgroundColor: "#F4EBDE", gap: 8 }}
             >
-              <View style={[s.row, { gap: 8 }]}>
+              <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
                 <ShieldAlert size={17} color={c.warning} />
                 <Text style={[s.text, { fontWeight: "600" }]}>
                   {flag.label}
@@ -503,6 +539,8 @@ export function DetailDialog({
                   s.row,
                   {
                     justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 6,
                     borderBottomWidth: 1,
                     borderColor: c.line,
                     paddingVertical: 10,
@@ -538,6 +576,7 @@ export function CompareDialog({
   homes: Listing[];
   onClose: () => void;
 }) {
+  const narrow = useWindowDimensions().width < 700;
   const rows: [string, (home: Listing) => string][] = [
     ["Base rent", (h) => money(h.rent_pln)],
     ["Building fees", (h) => money(h.fees_pln)],
@@ -551,13 +590,30 @@ export function CompareDialog({
   ];
   return (
     <Panel title="Side by side" wide onClose={onClose}>
-      <View style={[s.row, { alignItems: "flex-start", gap: 12 }]}>
+      <View
+        style={{
+          flexDirection: narrow ? "column" : "row",
+          alignItems: "stretch",
+          gap: 22,
+        }}
+      >
         {homes.map((home) => (
-          <View key={home.id} style={{ flex: 1, gap: 12 }}>
-            <Image
-              source={{ uri: home.images[0] }}
-              style={{ height: 140, width: "100%" }}
-            />
+          <View
+            key={home.id}
+            style={{ flex: narrow ? undefined : 1, minWidth: 0, gap: 12 }}
+          >
+            {!!home.images[0] && (
+              <ListingPhoto
+                uri={home.images[0]}
+                alt={
+                  home.is_demo
+                    ? "Illustrative apartment interior"
+                    : `Photo of ${home.title}`
+                }
+                height={140}
+                width={300}
+              />
+            )}
             <Text style={[s.text, { fontWeight: "600", minHeight: 66 }]}>
               {home.title}
             </Text>
