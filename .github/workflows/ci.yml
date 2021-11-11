@@ -1,0 +1,222 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - codex/core-sprint-2026-11
+      - codex/krakow-rental-journey
+
+permissions:
+  contents: read
+
+env:
+  CI: 'true'
+  EXPO_OFFLINE: '1'
+  EXPO_NO_TELEMETRY: '1'
+  EXPO_NO_DOTENV: '1'
+  EXPO_UNSTABLE_HEADLESS: '1'
+  CONNECTORS_CONFIG: config/sources.json
+  EMAIL_DELIVERY_MODE: file
+  EMAIL_PREVIEW_DIRECTORY: .local/ci-mail
+  SMTP_HOST: ''
+  SMTP_USERNAME: ''
+  SMTP_PASSWORD: ''
+  GCP_PROJECT: ''
+  CLOUDSQL_CONNECTION_NAME: ''
+  EXPO_PUSH_ENABLED: 'false'
+
+jobs:
+  code:
+    name: Python and TypeScript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - name: Check change boundaries
+        id: diff
+        env:
+          BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          base="$(python scripts/ci_checks.py base "$BEFORE" "$DEFAULT_BRANCH")"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          python scripts/ci_checks.py boundary "$base"
+      - name: Install locked Python and JavaScript dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip --disable-pip-version-check install --no-deps -r backend/requirements-dev.lock
+          .venv/bin/python -m pip check
+          npm ci --prefix apps/mobile --ignore-scripts --no-audit --no-fund
+      - name: Fatal Python lint
+        run: .venv/bin/python -m ruff check --select E9,F63,F7,F82 backend scripts
+      - name: Python tests, TypeScript and available frontend unit tests
+        run: make verify ARGS='--run-id ci-offline'
+      - name: Audit locked runtime dependencies
+        env:
+          BASE: ${{ steps.diff.outputs.base }}
+        run: |
+          scanner="$RUNNER_TEMP/osv-scanner"
+          release=https://github.com/google/osv-scanner/releases/download/v2.7.1
+          curl --fail --silent --show-error --location --max-time 60 "$release/osv-scanner_linux_amd64" --output "$scanner"
+          echo "fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8  $scanner" | sha256sum --check
+          chmod +x "$scanner"
+          python scripts/ci_checks.py audit "$BASE" "$scanner" "$RUNNER_TEMP/realtoruch-ci/runtime-audit.json"
+      - name: Select sanitized test report
+        if: failure()
+        run: |
+          python scripts/ci_checks.py report offline .local/verification/T01/ci-offline/report.json "$RUNNER_TEMP/realtoruch-ci/offline.json"
+      - name: Upload test and audit reports
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-typescript-reports
+          path: |
+            ${{ runner.temp }}/realtoruch-ci/offline.json
+            ${{ runner.temp }}/realtoruch-ci/runtime-audit.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+  services:
+    name: PostgreSQL and Elasticsearch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install locked Python dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip --disable-pip-version-check install --no-deps -r backend/requirements-dev.lock
+          .venv/bin/python -m pip check
+      - name: Validate Compose and acquire test images
+        run: |
+          docker compose config --quiet
+          docker pull postgres:16-alpine
+          docker pull docker.elastic.co/elasticsearch/elasticsearch:8.19.6
+      - name: Verify isolated real services
+        run: make verify-services ARGS='--run-id ci-services'
+      - name: Select sanitized service report
+        if: failure()
+        run: |
+          python scripts/ci_checks.py report services .local/verification/T01/ci-services/report.json "$RUNNER_TEMP/realtoruch-ci/services.json"
+      - name: Upload service failure report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: services-failure
+          path: ${{ runner.temp }}/realtoruch-ci/services.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+  web:
+    name: Web export
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - name: Install locked JavaScript dependencies
+        run: npm ci --prefix apps/mobile --ignore-scripts --no-audit --no-fund
+      - name: Export web bundle
+        run: make web-build
+      - name: Detect browser test entry point
+        id: browser
+        working-directory: apps/mobile
+        run: |
+          node -p "'enabled=' + Boolean(require('./package.json').scripts?.['test:e2e'])" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: steps.browser.outputs.enabled == 'true'
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
+      - name: Run synthetic browser verification when available
+        if: steps.browser.outputs.enabled == 'true'
+        env:
+          VERIFY_BROWSER_ARTIFACTS_DIR: ${{ runner.temp }}/realtoruch-browser
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip --disable-pip-version-check install --no-deps -r backend/requirements-dev.lock
+          .venv/bin/python -m pip check
+          npm exec --offline --prefix apps/mobile -- playwright install chromium
+          make verify-web ARGS='--run-id ci-web'
+      - name: Select sanitized web failure report
+        if: failure()
+        run: |
+          python3 scripts/ci_checks.py report web .local/verification/T01/ci-web/report.json "$RUNNER_TEMP/realtoruch-ci/web.json"
+      - name: Upload web failure report and synthetic browser artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: web-failure
+          path: |
+            ${{ runner.temp }}/realtoruch-ci/web.json
+            ${{ runner.temp }}/realtoruch-browser/screenshots/*.png
+            ${{ runner.temp }}/realtoruch-browser/traces/*.zip
+          retention-days: 7
+          if-no-files-found: ignore
+
+  native:
+    name: Android and iOS JavaScript bundle validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - name: Install locked JavaScript dependencies
+        run: npm ci --prefix apps/mobile --ignore-scripts --no-audit --no-fund
+      - name: Validate Android and iOS JavaScript bundles
+        working-directory: apps/mobile
+        run: |
+          npm exec --offline -- expo export --platform android --output-dir "$RUNNER_TEMP/realtoruch-android"
+          npm exec --offline -- expo export --platform ios --output-dir "$RUNNER_TEMP/realtoruch-ios"
+      - name: Create sanitized native bundle failure report
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/realtoruch-ci"
+          printf '%s\n' '{"profile":"native-js","status":"FAIL"}' > "$RUNNER_TEMP/realtoruch-ci/native.json"
+      - name: Upload native bundle failure report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-js-bundle-failure
+          path: ${{ runner.temp }}/realtoruch-ci/native.json
+          retention-days: 7
+          if-no-files-found: ignore

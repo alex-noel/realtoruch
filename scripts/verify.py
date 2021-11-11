@@ -38,8 +38,12 @@ def main():
     for key, field in Settings.model_fields.items():
         if isinstance(field.default, (str, int, bool)):
             env[key.upper()] = str(field.default).lower() if isinstance(field.default, bool) else str(field.default)
-    env.update(EMAIL_DELIVERY_MODE='disabled', EXPO_PUSH_ENABLED='false', ELASTICSEARCH_URL='', SEARCH_SERVICE_URL='', CLOUDSQL_CONNECTION_NAME='', GCP_PROJECT='')
-    env.update(PYTHONPATH=str(ROOT / 'backend'), VERIFY_RUN_ID=args.run_id, TMPDIR=str(dest), EXPO_OFFLINE='1', EXPO_NO_TELEMETRY='1')
+    env.update(CONNECTORS_CONFIG=str(ROOT / 'config' / 'sources.json'),
+               EMAIL_DELIVERY_MODE='file', EMAIL_PREVIEW_DIRECTORY=str(dest / 'mail'),
+               EXPO_PUSH_ENABLED='false', ELASTICSEARCH_URL='', SEARCH_SERVICE_URL='',
+               CLOUDSQL_CONNECTION_NAME='', GCP_PROJECT='')
+    env.update(PYTHONPATH=str(ROOT / 'backend'), VERIFY_RUN_ID=args.run_id, TMPDIR=str(dest),
+               EXPO_OFFLINE='1', EXPO_NO_TELEMETRY='1', EXPO_NO_DOTENV='1')
     def command(cmd, cwd=ROOT, *, check=True):
         p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
         try:
