@@ -118,7 +118,7 @@
     },
     {
       "id": "T08",
-      "status": "LOCAL_PARTIAL",
+      "status": "VERIFIED",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "xhigh",
       "depends": [
@@ -126,10 +126,11 @@
       ],
       "worker_commit": "e68353eb496b321c6b9c7df2957559aa90881ade",
       "integrated_commit": "e257706",
-      "review": "Implementation accepted as dependency after concurrency review, 14 targeted and 14 real-service tests. Four-core/8-GiB AC07 benchmark profile remains NOT_RUN; local measurements are not substituted.",
+      "review": "Parent concurrency review and integrated real-service regressions passed. Required convergence profile now passes: 100 changed homes in 0.431287 seconds, one test with zero skips, all test work inside disjoint CPU sets/quotas totalling 4 CPUs and memory limits totalling 8 GiB. Container budget, host differences and one-sample limits are documented.",
       "evidence": [
         "docs/verification/T08-handoff.md",
-        ".local/verification/T01/integrated-t08-review/report.json"
+        ".local/verification/T01/integrated-t08-review/report.json",
+        "docs/performance/index-convergence.md"
       ]
     },
     {
@@ -333,16 +334,18 @@
     },
     {
       "id": "T21",
-      "status": "IN_PROGRESS",
+      "status": "IN_REVIEW",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
         "T14"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": "Worker B implementing strict native/web link parsing, session-aware navigation and token lifecycle in an isolated worktree. Unit/type checks pass; root lifecycle review and final browser/native exports remain pending.",
-      "evidence": []
+      "worker_commit": "fbd88d0",
+      "integrated_commit": "a30d1d5",
+      "review": "Parent merged T21 with T19 transport and generation guards; 118 integrated unit tests and typecheck pass. Worker browser 4/4 and native exports passed. Worker D is reproducing and correcting public startup and slow-link/newer-click races before final acceptance.",
+      "evidence": [
+        "docs/verification/T21-handoff.md"
+      ]
     },
     {
       "id": "T25",
