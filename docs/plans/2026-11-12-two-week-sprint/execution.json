@@ -5,7 +5,7 @@
   "worker_assignments": 4,
   "max_concurrent_workers_with_integrator": 3,
   "cloud_deployment": "excluded",
-  "push": "not authorized for this implementation run",
+  "push": "User explicitly authorized push on 2026-11-11; cf7b146 verified on origin/codex/core-sprint-2026-11. Later local integration corrections will be verified before the next push.",
   "tasks": [
     {
       "id": "T01",
@@ -31,7 +31,7 @@
       ],
       "worker_commit": "b7230d7 + db34817 + 7b63e8c",
       "integrated_commit": "fbbd6d9",
-      "review": "Accepted as dependency: actionlint, fatal Ruff, Compose and independent offline242/service82 passed. Hosted CI G07 remains not run because no push is authorized.",
+      "review": "Hosted run 43115090311 was triggered by the authorized push of cf7b146. Real services, web and native JS jobs passed; offline Python found one outdated oversized-title test after T12 sanitization. A test-only fixture correction is prepared. Hosted gate remains incomplete until the corrected run passes.",
       "evidence": [
         "docs/verification/T02-handoff.md",
         ".local/verification/T01/integrated-t02-services/report.json"
@@ -76,8 +76,8 @@
       "reasoning_effort": "medium",
       "depends": [],
       "worker_commit": "9eb824173a312ca23a2dec6b2751164de338c671",
-      "integrated_commit": "c4d6062",
-      "review": "Parent inspected parser/connector diff and independently repeated 88 targeted passing tests; live portal behavior not claimed.",
+      "integrated_commit": "c4d6062 + 3db8927",
+      "review": "Parent parser review and targeted regression accepted. Later offline replay reproduced the Gratka mixed-result failure; a narrow /oi route skip retains supported /ob adverts without accepting unknown detail identities. Worker 110 portal/connector tests passed; pinned T07 still uses the earlier parser and no new live success is claimed.",
       "evidence": [
         "docs/verification/T05-handoff.md",
         ".local/worktrees/t05/.local/integrator-t05.xml"
@@ -319,7 +319,7 @@
     },
     {
       "id": "T20",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
@@ -327,24 +327,28 @@
         "T19",
         "T18"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": "Worker C implementing responsive accessibility, keyboard polygon controls and measured web budgets on reviewed base 7c8894b. Performance runs are coordinated with T25.",
-      "evidence": []
+      "worker_commit": "9601581 + ad9af7f + fed07fa",
+      "integrated_commit": "bfc4989 + cf7b146",
+      "review": "Parent accessibility/lazy-loading review, integrated typecheck and 118 frontend unit passes. Worker full browser profile passed 28 cases without skips, including 200% text and keyboard polygon controls. Hosted combined frontend browser job also passed on cf7b146; final backend-integrated profile remains T32.",
+      "evidence": [
+        "docs/verification/T20-handoff.md",
+        "docs/performance/web-baseline.md"
+      ]
     },
     {
       "id": "T21",
-      "status": "IN_REVIEW",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
         "T14"
       ],
-      "worker_commit": "fbd88d0",
-      "integrated_commit": "a30d1d5",
-      "review": "Parent merged T21 with T19 transport and generation guards; 118 integrated unit tests and typecheck pass. Worker browser 4/4 and native exports passed. Worker D is reproducing and correcting public startup and slow-link/newer-click races before final acceptance.",
+      "worker_commit": "fbd88d0 + a034fa8",
+      "integrated_commit": "a30d1d5 + cf7b146",
+      "review": "Parent and worker D reproduced/fixed session-start and delayed-link races. Corrected worktree passed 122 unit tests, typecheck and 8 scoped browser cases with zero skips. Hosted combined web and native JS jobs passed on cf7b146. Installed-device and domain association evidence remains outside T21.",
       "evidence": [
-        "docs/verification/T21-handoff.md"
+        "docs/verification/T21-handoff.md",
+        "docs/mobile-validation.md"
       ]
     },
     {
@@ -359,7 +363,7 @@
       ],
       "worker_commit": null,
       "integrated_commit": null,
-      "review": "Matched fresh analyzed catalogs are being measured under the same 20-client workload. Baseline search targets pass but history p95 fails at 1797.5 ms; candidate batching and PostgreSQL aggregate changes are under measurement and review. No numeric gate waived.",
+      "review": "Final matched native PostgreSQL comparison is running on fresh equally analyzed clones. Baseline history p95 1837.4 ms failed; candidate uses native month keys, percentile aggregation, bytewise grouping keys with original tie-breaks and source-evidence batches. Numeric acceptance awaits the full five-minute result.",
       "evidence": []
     },
     {
@@ -458,10 +462,10 @@
     }
   ],
   "active_assignments": {
-    "A": "T25 matched capacity measurements and query optimization",
-    "B": "T21 link lifecycle and scoped browser/native verification",
-    "C": "T20 accessibility and measured web performance",
-    "D": "T27 accepted; slot rotated to C"
+    "A": "T25 final matched capacity run, drain, evidence and service regression",
+    "B": "T19/T21 completed",
+    "C": "T20 and Gratka compatibility correction completed",
+    "D": "T21 integration races completed; parent performing final integration"
   },
   "live_soak": {
     "session_id": 50850,
