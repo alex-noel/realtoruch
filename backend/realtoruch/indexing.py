@@ -141,7 +141,7 @@ def batches(docs, index):
     for listing_id, revision, document in docs:
         lines = encode_document(listing_id, revision, document, index)
         if len(lines) > MAX_BYTES:
-            log.error('search document exceeds bulk limit listing_id=%s', listing_id)
+            log.error('search document exceeds bulk limit')
             continue
         if batch and (len(batch) == MAX_DOCS or size + len(lines) > MAX_BYTES):
             yield batch
@@ -172,10 +172,10 @@ def send_bulk(client, docs, index):
                     outcomes[listing_id] = (status, True)
                 else:
                     outcomes[listing_id] = (status, False)
-                    log.warning('unverified index conflict listing_id=%s', listing_id)
+                    log.warning('unverified index conflict')
             else:
                 outcomes[listing_id] = (status, False)
-                log.warning('index failure listing_id=%s status=%s', listing_id, status)
+                log.warning('index failure status=%s', status)
     return outcomes
 
 

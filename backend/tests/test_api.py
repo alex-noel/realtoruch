@@ -99,4 +99,4 @@ def test_missing_listing_and_unknown_commission(session, record, client):
 def test_public_cache_headers_and_metrics(client):
     response = client.get("/healthz")
     assert response.headers["x-content-type-options"] == "nosniff"
-    assert "realtoruch_outbox_pending" in client.get("/metrics").text
+    assert client.get("/metrics").status_code == 403
