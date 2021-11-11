@@ -11,6 +11,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_temporary.name}/api.db"
 os.environ["AUTH_DATABASE_URL"] = f"sqlite:///{_temporary.name}/auth.db"
 os.environ["DEMO_MODE"] = "true"
 os.environ["REQUEST_LIMIT_PER_MINUTE"] = "10000"
+os.environ["AUTH_REQUEST_LIMIT_PER_MINUTE"] = "10000"
 
 from realtoruch.db import Base, get_session
 from realtoruch.schemas import RawListing
@@ -58,11 +59,14 @@ def record():
 def client(session):
     from fastapi.testclient import TestClient
     from realtoruch.api import app
+    from realtoruch.auth import validate_claims
 
+    app.state.validate_claims = validate_claims
     app.dependency_overrides[get_session] = lambda: session
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
+    del app.state.validate_claims
 
 
 @pytest.fixture

@@ -67,7 +67,24 @@ def serialize_many(session, listings):
         select(SourceListing).where(SourceListing.listing_id.in_([l.id for l in listings]))
     ):
         grouped[source.listing_id].append(source)
-    return [public_listing(l, grouped[l.id]) for l in listings]
+    from .models import Advert, AdvertiserProfile
+
+    contacts = defaultdict(list)
+    for advert, profile in session.execute(
+        select(Advert, AdvertiserProfile)
+        .join(AdvertiserProfile)
+        .where(Advert.listing_id.in_([l.id for l in listings]), Advert.state == "published")
+    ):
+        contacts[advert.listing_id].append(
+            {"id": advert.id, "name": profile.name, "kind": profile.kind, "profile_id": profile.user_id}
+        )
+    return [
+        {
+            **public_listing(l, grouped[l.id]),
+            "contact_adverts": contacts[l.id] if l.status == "active" else [],
+        }
+        for l in listings
+    ]
 
 
 def filtered_query(filters: SearchFilters):

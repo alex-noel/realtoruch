@@ -16,12 +16,14 @@ def fold(text: str) -> str:
     )
 
 
-def clean_text(text: str) -> str:
+def clean_text(text: str, *, redact_contacts=True) -> str:
     soup = BeautifulSoup(text, "html.parser")
     for node in soup(["script", "style"]):
         node.decompose()
     # Contact data belongs in the private evidence store, never in the public description.
     plain = " ".join(soup.stripped_strings)
+    if not redact_contacts:
+        return plain
     return re.sub(r"(?<!\d)(?:\+?48[\s.-]?)?(?:\d[\s.-]?){9}(?!\d)", "[contact via source]", plain)
 
 

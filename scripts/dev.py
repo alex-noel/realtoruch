@@ -26,6 +26,7 @@ elif not live:
 processes = []
 commands = [
     ([python, "-m", "realtoruch.worker", "alerts", "--loop"], ROOT),
+    ([python, "-m", "realtoruch.auth_jobs", "--loop"], ROOT),
     (
         [
             python,

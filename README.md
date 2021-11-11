@@ -2,7 +2,7 @@
 
 A Polish rental discovery app with a Python backend, shared React Native / web frontend, and configuration-only GCP infrastructure.
 
-**Current status:** runnable local app with real, bounded Kraków and Warsaw collection from Otodom, Gratka and Morizon, plus a separate sample catalog. OLX collection is blocked by HTTP 403 in the tested environment and remains disabled. This is not full marketplace coverage, full Otodom feature parity or a production deployment; see the [feature ledger](docs/feature-status.md).
+**Current status:** runnable local rental marketplace with real, bounded Kraków and Warsaw collection from Otodom, Gratka and Morizon, plus separate sample catalogs. Owners can publish rentals and exchange private messages. OLX's public-page parser has been verified and one browser-captured offer imported; scheduled HTTP collection still returns 403 and remains disabled. This is not full marketplace coverage, full Otodom feature parity or a production deployment; see the [feature ledger](docs/feature-status.md).
 
 ## Run locally
 
@@ -13,7 +13,7 @@ make install
 make dev
 ```
 
-Open **http://localhost:8081**. Public API docs: **http://localhost:8000/docs**. Auth: port **8001**. Create a local account with a 12+ character password to try favorites, saved areas, email alerts and reports. The launcher also runs the background alert worker. Ctrl-C stops the services.
+Open **http://localhost:8081**. Public API docs: **http://localhost:8000/docs**. Auth: port **8001**. Create a local account with a 12+ character password to try favorites, saved areas, email alerts and reports. The launcher also runs the rental-alert and account-mail/deletion workers. Ctrl-C stops the services.
 
 The launcher creates ignored local databases and random development secrets. The original sample catalog is in Warszawa: select that city to view its 12 fictional homes, 18 source adverts and six months of fictional observations. For the Kraków journey below, use `make journey`. No live listing fetches run by default.
 
@@ -44,9 +44,11 @@ See [source behavior and limitations](docs/source-connectors.md). The raw resear
 - Drawn map areas, city, text, size, price, rooms, property, amenities, direct/agency, commission and risk filters. The UI price limit is exclusive: below 5,000 means <5,000 PLN base rent; building fees are separate.
 - Listing gallery, full fee breakdown, source comparisons, three-home comparison and observed price changes.
 - Separate FastAPI REST, authentication and Elasticsearch-backed search services.
+- Account email verification, password recovery, rotating refresh sessions, device revocation and retryable account deletion. Browser refresh tokens use HttpOnly cookies; native tokens use SecureStore.
+- Owner/agency profiles, rental drafts, map pinning, publish/edit/withdraw, private conversations, read state and blocking. Moderators can review reports, hide/restore listings and correct duplicate identities with an audit trail.
 - Seen homes, persistent favorites including delisted properties, saved polygon searches, a notification inbox, confirmed email alerts and optional browser/native push. Same-price reposts stay quiet; a new lowest rent on a liked home produces a price-drop alert.
 - Conservative canonical deduplication, preserved source evidence, idempotent updates, lifecycle tracking, price history and private phone fingerprints.
-- Source-specific public HTML discovery/parsing for Otodom, Gratka and Morizon; configurable JSON feeds and JSON-LD URLs; oldest-first stored-advert rechecks, explicit removal handling and collection reports.
+- Source-specific public HTML parsers for Otodom, Gratka, Morizon and OLX; configurable feeds and JSON-LD URLs; oldest-first rechecks, explicit removals and collection reports. Local collection has durable health history, leases and failure backoff; OLX's automated transport remains blocked.
 - Six-hour collector job, Bigtable → Pub/Sub → Dataflow → private PostgreSQL path, transactional search and alert queues, daily unchanged-observation checkpoints. Cloud execution remains unverified.
 - Terraform for Warsaw GKE/fleet, Spot ingestion, private Cloud SQL, Bigtable, Pub/Sub, optional Dataflow job, CDN, IAM/secrets and a 95% availability monitoring target. Helm workloads and a local Docker Compose topology.
 
@@ -67,6 +69,14 @@ This uses a separate `.local/journey-rentals.db`. In the app, draw an area aroun
 
 For real email delivery, configure SMTP and a verified sender as described in [deployment preparation](docs/deployment.md#email-and-device-notifications). The inbox and email preferences survive sign-out; optional device push is revoked on sign-out.
 
+## Publish a rental and review reports
+
+Open **Account**, follow the verification link from `.local/mail/`, then choose **My rental adverts**. Create a private-owner or agency profile, save a draft, pin its location and publish. Price edits retain the canonical home and price history. Withdrawing removes that source from discovery; saved homes stay accessible. In demo/journey mode, your own adverts are also explicitly labelled sample data.
+
+For a second local account, open a first-party home's details and choose **Message [advertiser]**. Both verified accounts can reply from **Account → Messages**, see unread counts and block a conversation. Imported portal adverts continue to link to their original contact page. Photos currently use HTTPS links; file uploads and billing are not implemented.
+
+`MODERATOR_USER_IDS` is a server-side comma-separated list of verified account IDs. It enables **Review reports**, including hide/restore, advertiser appeals and source merge/split review. Identity corrections preserve saved/seen state and avoid creating alerts merely because a moderator corrected a duplicate. Keep this setting private; normal users cannot grant themselves the role.
+
 ## Verify
 
 ```sh
@@ -76,6 +86,18 @@ docker compose config --quiet
 cd apps/mobile
 EXPO_OFFLINE=1 npx expo export --platform ios --platform android --output-dir dist-native
 ```
+
+Additional local checks:
+
+```sh
+make reliability ARGS="--cycles 3 --interval 60 --city Kraków"
+make backup-check ARGS="--catalog live"
+make mobile-check
+# Against a running local API; use fewer than the configured per-minute limit:
+make load-check ARGS="--requests 50 --concurrency 4"
+```
+
+Reliability checks fetch real pages within the configured limits. Backup checks create private SQLite backups and restore into temporary isolated files; they do not overwrite a catalog. Mobile checks report missing toolchains/keys. Reports and backups stay in ignored `.local/` storage.
 
 The no-cloud default uses SQLite and SQL search to run immediately. Docker Compose uses PostgreSQL and Elasticsearch. Native JavaScript exports do not replace testing a signed app on physical devices.
 

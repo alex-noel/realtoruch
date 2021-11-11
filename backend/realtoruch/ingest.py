@@ -48,6 +48,8 @@ def recompute_listing(session, listing, *, new_property=False):
     listing.status = (
         "active" if active else ("unknown" if any(s.status == "unknown" for s in sources) else "inactive")
     )
+    if listing.hidden:
+        listing.status = "inactive"
     listing.last_seen = max(s.observed_at for s in sources)
     flags = []
     cutoff = now() - timedelta(days=90)

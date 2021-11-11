@@ -40,7 +40,9 @@ export default function PropertyMap(props: MapProps) {
   }, [city, polygon]);
   return (
     <View style={{ flex: 1, minHeight: 400 }}>
-      <DrawControls draw={draw} hasPolygon={!!polygon} />
+      {!props.onPinChange && (
+        <DrawControls draw={draw} hasPolygon={!!polygon} />
+      )}
       <MapView
         ref={ref}
         style={{ flex: 1, minHeight: 300 }}
@@ -51,12 +53,18 @@ export default function PropertyMap(props: MapProps) {
           longitudeDelta: 0.12,
         }}
         onPress={(event) =>
-          draw.add([
+          (props.onPinChange || draw.add)([
             event.nativeEvent.coordinate.longitude,
             event.nativeEvent.coordinate.latitude,
           ])
         }
       >
+        {props.pin && (
+          <Marker
+            coordinate={{ longitude: props.pin[0], latitude: props.pin[1] }}
+            pinColor={c.green}
+          />
+        )}
         {shape.length >= 3 ? (
           <Polygon
             coordinates={shape}

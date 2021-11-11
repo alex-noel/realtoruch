@@ -2,6 +2,7 @@ import time
 from collections import OrderedDict, deque
 
 import jwt
+import httpx
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -22,9 +23,28 @@ def require_claims(request: Request):
             audience="realtoruch",
             options={"require": ["exp", "iat", "sub", "iss", "aud"]},
         )
-        return payload
     except jwt.InvalidTokenError:
         raise HTTPException(401, "Session expired or invalid", headers={"WWW-Authenticate": "Bearer"})
+    validator = getattr(request.app.state, "validate_claims", None)
+    if validator:
+        return validator(payload)
+    # Fail closed for account operations if identity is unavailable. Public reads
+    # remain available; the rental service never needs identity database access.
+    try:
+        response = httpx.get(
+            settings.auth_service_url.rstrip("/") + "/v1/auth/me",
+            headers={"Authorization": value},
+            timeout=3,
+        )
+        if response.status_code == 401:
+            raise HTTPException(401, "Session expired or revoked")
+        response.raise_for_status()
+        account = response.json()
+        if account.get("id") != payload["sub"]:
+            raise ValueError("Invalid identity response")
+        return {**payload, "email": account["email"], "email_verified": account["email_verified"]}
+    except (httpx.HTTPError, ValueError, KeyError):
+        raise HTTPException(503, "Sign-in service is temporarily unavailable") from None
 
 
 def require_user(request: Request):
@@ -40,7 +60,7 @@ def install_http(app, *, auth=False):
         allow_origins=settings.cors_origins.split(","),
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
-        allow_credentials=False,
+        allow_credentials=auth,
     )
     windows = OrderedDict()
 
@@ -51,13 +71,19 @@ def install_http(app, *, auth=False):
             and request.url.path not in ("/healthz", "/readyz", "/metrics")
             and request.method != "OPTIONS"
         ):
-            key = request.client.host if request.client else "unknown"
+            sensitive_auth = auth and request.url.path != "/v1/auth/me"
+            key = (request.client.host if request.client else "unknown", sensitive_auth)
             current = time.monotonic()
             window = windows.setdefault(key, deque())
             windows.move_to_end(key)
             while window and window[0] <= current - 60:
                 window.popleft()
-            limit = 20 if auth else settings.request_limit_per_minute
+            # Token validation is internal service traffic, still authenticated.
+            limit = (
+                settings.auth_request_limit_per_minute
+                if sensitive_auth
+                else settings.request_limit_per_minute
+            )
             if len(window) >= limit:
                 return JSONResponse(
                     {"detail": "Rate limit reached; try again shortly"}, 429, headers={"Retry-After": "60"}

@@ -1,7 +1,27 @@
 import math
 import re
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .normalization import fold
+
+
+def address_key(value):
+    value = fold(value)
+    value = re.sub(r"^(?:ulica|ul\.)\s*", "", value)
+    value = re.sub(r"^(?:aleja|aleje|al\.)\s+", "al ", value)
+    value = re.sub(r"^(?:plac|pl\.)\s+", "pl ", value)
+    value = re.sub(r"\s+(?:m\.?|lok\.?)\s*(\d+\w?)$", r"/\1", value)
+    value = re.sub(r"\s*/\s*", "/", value)
+    return " ".join(value.replace(",", " ").split())
+
+
+def image_key(value):
+    # Ignore presentation parameters only. Keep host/path and identity/signature
+    # parameters; an arbitrary URL query may identify an entirely different photo.
+    parts = urlsplit(str(value))
+    resize = {"w", "width", "h", "height", "q", "quality", "fit", "crop", "format", "auto"}
+    query = urlencode(sorted((key, val) for key, val in parse_qsl(parts.query) if key.lower() not in resize))
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, query, ""))
 
 
 def distance_m(a, b):
@@ -23,17 +43,18 @@ def matching_property(candidate, data, sources):
         return None
     if candidate.floor is not None and data["floor"] is not None and candidate.floor != data["floor"]:
         return None
-    address = fold(data["address"])
-    same_address = bool(re.search(r"\d", address)) and fold(candidate.address) == address
+    address = address_key(data["address"])
+    candidate_address = address_key(candidate.address)
+    same_address = bool(re.search(r"\d", address)) and candidate_address == address
     distance = distance_m(candidate, data)
     same_phone = bool(data.get("phone_hash")) and any(s.phone_hash == data["phone_hash"] for s in sources)
-    images = {image for source in sources for image in source.data.get("images", [])}
-    same_image = bool(images.intersection(data["images"]))
+    images = {image_key(image) for source in sources for image in source.data.get("images", [])}
+    same_image = bool(images.intersection(image_key(image) for image in data["images"]))
     if (
         data["source"] in ("gratka", "morizon")
         and data.get("syndication_key")
         and address
-        and fold(candidate.address) == address
+        and candidate_address == address
         and (distance is None or distance <= 100)
         and any(
             s.source in ("gratka", "morizon")
@@ -47,7 +68,7 @@ def matching_property(candidate, data, sources):
     # signals plus close coordinates; one shared contact never merges properties.
     if (
         address
-        and fold(candidate.address) == address
+        and candidate_address == address
         and same_phone
         and same_image
         and any(s.source == data["source"] for s in sources)

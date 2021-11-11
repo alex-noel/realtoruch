@@ -14,29 +14,89 @@ export const API_URL =
   process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
 const AUTH_URL = process.env.EXPO_PUBLIC_AUTH_URL || "http://localhost:8001";
 let accessToken: string | null = null;
+let refreshToken: string | null = null;
+let refreshing: Promise<string | null> | null = null;
+export type Account = { id: string; email: string; email_verified: boolean };
+type SessionResult = {
+  access_token: string;
+  refresh_token?: string;
+  user: Account;
+};
 export async function setToken(token: string | null) {
   accessToken = token;
-  // Browser tokens remain in memory. Mobile uses the platform's secure key store.
+  if (!token) refreshToken = null;
   if (Platform.OS !== "web") {
     if (token) await SecureStore.setItemAsync("realtoruch_token", token);
-    else await SecureStore.deleteItemAsync("realtoruch_token");
+    else {
+      await SecureStore.deleteItemAsync("realtoruch_token");
+      await SecureStore.deleteItemAsync("realtoruch_refresh");
+    }
+  }
+}
+async function acceptSession(result: SessionResult) {
+  await setToken(result.access_token);
+  if (Platform.OS !== "web" && result.refresh_token) {
+    refreshToken = result.refresh_token;
+    await SecureStore.setItemAsync("realtoruch_refresh", refreshToken);
+  }
+  return result;
+}
+async function refreshSession() {
+  if (refreshing) return refreshing;
+  const run = async () => {
+    if (Platform.OS !== "web" && !refreshToken) return null;
+    const result = await request<SessionResult>(
+      "/v1/auth/refresh",
+      {
+        method: "POST",
+        body: JSON.stringify(
+          Platform.OS === "web" ? {} : { refresh_token: refreshToken },
+        ),
+      },
+      true,
+      false,
+    );
+    await acceptSession(result);
+    return result.access_token;
+  };
+  // Serialize browser refreshes across tabs: a refresh token is used only once.
+  refreshing = (async () =>
+    await (Platform.OS === "web" &&
+    typeof navigator !== "undefined" &&
+    navigator.locks
+      ? navigator.locks.request("realtoruch-refresh", run)
+      : run()))();
+  try {
+    return await refreshing;
+  } finally {
+    refreshing = null;
   }
 }
 export async function restoreToken() {
-  if (Platform.OS !== "web")
+  if (Platform.OS !== "web") {
     accessToken = await SecureStore.getItemAsync("realtoruch_token");
-  return accessToken;
+    refreshToken = await SecureStore.getItemAsync("realtoruch_refresh");
+  }
+  try {
+    return await refreshSession();
+  } catch {
+    await setToken(null);
+    return null;
+  }
 }
 export async function request<T>(
   path: string,
   options: RequestInit = {},
   authService = false,
+  retry = true,
 ): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
+  const usedToken = accessToken;
   try {
     const response = await fetch((authService ? AUTH_URL : API_URL) + path, {
       ...options,
+      credentials: authService && Platform.OS === "web" ? "include" : "omit",
       signal: options.signal || controller.signal,
       headers: {
         "Content-Type": "application/json",
@@ -44,6 +104,10 @@ export async function request<T>(
         ...options.headers,
       },
     });
+    if (response.status === 401 && retry && usedToken) {
+      if (accessToken !== usedToken || (await refreshSession()))
+        return request<T>(path, options, authService, false);
+    }
     const data = await response.json();
     if (!response.ok) {
       const detail = Array.isArray(data.detail)
@@ -113,11 +177,81 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ reason }),
     }),
-  signIn: (email: string, password: string, register: boolean) =>
-    request<{ access_token: string; user: { email: string } }>(
-      `/v1/auth/${register ? "register" : "login"}`,
-      { method: "POST", body: JSON.stringify({ email, password }) },
+  signIn: async (email: string, password: string, register: boolean) =>
+    acceptSession(
+      await request<SessionResult>(
+        `/v1/auth/${register ? "register" : "login"}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            email,
+            password,
+            client: Platform.OS === "web" ? "web" : "native",
+          }),
+        },
+        true,
+        false,
+      ),
+    ),
+  me: () => request<Account>("/v1/auth/me", {}, true),
+  signOut: async () => {
+    await request("/v1/auth/logout", { method: "POST" }, true);
+    await setToken(null);
+  },
+  resetRequest: (email: string) =>
+    request<{ message: string }>(
+      "/v1/auth/request-password-reset",
+      {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      },
+      true,
+      false,
+    ),
+  resetPassword: (token: string, password: string) =>
+    request<{ message: string }>(
+      "/v1/auth/reset-password",
+      {
+        method: "POST",
+        body: JSON.stringify({ token, password }),
+      },
+      true,
+      false,
+    ),
+  verifyAccount: (token: string) =>
+    request<{ message: string }>(
+      "/v1/auth/verify-email",
+      {
+        method: "POST",
+        body: JSON.stringify({ token }),
+      },
+      true,
+      false,
+    ),
+  requestVerification: () =>
+    request<{ message: string }>(
+      "/v1/auth/request-verification",
+      { method: "POST" },
       true,
     ),
-  me: () => request<{ email: string }>("/v1/auth/me", {}, true),
+  sessions: () =>
+    request<{
+      items: {
+        id: string;
+        label: string;
+        current: boolean;
+        last_used_at: string;
+      }[];
+    }>("/v1/auth/sessions", {}, true),
+  revokeSession: (id: string) =>
+    request(`/v1/auth/sessions/${id}`, { method: "DELETE" }, true),
+  deleteAccount: async (password: string) => {
+    const result = await request<{ message: string }>(
+      "/v1/auth/account",
+      { method: "DELETE", body: JSON.stringify({ password }) },
+      true,
+    );
+    await setToken(null);
+    return result;
+  },
 };
