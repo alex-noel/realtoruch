@@ -61,7 +61,11 @@ export function ListingCard({
         {home.images[0] ? (
           <Image
             source={{ uri: home.images[0] }}
-            accessibilityLabel="Illustrative apartment interior"
+            accessibilityLabel={
+              home.is_demo
+                ? "Illustrative apartment interior"
+                : `Photo of ${home.title}`
+            }
             style={{ width: "100%", height: "100%", position: "absolute" }}
             resizeMode="cover"
           />
@@ -117,7 +121,7 @@ export function ListingCard({
           <View style={[s.row, { gap: 5, flex: 1 }]}>
             <MapPin size={11} color={c.muted} />
             <Text numberOfLines={1} style={[s.muted, { fontSize: 11 }]}>
-              {home.district}, {home.city}
+              {[home.district, home.city].filter(Boolean).join(", ")}
             </Text>
           </View>
           <Pressable

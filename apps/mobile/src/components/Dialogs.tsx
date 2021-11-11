@@ -296,13 +296,17 @@ export function DetailDialog({
       {home.images[photo] && (
         <Image
           source={{ uri: home.images[photo] }}
-          accessibilityLabel="Apartment interior"
+          accessibilityLabel={
+            home.is_demo
+              ? "Illustrative apartment interior"
+              : `Photo ${photo + 1} of ${home.title}`
+          }
           style={{ width: "100%", height: narrow ? 230 : 340 }}
           resizeMode="cover"
         />
       )}
       {home.images.length > 1 && (
-        <View style={[s.row, { gap: 8 }]}>
+        <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
           {home.images.map((_, i) => (
             <Chip
               key={i}
@@ -315,7 +319,7 @@ export function DetailDialog({
       )}
       <View style={{ gap: 8 }}>
         <Text style={s.label}>
-          {home.district.toUpperCase()} · {home.city.toUpperCase()}
+          {[home.district, home.city].filter(Boolean).join(" · ").toUpperCase()}
         </Text>
         <Text style={s.title}>{home.title}</Text>
         <Text style={s.muted}>

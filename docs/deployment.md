@@ -6,6 +6,8 @@ Terraform was validated locally. Helm templates were rendered and Docker Compose
 
 Install Python 3.12 and Node 24 LTS (Node 22.13+ is also supported), then run `make install` and `make dev` from the repository root. The launcher creates private `.local/` SQLite databases and random development secrets, seeds fictional data once, and starts API :8000, auth :8001 and Expo :8081. Ctrl-C stops its child processes. Demo records never load implicitly in production.
 
+For the separate live catalog, run `make collect` and then `make live`. These commands use `config/sources.live.json` and `.local/live-rentals.db`, without demo seeding. Collection is bounded and runs once unless `ARGS="--loop"` is supplied; it does not install a background scheduler. See [source configuration](source-connectors.md) for per-source limits, rechecks and collection reports.
+
 For the PostgreSQL + Elasticsearch local topology, start Docker Desktop, then use `docker compose up --build`. Database and Elasticsearch ports are not published; the three HTTP services are bound to localhost. The local Compose ES instance disables authentication only inside its isolated Docker network. Open the frontend separately with `cd apps/mobile && npm run web`. Compose uses explicitly development-only credentials; it is not a production manifest.
 
 ## Physical mobile devices
@@ -31,11 +33,13 @@ The same app code exports iOS and Android JavaScript bundles. An actual native b
 | API | `ENVIRONMENT=production`, `SERVICE_ROLE=api`, private IAM `DATABASE_URL`, `CLOUDSQL_CONNECTION_NAME`, CORS, JWT public key, random contact/internal secrets, `SEARCH_SERVICE_URL=http://search:8000` |
 | Auth | `SERVICE_ROLE=auth`, private IAM `AUTH_DATABASE_URL`, Cloud SQL connection name, CORS, JWT public/private keys |
 | Search | `SERVICE_ROLE=search`, CORS, `ELASTICSEARCH_URL=https://elasticsearch:9200`, restricted read API key and CA file |
-| Collector | `SERVICE_ROLE=collector`, GCP project, Bigtable instance/table, Pub/Sub topic, phone-HMAC key and provider token variables |
+| Collector | `SERVICE_ROLE=collector`, `CONNECTORS_CONFIG=/config/sources.json`, GCP project, Bigtable instance/table, Pub/Sub topic, phone-HMAC key and any required provider token variables |
 | Indexer | `SERVICE_ROLE=indexer`, private IAM rental database and connection name, ES URL/writer key/CA file |
 | Dataflow | `SERVICE_ROLE=dataflow`, private IAM rental database and connection name, phone-HMAC key |
 
 Every service also requires `ENVIRONMENT=production` and `DEMO_MODE=false`. API and collector share the same contact-HMAC key; Dataflow preserves already hashed contacts. Auth requires JWT signing material. No secret versions or credentials are committed.
+
+The chart's source configuration and collector are disabled by default. It mounts the same source ConfigMap into API and collector and sets `CONNECTORS_CONFIG=/config/sources.json` for both, so `/v1/sources` reports the configured sources. Review the source entries and request budgets before enabling them. The local live configuration demonstrates the three implemented portal parsers; it does not imply production collection or complete portal coverage.
 
 ## Operational limitations
 

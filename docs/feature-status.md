@@ -4,12 +4,12 @@
 
 | Requested area | Implemented | Still required for live production / full parity |
 | --- | --- | --- |
-| Otodom, OLX, Gratka, other sources | Configurable feed adapter, JSON-LD adapter, four disabled source profiles, source links | Contracted feed/API access; each provider's real payload mapping and completeness validation |
-| Active offers | Explicit status, per-source timestamps, scheduled rechecks, stale-to-unknown policy | Live provider fixtures and monitoring |
-| Deduplication and cleanup | Canonical property model, conservative matching, cleaned text, retained source evidence | Image perceptual hashing, address geocoding, human merge/split tooling |
+| Otodom, OLX, Gratka, other sources | Live sample collection from Otodom, Gratka and Morizon; HTML discovery, pagination and detail mapping; generic feed/JSON-LD adapters | OLX is blocked (403) and lacks a verified portal parser; wider geography/categories, exhaustive coverage and markup-change monitoring |
+| Active offers | Explicit status, per-source timestamps, oldest-first rechecks, run reports, stale-to-unknown policy | Long-running monitoring; real removal-event validation |
+| Deduplication and cleanup | Canonical property model, conservative matching, Morizon–Gratka cross-post identity, cleaned text, retained source evidence | Image perceptual hashing, address geocoding, human merge/split tooling |
 | Maps and lists | Interactive Leaflet web map; native map component; responsive cards and pagination | Licensed production map tiles; Android maps key; native device QA |
 | Direct/agency and fees | Independent advertiser, commission and risk filters; unknown fees kept unknown | Verified advertiser identity and appeals workflow |
-| Historical prices | Observation history, city/district/region medians, charts and sample sizes | Long-running real observations; representative index methodology if desired |
+| Historical prices | Observation history, city/district/region medians, charts and sample sizes | Long-running real observations (current live history starts with collection); representative index methodology if desired |
 | Reused contacts | Private keyed fingerprints, distinct-property counts, 90-day policy | Production retention/rights workflow and operational key rotation |
 | Suspicious adverts | Explained heuristic signals and user reports | Moderation console, fraud review, image/content classifiers, appeals |
 | Rental search features | City, text, district, price, rooms, area, property type, amenity, advertiser, fees, risk, sort and bounding box | Draw-on-map searches, commute times, more structured fields, transit/school layers |
@@ -21,4 +21,4 @@
 | Other Otodom products | Not included | Sales, new developments, commercial categories, editorial content and financing tools |
 | Cloud | Terraform + Helm + Docker Compose + Dataflow entry point | Deployment, credentials, SQL bootstrap, real TLS certificates, load tests and disaster recovery drills |
 
-Demo source links open portal homepages, not invented listing URLs. Photos are illustrative Unsplash images and do not depict verified rental offers. The sample data is only loaded by an explicit development command and is labelled throughout the UI and API.
+Real records link to their source listing pages. Demo source links open portal homepages, not invented listing URLs. Photos are illustrative Unsplash images and do not depict verified rental offers. The sample data is only loaded by an explicit development command and is labelled throughout the UI and API.

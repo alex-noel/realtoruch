@@ -4,7 +4,7 @@ This repository contains a working rental discovery app and an undeployed cloud 
 
 ```mermaid
 flowchart LR
-  feeds[Configured portal feeds / approved pages] --> jobs[Collector CronJobs\nGKE Spot pool]
+  feeds[Public portal pages / configured feeds] --> jobs[Collector CronJobs\nGKE Spot pool]
   jobs --> raw[Bigtable\nSanitized source observations\n90-day retention]
   jobs --> pub[Pub/Sub\nObservation stream]
   pub --> beam[Dataflow / Apache Beam\nValidation + deduplication]
@@ -30,7 +30,7 @@ flowchart LR
 | API | Public property reads, history, favorites, saved searches, reports | Rental reads; writes to account-owned rental tables |
 | Auth | Argon2 password hashing, one-hour RSA JWT issuance | Auth database only; JWT signing key |
 | Search | Validated search parameters translated to Elasticsearch queries | Read-only index API key |
-| Collector | Configured feeds and JSON-LD URLs, source rechecks | Bigtable and the observation topic; no SQL identity |
+| Collector | Portal discovery/parsers, feeds and JSON-LD URLs, oldest-first rechecks | Bigtable and the observation topic; no SQL identity |
 | Dataflow | Normalize, conservatively merge, keep observations and recompute signals | Rental writer identity |
 | Indexer / retention | Deliver SQL outbox; expire old contact fingerprints and stale source status | Rental maintenance identity; index writer key |
 
@@ -42,7 +42,9 @@ An exact source key is `(source, external_id)`. Cross-source matches require the
 
 Dataflow processes at-least-once events. A deterministic receipt, source update, canonical update, observation, and outbox insert commit in one database transaction. PostgreSQL advisory locks serialize canonical decisions within a city. Older/equal observations cannot overwrite newer state. Transient SQL errors are retried by Dataflow; invalid messages go to a dead-letter topic as hashes and error codes, not raw contact details. A single indexer reads the current canonical document when retrying an outbox event. Do not scale the indexer beyond one replica without adding per-property index versioning/locking.
 
-Each source keeps its own price, commission and status. The displayed canonical record prefers an active source declared private, then the most recent observation. “Private” is a source assertion, not a verified identity. A property remains active while any source is active; missing feed entries and transport errors are not treated as removals. Seven days without a successful observation makes a source unknown. Scheduled rechecks are every six hours by default.
+Gratka/Morizon cross-posts may also match on their shared internal listing ID plus agreeing city, street, area and rooms, with no conflicting floor/location. The private syndication key is excluded from public serialization.
+
+Each source keeps its own price, commission and status. The displayed canonical record prefers an active source declared private, then the most recent observation. “Private” is a source assertion, not a verified identity. A property remains active while any source is active; missing feed entries and transport errors are not treated as removals. Seven days without a successful observation makes a source unknown. The cloud CronJob/optional worker loop runs every six hours by default; bounded runs do not guarantee every stored advert is revisited in that interval. Local `make collect` is one-shot. Bigtable stores an oldest-first recheck index; SQL supplies the equivalent ordering locally. Collection reports distinguish partial failures from budget-limited successful runs.
 
 ## Privacy and risk signals
 

@@ -1,20 +1,34 @@
 # Verification record
 
-Verified locally on 7 November 2026. No cloud resources were applied and no code or images were pushed.
+Live collection, the updated application and Helm templates were verified locally on 11 November 2026. Terraform, Compose and native bundle checks below were last run on 7 November 2026. No cloud resources were applied and no code or images were pushed.
 
 | Check | Result |
 | --- | --- |
-| Python integration/unit suite | 38 passed |
-| TypeScript strict check | Passed |
-| Expo production web export | Passed |
-| Expo iOS/Android Hermes bundle exports | Passed for both platforms; not a signed native build or device test |
-| Terraform 1.13.5 + Google / Google beta 6.50.0 | `fmt` and `validate` passed; no plan/apply |
-| Helm 3.19 template rendering | 27 resources with collector off; 28 with collector on |
-| Docker Compose | Configuration validated; containers not started because Docker daemon was unavailable |
-| Optional GCP/Dataflow dependencies | pip dry-run resolved successfully; managed Dataflow execution not tested |
+| Python integration/unit suite | 66 passed on 11 November; one upstream TestClient deprecation warning |
+| TypeScript strict check | Passed on 11 November |
+| Expo production web export | Passed on 11 November |
+| Expo iOS/Android Hermes bundle exports | Passed for both platforms on 7 November; not a signed native build or device test |
+| Terraform 1.13.5 + Google / Google beta 6.50.0 | `fmt` and `validate` passed on 7 November; no plan/apply |
+| Helm 3.19 lint/template rendering | Passed on 11 November: 27 resources with collector off; 28 with collector on; shared API/collector source ConfigMap verified |
+| Docker Compose | Configuration validated on 7 November; containers not started because Docker daemon was unavailable |
+| Optional GCP/Dataflow dependencies | pip dry-run resolved successfully on 7 November; managed Dataflow execution not tested |
 | Public/secret boundary | No phone hashes in public listings; ES stays ClusterIP; `/internal` excluded from ingress |
 
-## Browser checks
+## Live collection and browser checks — 11 November
+
+Bounded collection from the public Warszawa rental pages of Otodom, Gratka and Morizon succeeded. Each connector checked robots rules and paced requests. All three search parsers discovered listings on pages one and two, including links to the next page. This is a sample check, not a complete inventory of those portals.
+
+- The live SQLite catalog contains **16 source adverts merged into 12 homes**, with no demo records: six Otodom, five Gratka and five Morizon adverts. Four Gratka/Morizon cross-posts merged using their shared internal identity and compatible property details.
+- A final recheck visited all 16 stored adverts with zero reported collection errors. The catalog contains 39 observations, including an Otodom base-rent change from 3,500 to 3,300 PLN. Ten source adverts have private contact fingerprints; public listing responses exclude those fingerprints and source syndication keys.
+- Chrome showed the real homes as a list and map. The direct-offer filter returned four homes. A merged Gratka/Morizon home displayed both source links, 15 gallery images, its stated 960 PLN monthly fee and a 4,260 PLN monthly total. The last gallery image loaded, and all gallery controls wrapped within the dialog.
+- The market API returned a 3,375 PLN median for the 12 homes. Live history currently starts with these November observations; the demo's fictional past months are absent from the live database.
+- OLX returned HTTP 403 for robots retrieval and remains disabled. No OLX-specific parser or working live collection is claimed.
+
+Fixture and integration tests cover explicit removal, parser failure, throttling, changed rent, bounded discovery, robots wildcard rules, conflicting duplicate evidence and private-data boundaries. Simulated Bigtable/Pub/Sub tests verify that a failed publication does not advance recheck state. Portal removals, throttling and cloud failures were tested with controlled responses, not induced on live services. Sanitized fixture provenance is recorded in [the fixture README](../backend/tests/fixtures/portals/README.md).
+
+![Verified live catalog](previews/live-catalog.jpg)
+
+## Demo browser checks — 7 November
 
 The running application was checked in Chrome at desktop size and a 390 × 844 phone viewport:
 
@@ -37,7 +51,8 @@ The project was moved to the compatible Expo 58 / React 19.3 / React Native 0.88
 
 ## Not verified
 
-- Live Otodom/OLX/Gratka/Morizon collection, since no approved access/feed was supplied.
+- Working OLX collection, full-market coverage or live collection outside the configured Warszawa searches.
+- Unattended collection over an extended period, live removal detection and portal changes beyond the captured fixtures.
 - Production PostgreSQL/Elasticsearch container integration, GCP permissions/quotas, TLS issuance, Cloud SQL grants and Cloud CDN behavior.
 - A real Dataflow streaming job or Spot interruption/recovery.
 - Signed iOS/Android apps, native map credentials, physical-device behavior or app-store delivery.

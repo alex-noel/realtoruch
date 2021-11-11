@@ -1,0 +1,72 @@
+{
+  "sources": [
+    {
+      "name": "otodom",
+      "enabled": true,
+      "mode": "portal",
+      "allowed_hosts": [
+        "www.otodom.pl",
+        "otodom.pl"
+      ],
+      "requests_per_minute": 6,
+      "listing_urls": [],
+      "city": "Warszawa",
+      "search_urls": [
+        "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie/mazowieckie/warszawa/warszawa/warszawa"
+      ],
+      "max_pages": 2,
+      "max_listings": 12,
+      "max_rechecks": 24
+    },
+    {
+      "name": "olx",
+      "enabled": false,
+      "mode": "feed",
+      "feed_url": "",
+      "allowed_hosts": [
+        "www.olx.pl",
+        "olx.pl"
+      ],
+      "token_env": "OLX_FEED_TOKEN",
+      "requests_per_minute": 6,
+      "listing_urls": [],
+      "disabled_reason": "HTTP 403 on public robots.txt during local verification; no verified portal parser."
+    },
+    {
+      "name": "gratka",
+      "enabled": true,
+      "mode": "portal",
+      "allowed_hosts": [
+        "gratka.pl",
+        "www.gratka.pl"
+      ],
+      "requests_per_minute": 6,
+      "listing_urls": [],
+      "city": "Warszawa",
+      "search_urls": [
+        "https://gratka.pl/nieruchomosci/mieszkania/warszawa/wynajem"
+      ],
+      "max_pages": 2,
+      "max_listings": 12,
+      "max_rechecks": 24
+    },
+    {
+      "name": "morizon",
+      "enabled": true,
+      "mode": "portal",
+      "allowed_hosts": [
+        "www.morizon.pl",
+        "morizon.pl"
+      ],
+      "requests_per_minute": 6,
+      "listing_urls": [],
+      "city": "Warszawa",
+      "search_urls": [
+        "https://www.morizon.pl/do-wynajecia/mieszkania/warszawa/"
+      ],
+      "max_pages": 2,
+      "max_listings": 12,
+      "max_rechecks": 24
+    }
+  ]
+}

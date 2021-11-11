@@ -2,39 +2,67 @@ import argparse
 import json
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
+
 from sqlalchemy import delete, select
+
 from .connectors import Connector, load_sources
 from .db import Session, init_db
 from .ingest import ingest, recompute_listing
-from .models import Listing, SourceListing, Outbox, EventReceipt, now
+from .models import EventReceipt, Listing, Outbox, SourceListing, now
 from .normalization import normalize
 from .query import serialize_many
-from .search import es_client, INDEX
+from .search import INDEX, es_client
 from .settings import get_settings
 
 log = logging.getLogger("realtoruch.worker")
 
 
-def publish(raw):
-    from google.cloud import bigtable, pubsub_v1
-    import hashlib
+def state_table():
+    from google.cloud import bigtable
 
     settings = get_settings()
-    data = json.dumps(normalize(raw), sort_keys=True).encode()
-    event_id = hashlib.sha256(data).hexdigest()
-    table = (
+    return (
         bigtable.Client(project=settings.gcp_project)
         .instance(settings.bigtable_instance)
         .table(settings.bigtable_table)
     )
+
+
+def state_key(source, url):
+    import hashlib
+
+    return f"state#{source}#{hashlib.sha256(url.encode()).hexdigest()}"
+
+
+def recheck_key(data):
+    # Lexically ordered observation time gives the oldest checked advert priority.
+    return f"recheck#{data['source']}#{data['observed_at']}#{state_key(data['source'], data['url']).split('#')[-1]}"
+
+
+def row_payload(row):
+    cells = row.cells.get("raw", {}).get(b"payload") if row else None
+    return json.loads(cells[0].value) if cells else None
+
+
+def publish(raw):
+    import hashlib
+
+    from google.cloud import pubsub_v1
+
+    settings = get_settings()
+    normalized = normalize(raw)
+    data = json.dumps(normalized, sort_keys=True).encode()
+    event_id = hashlib.sha256(data).hexdigest()
+    table = state_table()
+    key = state_key(raw.source, str(raw.url))
+    previous = row_payload(table.read_row(key))
+    if previous and datetime.fromisoformat(previous["observed_at"]) >= raw.observed_at:
+        return
     # HMAC only: no raw phone enters Bigtable or Pub/Sub.
     row = table.direct_row(f"{event_id[:2]}#{raw.source}#{event_id}")
     row.set_cell("raw", "payload", data)
     row.commit()
-    state = table.direct_row(f"state#{raw.source}#{hashlib.sha256(str(raw.url).encode()).hexdigest()}")
-    state.set_cell("raw", "payload", data)
-    state.commit()
     publisher = pubsub_v1.PublisherClient()
     publisher.publish(
         publisher.topic_path(settings.gcp_project, settings.pubsub_topic),
@@ -42,61 +70,131 @@ def publish(raw):
         event_id=event_id,
         source=raw.source,
     ).result(timeout=30)
+    # Advance state only after publication succeeds, so a failed publish stays due.
+    if normalized["status"] != "inactive":
+        due = table.direct_row(recheck_key(normalized))
+        due.set_cell("raw", "payload", data)
+        due.commit()
+    state = table.direct_row(key)
+    state.set_cell("raw", "payload", data)
+    state.commit()
+    if previous and recheck_key(previous) != recheck_key(normalized):
+        old = table.direct_row(recheck_key(previous))
+        old.delete()
+        old.commit()
 
 
-def collect(cloud=False):
-    failures = 0
-    for config in load_sources():
+class CollectionFailed(RuntimeError):
+    def __init__(self, reports):
+        self.reports = reports
+        super().__init__("One or more sources failed; inspect the collection report")
+
+
+def source_state(config, cloud):
+    limit = min(500, max(0, int(config.get("max_rechecks", 50))))
+    source = config["name"]
+    if cloud:
+        table = state_table()
+
+        def lookup(url):
+            return row_payload(table.read_row(state_key(source, url)))
+
+        known = []
+        if limit:
+            prefix = f"recheck#{source}#"
+            for row in table.read_rows(start_key=prefix, end_key=prefix + "\uffff", limit=limit):
+                previous = row_payload(row)
+                if not previous:
+                    continue
+                current = lookup(previous["url"])
+                if current and current["observed_at"] == previous["observed_at"]:
+                    known.append({"url": current["url"], "previous": current})
+                else:
+                    stale = table.direct_row(row.row_key)
+                    stale.delete()
+                    stale.commit()
+        return lookup, known
+
+    def lookup(url):
+        with Session() as session:
+            prior = session.scalar(
+                select(SourceListing).where(
+                    SourceListing.source == source,
+                    SourceListing.url == url,
+                )
+            )
+            return prior.data if prior and not prior.data.get("is_demo") else None
+
+    with Session() as session:
+        prior = session.scalars(
+            select(SourceListing)
+            .join(Listing)
+            .where(
+                SourceListing.source == source,
+                SourceListing.status != "inactive",
+                Listing.is_demo.is_(False),
+            )
+            .order_by(SourceListing.observed_at, SourceListing.id)
+            .limit(limit)
+        ).all()
+        return lookup, [{"url": p.url, "previous": p.data} for p in prior]
+
+
+def collect(cloud=False, *, source_names=None, limits=None):
+    reports = []
+    configurations = load_sources()
+    if source_names:
+        missing = set(source_names) - {c["name"] for c in configurations}
+        if missing:
+            raise ValueError("Unknown source selection")
+        configurations = [c for c in configurations if c["name"] in source_names]
+    for configured in configurations:
+        config = {**configured, **(limits or {})}
         if not config.get("enabled"):
+            reports.append({"source": config["name"], "status": "disabled", "errors": []})
             continue
         connector = Connector(config)
+        started = now().isoformat() + "Z"
+        ingested = 0
         try:
-            if config.get("mode") == "jsonld":
-                entries = []
-                for entry in config.get("listing_urls", []):
-                    entry = {"url": entry} if isinstance(entry, str) else dict(entry)
-                    previous = None
-                    if cloud:
-                        from google.cloud import bigtable
-                        import hashlib
-
-                        settings = get_settings()
-                        table = (
-                            bigtable.Client(project=settings.gcp_project)
-                            .instance(settings.bigtable_instance)
-                            .table(settings.bigtable_table)
-                        )
-                        row = table.read_row(
-                            f"state#{config['name']}#{hashlib.sha256(entry['url'].encode()).hexdigest()}"
-                        )
-                        if row and row.cells.get("raw", {}).get(b"payload"):
-                            previous = json.loads(row.cells["raw"][b"payload"][0].value)
-                    else:
-                        with Session() as session:
-                            source = session.scalar(
-                                select(SourceListing).where(
-                                    SourceListing.source == config["name"], SourceListing.url == entry["url"]
-                                )
-                            )
-                            previous = source.data if source else None
-                    if previous:
-                        entry["previous"] = previous
-                    entries.append(entry)
-                connector.config = {**config, "listing_urls": entries}
+            if config.get("mode") in ("jsonld", "portal"):
+                lookup, known = source_state(config, cloud)
+                connector.previous_lookup, connector.known_urls = lookup, known
+                if config["mode"] == "jsonld":
+                    entries = []
+                    for entry in config.get("listing_urls", []):
+                        entry = {"url": entry} if isinstance(entry, str) else dict(entry)
+                        previous = lookup(entry["url"])
+                        if previous:
+                            entry["previous"] = previous
+                        entries.append(entry)
+                    connector.config = {**config, "listing_urls": entries}
             for raw in connector.records():
                 if cloud:
                     publish(raw)
                 else:
                     with Session.begin() as session:
                         ingest(session, raw)
+                ingested += 1
         except Exception as exc:
-            # Log class only: upstream errors might contain a credential-bearing URL or raw contact data.
+            # Store class/status only; upstream exceptions may contain raw contact data or secrets.
+            if not connector.report["errors"]:
+                connector.note_error(exc, "collection")
             log.error("source_failed source=%s error=%s", config["name"], type(exc).__name__)
-            failures += 1
         finally:
             connector.close()
-    if failures:
-        raise RuntimeError(f"{failures} source(s) failed; no listings were inferred inactive")
+        report = {
+            **connector.report,
+            "ingested": ingested,
+            "started_at": started,
+            "finished_at": now().isoformat() + "Z",
+        }
+        report["status"] = ("partial" if ingested else "failed") if report["errors"] else "succeeded"
+        reports.append(report)
+        log.info("collection_report %s", json.dumps(report, sort_keys=True))
+    if any(report["errors"] for report in reports):
+        raise CollectionFailed(reports)
+    return reports
 
 
 def create_index(client):
@@ -202,8 +300,15 @@ def main():
     parser.add_argument("command", choices=["collect", "index", "retention", "migrate"])
     parser.add_argument("--cloud", action="store_true")
     parser.add_argument("--loop", action="store_true")
+    parser.add_argument("--source", action="append", help="Collect only this configured source; repeatable")
+    parser.add_argument("--max-pages", type=int)
+    parser.add_argument("--max-listings", type=int)
+    parser.add_argument("--max-rechecks", type=int)
+    parser.add_argument("--recheck-only", action="store_true", help="Refresh stored adverts without discovery")
+    parser.add_argument("--report", help="Write a machine-readable collection report")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if args.command == "migrate":
         if get_settings().environment == "production":
             raise SystemExit(
@@ -216,7 +321,26 @@ def main():
         return
     while True:
         if args.command == "collect":
-            collect(args.cloud)
+            limits = {
+                name: getattr(args, name)
+                for name in ("max_pages", "max_listings", "max_rechecks")
+                if getattr(args, name) is not None
+            }
+            if args.recheck_only:
+                limits.update(search_urls=[], listing_urls=[], recheck_only=True)
+            failure = False
+            try:
+                reports = collect(args.cloud, source_names=args.source, limits=limits)
+            except CollectionFailed as exc:
+                reports, failure = exc.reports, True
+            if args.report:
+                from pathlib import Path
+
+                destination = Path(args.report)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(json.dumps({"sources": reports}, indent=2) + "\n")
+            if failure and not args.loop:
+                raise SystemExit(1)
         elif args.command == "index":
             index_once()
         else:
