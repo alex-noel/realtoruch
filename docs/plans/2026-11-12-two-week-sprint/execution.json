@@ -63,7 +63,7 @@
       ],
       "worker_commit": "326a77b + fe4ab6f",
       "integrated_commit": "1049292",
-      "review": "Parent added T10 identity gate before city/source locks;95real-service passes,142combinedcollector/portal/identity passes. Cloud remains unconditional; HTTP/Bigtable tests use fakes.",
+      "review": "Parent added T10 identity gate before city/source locks; 95 real-service and 142 combined collector/portal/identity passes. Cloud remains unconditional; HTTP/Bigtable tests use fakes.",
       "evidence": [
         "docs/verification/T04-handoff.md",
         ".local/verification/T01/integrated-t04-review/report.json"
@@ -100,7 +100,7 @@
     },
     {
       "id": "T07",
-      "status": "PLANNED",
+      "status": "LIVE_SOAK_RUNNING",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
@@ -108,10 +108,13 @@
         "T04",
         "T05"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "b3782cc + 7e310d7",
+      "integrated_commit": "dcd5768",
+      "review": "Harness accepted after parent pin, budget and isolation review; 141 combined tests passed without skips. Pinned live run began 2026-11-11T21:27:38.320642Z and needs 72 actual covered hours through 2026-11-14T21:27:38.320642Z. First cycle: four observations from Otodom/Morizon; Gratka discovery parser failed; no real removal. Live gate remains incomplete.",
+      "evidence": [
+        "docs/verification/T07-handoff.md",
+        "docs/verification/collection-soak.md"
+      ]
     },
     {
       "id": "T08",
@@ -154,7 +157,7 @@
       ],
       "worker_commit": "2c3688c + d6765de",
       "integrated_commit": "87cfd34 + b56f0f8 + e7eeb88",
-      "review": "Independent19targeted and90real-service passes. Combined portal regression tightened fallback to requirebuilding evidence;142targeted and14journey passes. Existing frozen metrics document earlier matcher; final immutable-corpus check reserved toT32, noholdout tuning.",
+      "review": "Independent 19 targeted and 90 real-service passes. Combined portal regression tightened fallback to require building evidence; 142 targeted and 14 journey passes. Existing frozen metrics document earlier matcher; final immutable-corpus check reserved to T32, without holdout tuning.",
       "evidence": [
         "docs/verification/T10-handoff.md",
         "docs/verification/dedupe-after.md",
@@ -171,7 +174,7 @@
       ],
       "worker_commit": "3bdf337 + 63b7489",
       "integrated_commit": "79fc5b7",
-      "review": "Parent SQL/methodology review and101real-service passes including both-engine historyfixtures. Worker100k-observation benchmark metlocal latency/memory targets. No index/migration justified.",
+      "review": "Parent SQL/methodology review and 101 real-service passes including both-engine history fixtures. Worker 100,000-observation benchmark met local latency/memory targets. No index/migration justified.",
       "evidence": [
         "docs/verification/T11-handoff.md",
         "docs/performance/history-baseline.md",
@@ -180,7 +183,7 @@
     },
     {
       "id": "T12",
-      "status": "PLANNED",
+      "status": "IN_PROGRESS",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
@@ -189,7 +192,7 @@
       ],
       "worker_commit": null,
       "integrated_commit": null,
-      "review": null,
+      "review": "Worker implementing bounded public DTOs, SQL/Elasticsearch parity and pagination on reviewed base 3fbab65.",
       "evidence": []
     },
     {
@@ -217,15 +220,15 @@
         "T01"
       ],
       "worker_commit": "03a324c + c03550f",
-      "integrated_commit": "edf5e59",
-      "review": "Parent reproduced and corrected stale-session races;18independentunit and7account tests,TS passed. Vitest4.1.12 replaced vulnerable initialnewrunner. Real browser multi-tab/UI acceptance belongs toT18.",
+      "integrated_commit": "edf5e59 + 3fbab65 + 64b949a",
+      "review": "Session implementation accepted after independent race review and 20 unit tests. T18 real-browser targeted account and different-account cross-tab cases passed desktop/mobile. Parent full integrated browser repeat remains pending.",
       "evidence": [
         "docs/verification/T14-handoff.md"
       ]
     },
     {
       "id": "T15",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "xhigh",
       "depends": [
@@ -233,36 +236,41 @@
         "T13",
         "T14"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "0976ace",
+      "integrated_commit": "ade29cb",
+      "review": "Parent privacy, token binding and identity/account/conversation lock review; tightened UTF-8 export input bounds and cleanup batching. Final combined real-service profile: 152 passed, zero failed/skipped. Export snapshot needs a second pooled connection.",
+      "evidence": [
+        "docs/verification/T15-handoff.md",
+        ".local/verification/T01/integrated-t15-final/report.json"
+      ]
     },
     {
       "id": "T16",
-      "status": "IN_REVIEW",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
         "T10"
       ],
-      "worker_commit": "00e5615",
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "00e5615 + e11c964",
+      "integrated_commit": "7cf3994",
+      "review": "Parent tuple/read/retry/privacy review and 123 real-service passes. Follow-on T15 combined profile passed 152 tests without skips, retaining account-before-conversation lock order.",
+      "evidence": [
+        "docs/verification/T16-handoff.md"
+      ]
     },
     {
       "id": "T17",
-      "status": "PLANNED",
+      "status": "IN_PROGRESS",
       "model": "gpt-6.1-sol",
-      "reasoning_effort": "medium",
+      "reasoning_effort": "high",
       "depends": [
         "T14",
         "T16"
       ],
       "worker_commit": null,
       "integrated_commit": null,
-      "review": null,
+      "review": "Dispatched on reviewed base 64b949a; owns inbox UI and typed message client. Browser-label coordination with T18; viewport-aware acknowledgement required.",
       "evidence": []
     },
     {
@@ -425,9 +433,18 @@
     }
   ],
   "active_assignments": {
-    "A": "T18 real local browser journeys",
-    "B": "T16 message cursors in parent review; next fetching soak harness",
-    "C": "T11 accepted; T12 ready for a concurrency slot",
-    "D": "T15 transactional closure and scoped data export"
+    "A": "T18 complete browser suite and artifacts",
+    "B": "T07 pinned live soak running; T19 ready after a worker slot opens",
+    "C": "T12 public search parity and privacy",
+    "D": "T17 inbox UI and lifecycle"
+  },
+  "live_soak": {
+    "session_id": 50850,
+    "checkout": ".local/worktrees/t07-live",
+    "pin": "b3782cca0f4a05b788e4fd00656ef01327deb552",
+    "run_id": "krakow-72h-20261111",
+    "target_end_utc": "2026-11-14T21:27:38.320642Z",
+    "state": "INCOMPLETE",
+    "instructions": "Do not edit checkout/config/database or replay slots. Inspect read-only manifest with scripts/soak_report.py."
   }
 }
