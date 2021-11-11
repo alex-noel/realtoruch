@@ -86,6 +86,8 @@ class Connector:
             "search_pages": 0,
             "discovered": 0,
             "checked": 0,
+            "new_details": 0,
+            "due_rechecks": 0,
             "emitted": 0,
             "inactive": 0,
             "skipped": 0,
@@ -120,7 +122,13 @@ class Connector:
             parsed = urlparse(url)
             origin = f"{parsed.scheme}://{parsed.netloc}"
             if origin not in self.robots:
-                status, body = self._with_retries(origin + "/robots.txt", {}, delay, robots=True)
+                try:
+                    status, body = self._with_retries(origin + "/robots.txt", {}, delay, robots=True)
+                except (httpx.HTTPError, PayloadTooLarge) as exc:
+                    if self.config.get("stop_on_robots_error"):
+                        status = getattr(getattr(exc, "response", None), "status_code", None)
+                        raise SourceAccessError("Cannot verify robots policy", status) from exc
+                    raise
                 if status != 200 or b"<html" in body.lower() or b"<!doctype" in body.lower():
                     raise SourceAccessError("Cannot verify robots policy", status)
                 parser = Protego.parse(body.decode("utf-8", errors="replace"))
@@ -280,6 +288,15 @@ class Connector:
         max_rechecks = min(500, max(0, int(self.config.get("max_rechecks", 50))))
         checked, discovered = set(), set()
 
+        def skip_candidate(previous):
+            if not self.is_due(previous):
+                self.report["fresh_skipped"] += 1
+                return True
+            if previous and self.config.get("new_details_only"):
+                self.report["known_skipped"] = self.report.get("known_skipped", 0) + 1
+                return True
+            return False
+
         def check(entry):
             url = entry["url"] if isinstance(entry, dict) else entry
             url = canonical_url(url)
@@ -292,6 +309,7 @@ class Connector:
                 self.report["fresh_skipped"] += 1
                 return None
             self.report["checked"] += 1
+            self.report["due_rechecks" if previous else "new_details"] += 1
             try:
                 record = self._detail(
                     url, previous, lambda html: parse_detail(
@@ -352,8 +370,7 @@ class Connector:
                 continue
             previous = entry.get("previous") if isinstance(entry, dict) else None
             previous = previous or self.previous_lookup(detail_url)
-            if not self.is_due(previous):
-                self.report["fresh_skipped"] += 1
+            if skip_candidate(previous):
                 checked.add(detail_url)
                 continue
             if new_attempts >= max_new:
@@ -386,8 +403,7 @@ class Connector:
                     if detail_url in checked:
                         continue
                     previous = self.previous_lookup(detail_url)
-                    if not self.is_due(previous):
-                        self.report["fresh_skipped"] += 1
+                    if skip_candidate(previous):
                         checked.add(detail_url)
                         continue
                     if new_attempts >= max_new:
