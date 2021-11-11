@@ -7,6 +7,7 @@
     {"version": "005", "file": "005_collection_fetch_state.sql"},
     {"version": "006", "file": "006_search_revision.sql"},
     {"version": "008", "file": "008_delivery_leases.sql"},
+    {"version": "009", "file": "009_account_closure.sql"},
     {"version": "010", "file": "010_message_read_cursors.sql"}
   ],
   "auth": [

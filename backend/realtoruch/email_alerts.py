@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 
+from .account_data import guard_account_write
 from .delivery_claims import claim, finish, lock_owned
 from .db import get_session
 from .models import EmailDelivery, EmailSubscription, Favorite, Listing, Notification, now
@@ -54,6 +55,7 @@ class EmailChoice(BaseModel):
 @router.put("/v1/me/email-notifications")
 def email_choice(body: EmailChoice, claims=Depends(require_claims), session=Depends(get_session)):
     user_id = claims["sub"]
+    guard_account_write(session, user_id)
     item = session.get(EmailSubscription, user_id)
     if not body.enabled:
         if item:
@@ -92,11 +94,15 @@ class EmailToken(BaseModel):
 
 @router.post("/v1/notifications/email/confirm")
 def confirm_email(body: EmailToken, session=Depends(get_session)):
-    item = session.scalar(
-        select(EmailSubscription)
-        .where(EmailSubscription.verification_hash == digest(body.token))
-        .with_for_update()
-    )
+    user_id = session.scalar(select(EmailSubscription.user_id).where(
+        EmailSubscription.verification_hash == digest(body.token)))
+    session.rollback()  # No row locks before the shared account guard.
+    if not user_id:
+        raise HTTPException(400, "This confirmation link expired or was already used.")
+    guard_account_write(session, user_id)
+    item = session.scalar(select(EmailSubscription).where(
+        EmailSubscription.user_id == user_id,
+        EmailSubscription.verification_hash == digest(body.token)).with_for_update())
     if not item or not item.verification_expires_at or item.verification_expires_at < now():
         raise HTTPException(
             400, "This confirmation link expired or was already used. Sign in to check your email settings."
@@ -110,11 +116,23 @@ def confirm_email(body: EmailToken, session=Depends(get_session)):
 
 @router.post("/v1/notifications/email/unsubscribe")
 def unsubscribe_email(body: EmailToken, session=Depends(get_session)):
-    item = session.scalar(select(EmailSubscription).where(EmailSubscription.unsubscribe_token == body.token))
-    if item:
-        _cancel_user_deliveries(session, item.user_id)
-        item.enabled, item.verification_hash = False, None
-        session.commit()
+    user_id = session.scalar(select(EmailSubscription.user_id).where(
+        EmailSubscription.unsubscribe_token == body.token))
+    session.rollback()
+    if user_id:
+        try:
+            guard_account_write(session, user_id)
+        except HTTPException as exc:
+            if exc.status_code != 401:
+                raise
+            session.rollback()
+        else:
+            item = session.scalar(select(EmailSubscription).where(
+                EmailSubscription.user_id == user_id, EmailSubscription.unsubscribe_token == body.token))
+            if item:
+                _cancel_user_deliveries(session, user_id)
+                item.enabled, item.verification_hash = False, None
+                session.commit()
     return {
         "message": "Email alerts are disabled. Your saved homes and in-app notifications are still available."
     }

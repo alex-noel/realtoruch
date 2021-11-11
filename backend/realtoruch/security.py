@@ -59,7 +59,7 @@ def install_http(app, *, auth=False):
         CORSMiddleware,
         allow_origins=settings.cors_origins.split(","),
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "X-Account-Export-Token"],
         allow_credentials=auth,
     )
     windows = OrderedDict()
@@ -100,5 +100,6 @@ def install_http(app, *, auth=False):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Cache-Control"] = "no-store"
+        response.headers["Cache-Control"] = ("private, no-store" if request.url.path in
+                                             ("/v1/me/export", "/v1/auth/reauthenticate") else "no-store")
         return response
