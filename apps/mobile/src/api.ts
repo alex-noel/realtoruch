@@ -101,6 +101,7 @@ async function acceptSession(result: SessionResult, intent: number) {
 }
 async function refreshSession(intent = generation, lockHeld = false) {
   checkIntent(intent);
+  const anonymousBootstrap = Platform.OS === "web" && !accessToken && sessionState === "signed-out";
   if (!lockHeld && refreshing?.generation === intent) return refreshing.promise;
   const run = async () => {
     checkIntent(intent);
@@ -122,6 +123,12 @@ async function refreshSession(intent = generation, lockHeld = false) {
     } catch (error) {
       if (error instanceof SessionError && error.kind === "storage" && generation === intent + 1 && sessionState === "reauth") throw error;
       checkIntent(intent);
+      if (anonymousBootstrap && error instanceof SessionError && error.kind === "invalid") {
+        // A first visit has no readable HttpOnly-cookie state. A missing or
+        // revoked cookie simply means signed out; public requests stay valid.
+        publish("signed-out");
+        return null;
+      }
       if (error instanceof SessionError && (error.kind === "invalid" || error.kind === "forbidden")) await invalidate(intent);
       else if (!(error instanceof SessionError && error.kind === "storage")) publish("offline");
       throw error;
