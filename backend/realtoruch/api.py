@@ -1,11 +1,14 @@
 import hmac
 from contextlib import asynccontextmanager
+from time import monotonic
+from typing import Annotated
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from .alerts import baseline_search, insert_once, notification_data, unread_count
 from .db import Session, get_session, init_db
@@ -26,8 +29,26 @@ from .models import (
 )
 from .normalization import fold
 from .push import PushBody
-from .query import market_history, market_summary, search_db, serialize_many
-from .schemas import RawListing, SearchFilters
+from .query import (
+    catalog_read_budget,
+    check_index_page,
+    market_history,
+    market_summary,
+    search_db,
+    serialize_many,
+)
+from .schemas import (
+    PublicError,
+    PublicListingDetail,
+    PublicMarketHistory,
+    PublicMarketSummary,
+    PublicSearchFilters,
+    PublicSearchPage,
+    PublicSources,
+    RawListing,
+    SearchFilters,
+)
+from .search_transport import IDENTITY_ENCODING, read_search_json
 from .security import install_http, require_user
 from .settings import get_settings
 
@@ -51,8 +72,9 @@ install_http(app)
 from .account_data import guard_account_write, router as account_data_router
 app.include_router(account_data_router)
 from .email_alerts import router as email_router
+from .identity_review import resolve_id
+from .identity_review import router as identity_router
 from .marketplace import router as marketplace_router
-from .identity_review import resolve_id, router as identity_router
 
 app.include_router(email_router)
 app.include_router(marketplace_router)
@@ -74,26 +96,42 @@ def metrics():
     return rental_metrics(Session)
 
 
-@app.get("/v1/listings", tags=["Public"])
-def listings(filters: SearchFilters = Query(), session=Depends(get_session)):
-    if settings.search_service_url:
-        try:
-            response = httpx.get(
-                settings.search_service_url + "/v1/search",
-                params=filters.model_dump(exclude_none=True),
-                timeout=5,
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPError:
-            # Availability fallback; SQL remains the source of truth.
+def fetch_index_page(filters):
+    try:
+        deadline = monotonic() + 5
+        with httpx.stream(
+            "GET",
+            settings.search_service_url.rstrip("/") + "/v1/search",
+            params=filters.model_dump(exclude_none=True),
+            headers=IDENTITY_ENCODING,
+            timeout=5,
+        ) as response:
+            data = read_search_json(response, deadline=deadline)
+        return PublicSearchPage.model_validate(data).validate_index_page(filters)
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError, RecursionError):
+        # An upstream validation/transport error never becomes a client error.
+        return None
+
+
+@app.get("/v1/listings", tags=["Public"], response_model=PublicSearchPage,
+         responses={429: {"model": PublicError}, 503: {"model": PublicError}})
+def listings(filters: Annotated[PublicSearchFilters, Query()], session=Depends(get_session)):
+    page = fetch_index_page(filters) if settings.search_service_url else None
+    try:
+        with catalog_read_budget(session):
+            if page is not None:
+                checked = check_index_page(session, filters, page)
+                if checked is not None:
+                    return PublicSearchPage.model_validate(checked)
             result = search_db(session, filters)
-            result["degraded"] = True
-            return result
-    return search_db(session, filters)
+            result["degraded"] = bool(settings.search_service_url)
+            return PublicSearchPage.model_validate(result)
+    except (SQLAlchemyError, ValidationError):
+        raise HTTPException(503, "Rental catalog is temporarily unavailable") from None
 
 
-@app.get("/v1/listings/{listing_id}", tags=["Public"])
+@app.get("/v1/listings/{listing_id}", tags=["Public"], response_model=PublicListingDetail,
+         responses={404: {"model": PublicError}})
 def listing_detail(listing_id: str, session=Depends(get_session)):
     listing_id = resolve_id(session, listing_id)
     listing = session.get(Listing, listing_id)
@@ -103,7 +141,7 @@ def listing_detail(listing_id: str, session=Depends(get_session)):
     history = session.scalars(
         select(Observation)
         .where(Observation.listing_id == listing_id, Observation.changed.is_(True))
-        .order_by(Observation.observed_at.desc())
+        .order_by(Observation.observed_at.desc(), Observation.id.desc())
         .limit(100)
     ).all()
     result["history"] = [
@@ -118,57 +156,56 @@ def listing_detail(listing_id: str, session=Depends(get_session)):
     return result
 
 
-@app.get("/v1/market/history", tags=["Public"])
+@app.get("/v1/market/history", tags=["Public"], response_model=PublicMarketHistory)
 def history(
-    city: str = "",
-    district: str = "",
-    region: str = "",
+    city: str = Query("", max_length=100),
+    district: str = Query("", max_length=100),
+    region: str = Query("", max_length=100),
     months: int = Query(default=12, ge=1, le=120),
     session=Depends(get_session),
 ):
     return market_history(session, city, district, region, months)
 
 
-@app.get("/v1/market/summary", tags=["Public"])
-def summary(city: str = "", session=Depends(get_session)):
+@app.get("/v1/market/summary", tags=["Public"], response_model=PublicMarketSummary)
+def summary(city: str = Query("", max_length=100), session=Depends(get_session)):
     return market_summary(session, city)
 
-@app.get("/v1/sources", tags=["Public"])
+
+@app.get("/v1/sources", tags=["Public"], response_model=PublicSources)
 def sources(city: str = Query("", max_length=100), session=Depends(get_session)):
     from .collection_health import public_health
     from .connectors import load_sources
 
-    observations = {
-        row.source: row
-        for row in session.execute(
-            select(
-                SourceListing.source,
-                func.max(SourceListing.observed_at).label("last_observed"),
-                func.count().label("stored_adverts"),
-            )
-            .join(Listing)
-            .where(Listing.is_demo.is_(False))
-            .group_by(SourceListing.source)
-        )
-    }
-    return {
-        "sources": [
-            {
-                "name": s["name"],
-                "enabled": s.get("enabled", False),
-                "mode": s.get("mode", "feed"),
-                "health": public_health(session, s["name"], city=city),
-                "status": "configured" if s.get("enabled") else "disabled",
-                "disabled_reason": s.get("disabled_reason") if not s.get("enabled") else None,
-                "last_observed_at": observations[s["name"]].last_observed.isoformat() + "Z"
-                if s["name"] in observations
-                else None,
-                "stored_adverts": observations[s["name"]].stored_adverts if s["name"] in observations else 0,
-            }
-            for s in load_sources()
-        ],
-        "demo_mode": settings.demo_mode,
-    }
+    city = SearchFilters(city=city).city
+    query = select(
+        SourceListing.source,
+        func.max(SourceListing.observed_at).label("last_observed"),
+        func.count().label("stored_adverts"),
+    ).join(Listing).where(Listing.is_demo.is_(False), Listing.hidden.is_(False))
+    if city:
+        query = query.where(Listing.city == city)
+    observations = {row.source: row for row in session.execute(query.group_by(SourceListing.source))}
+    items = []
+    for s in load_sources():
+        name = s["name"]
+        enabled = s.get("enabled") is True
+        mode = s.get("mode", "feed")
+        cadence = s.get("recheck_interval_minutes")
+        health = public_health(session, name, city=city)
+        observed = observations.get(name)
+        items.append({
+            "name": name,
+            "enabled": enabled,
+            "mode": mode if mode in ("feed", "portal", "jsonld") else "other",
+            "health": health,
+            "status": "configured" if enabled else "disabled",
+            "cadence_minutes": cadence if type(cadence) is int and 1 <= cadence <= 10080 else None,
+            "disabled_reason": None if enabled else "Source collection is disabled.",
+            "last_observed_at": observed.last_observed.isoformat() + "Z" if observed else None,
+            "stored_adverts": observed.stored_adverts if observed else 0,
+        })
+    return {"sources": items, "demo_mode": settings.demo_mode}
 
 
 @app.get("/v1/me/favorites", tags=["Account"])

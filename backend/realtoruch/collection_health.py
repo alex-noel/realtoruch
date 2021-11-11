@@ -3,7 +3,7 @@
 from datetime import timedelta
 from threading import Event, Thread
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import String, cast, func, or_, select, update
 
 from .alerts import insert_once
 from .models import CollectionRun, SourcePollState, now, uid
@@ -187,27 +187,37 @@ def public_health(session, source, *, city=""):
     state = session.get(SourcePollState, source)
     if not run:
         return None
+    # Reuse the source/time lookup and only select one timestamp. A capped
+    # sample may be successful without completing the configured city scan.
+    limited = func.coalesce(cast(CollectionRun.report["limited"].as_string(), String), "")
+    last_complete = session.scalar(
+        query.with_only_columns(CollectionRun.finished_at).where(
+            CollectionRun.status == "succeeded", CollectionRun.finished_at.is_not(None),
+            limited.not_in(("1", "true")),
+        ).order_by(CollectionRun.started_at.desc(), CollectionRun.id.desc()).limit(1)
+    )
     status = run.status
     if status == "running" and (
         not state or state.lease_id != run.id or not state.lease_until or state.lease_until < now()
     ):
         status = "interrupted"
+    report = run.report if isinstance(run.report, dict) else {}
+    errors = report.get("errors")
+    errors = errors[:20] if isinstance(errors, list) else []
     return {
         "status": status,
         "city": run.city,
         "started_at": run.started_at.isoformat() + "Z",
         "finished_at": run.finished_at.isoformat() + "Z" if run.finished_at else None,
-        "ingested": run.report.get("ingested", 0),
-        "checked": run.report.get("checked", 0),
-        "fresh_skipped": run.report.get("fresh_skipped", 0),
-        "limited": run.report.get("limited", False),
+        "ingested": report.get("ingested", 0),
+        "checked": report.get("checked", 0),
+        "fresh_skipped": report.get("fresh_skipped", 0),
+        "limited": report.get("limited", False),
         "errors": [
-            {"kind": e["kind"], "stage": e["stage"], "http_status": e.get("http_status")}
-            for e in run.report.get("errors", [])
+            {"kind": e.get("kind"), "stage": e.get("stage"), "http_status": e.get("http_status")}
+            for e in errors if isinstance(e, dict)
         ],
         "consecutive_failures": state.failures if state else 0,
-        "last_success_at": state.last_success_at.isoformat() + "Z"
-        if state and state.last_success_at
-        else None,
+        "last_success_at": last_complete.isoformat() + "Z" if last_complete else None,
         "retry_after": state.retry_after.isoformat() + "Z" if state and state.retry_after else None,
     }
