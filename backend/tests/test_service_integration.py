@@ -190,7 +190,7 @@ def test_auth_recovery_on_versioned_postgres_schema(pg_engine, monkeypatch):
 
 
 def test_registry_rejects_checksum_drift_and_rolls_back(pg_engine):
-    from realtoruch.migrations import apply_postgres
+    from realtoruch.migrations import apply_postgres, load_registry
     with pg_engine.connect() as connection:
         transaction = connection.begin()
         connection.execute(text("UPDATE realtoruch_migrations SET checksum='bad' WHERE database_name='rentals' AND version='001'"))

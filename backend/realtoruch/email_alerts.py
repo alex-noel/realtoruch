@@ -11,8 +11,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import select, update
 
+from .delivery_claims import claim, finish, lock_owned
 from .db import get_session
 from .models import EmailDelivery, EmailSubscription, Favorite, Listing, Notification, now
 from .push import payload_for
@@ -56,6 +57,7 @@ def email_choice(body: EmailChoice, claims=Depends(require_claims), session=Depe
     item = session.get(EmailSubscription, user_id)
     if not body.enabled:
         if item:
+            _cancel_user_deliveries(session, user_id)
             item.enabled = False
             item.verification_hash = None
             session.commit()
@@ -110,11 +112,19 @@ def confirm_email(body: EmailToken, session=Depends(get_session)):
 def unsubscribe_email(body: EmailToken, session=Depends(get_session)):
     item = session.scalar(select(EmailSubscription).where(EmailSubscription.unsubscribe_token == body.token))
     if item:
+        _cancel_user_deliveries(session, item.user_id)
         item.enabled, item.verification_hash = False, None
         session.commit()
     return {
         "message": "Email alerts are disabled. Your saved homes and in-app notifications are still available."
     }
+
+
+def _cancel_user_deliveries(session, user_id):
+    # Claim/complete also lock the delivery first, before the subscription.
+    session.execute(update(EmailDelivery).where(
+        EmailDelivery.user_id == user_id, EmailDelivery.status.in_(["pending", "retry"])
+    ).values(status="cancelled", claim_token=None, lease_until=None, confirmation_token=None))
 
 
 def message_for(delivery, subscription, item):
@@ -168,64 +178,59 @@ def send_email(message, delivery_id):
         connection.send_message(message)
 
 
+def _eligible(session, delivery):
+    subscription = session.get(EmailSubscription, delivery.user_id)
+    item = session.get(Notification, delivery.notification_id) if delivery.notification_id else None
+    if not subscription:
+        return False, subscription, item
+    if delivery.confirmation_token:
+        valid = (subscription.verification_hash == digest(delivery.confirmation_token)
+                 and subscription.verification_expires_at is not None
+                 and subscription.verification_expires_at > now())
+    else:
+        home = session.get(Listing, item.listing_id) if item else None
+        valid = bool(item and home and subscription.enabled and subscription.verified_at
+                     and not item.read_at and home.status == "active" and home.rent_pln == item.rent_pln
+                     and (item.kind != "price_drop" or session.get(Favorite, (item.user_id, home.id)))
+                     and (item.kind != "new_match" or item.search_id))
+    return bool(valid), subscription, item
+
+
 def dispatch_email(session_factory, *, limit=50, sender=send_email):
     count = 0
+    statuses = ["pending", "retry"]
     for _ in range(limit):
         with session_factory.begin() as session:
-            delivery = session.scalar(
-                select(EmailDelivery)
-                .where(
-                    EmailDelivery.status.in_(["pending", "retry"]),
-                    EmailDelivery.next_attempt_at <= now(),
-                    or_(EmailDelivery.lease_until.is_(None), EmailDelivery.lease_until < now()),
-                )
-                .order_by(EmailDelivery.next_attempt_at)
-                .limit(1)
-                .with_for_update(skip_locked=True)
-            )
+            delivery, token = claim(session, EmailDelivery, statuses)
             if not delivery:
                 break
-            subscription = session.get(EmailSubscription, delivery.user_id)
-            item = session.get(Notification, delivery.notification_id) if delivery.notification_id else None
-            valid = bool(subscription)
-            if delivery.confirmation_token:
-                valid = (
-                    valid
-                    and subscription.verification_hash == digest(delivery.confirmation_token)
-                    and subscription.verification_expires_at > now()
-                )
-            else:
-                home = session.get(Listing, item.listing_id)
-                valid = (
-                    valid
-                    and subscription.enabled
-                    and subscription.verified_at
-                    and not item.read_at
-                    and home.status == "active"
-                    and home.rent_pln == item.rent_pln
-                    and (item.kind != "price_drop" or session.get(Favorite, (item.user_id, home.id)))
-                    and (item.kind != "new_match" or item.search_id)
-                )
-            if not valid:
-                delivery.status, delivery.confirmation_token = "cancelled", None
+            valid, subscription, item = _eligible(session, delivery)
+            if not valid or delivery.attempts > 8:
+                finish(session, EmailDelivery, delivery.id, token, statuses,
+                       {"status": "cancelled" if not valid else "failed", "confirmation_token": None})
                 continue
             message = message_for(delivery, subscription, item)
-            delivery.lease_until, delivery.attempts = now() + timedelta(seconds=60), delivery.attempts + 1
-            delivery_id = delivery.id
+            delivery_id, attempts = delivery.id, delivery.attempts
         error = None
         try:
             sender(message, delivery_id)
         except Exception as exc:
-            error = type(exc).__name__  # No recipient, credentials or confirmation token in logs.
+            error = type(exc).__name__[:100]
         with session_factory.begin() as session:
+            if not lock_owned(session, EmailDelivery, delivery_id, token, statuses):
+                continue
             delivery = session.get(EmailDelivery, delivery_id)
-            delivery.lease_until, delivery.last_error = None, error
-            if error:
-                delivery.status = "failed" if delivery.attempts >= 8 else "retry"
-                delivery.next_attempt_at = now() + timedelta(seconds=min(3600, 30 * 2**delivery.attempts))
-                if delivery.status == "failed":
-                    delivery.confirmation_token = None
+            valid, _, _ = _eligible(session, delivery)
+            if not valid:
+                values = {"status": "cancelled", "confirmation_token": None, "last_error": None}
+            elif error:
+                status = "failed" if attempts >= 8 else "retry"
+                values = {"status": status, "last_error": error,
+                          "next_attempt_at": now() + timedelta(seconds=min(3600, 30 * 2**attempts))}
+                if status == "failed":
+                    values["confirmation_token"] = None
             else:
-                delivery.status, delivery.delivered_at, delivery.confirmation_token = "sent", now(), None
+                values = {"status": "sent", "delivered_at": now(), "confirmation_token": None, "last_error": None}
+            finish(session, EmailDelivery, delivery_id, token, statuses, values)
         count += 1
     return count

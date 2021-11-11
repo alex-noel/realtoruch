@@ -9,6 +9,7 @@ from sqlalchemy import func, select, text
 
 from .alerts import baseline_search, insert_once, notification_data, unread_count
 from .db import get_session, init_db
+from .delivery_claims import cancel_notifications
 from .ingest import ingest
 from .models import (
     Favorite,
@@ -227,6 +228,7 @@ def remove_favorite(listing_id: str, user_id=Depends(require_user), session=Depe
     listing_id = resolve_id(session, listing_id)
     favorite = session.get(Favorite, (user_id, listing_id))
     if favorite:
+        cancel_notifications(session, user_id=user_id, listing_id=listing_id, kind="price_drop")
         session.delete(favorite)
         session.commit()
     return {"saved": False}
@@ -302,6 +304,7 @@ def mark_seen(listing_id: str, user_id=Depends(require_user), session=Depends(ge
     insert_once(session, SeenPrice, {"user_id": user_id, "listing_id": listing_id, "rent_pln": home.rent_pln})
     from sqlalchemy import update
 
+    cancel_notifications(session, user_id=user_id, listing_id=listing_id)
     session.execute(
         update(Notification)
         .where(
@@ -357,6 +360,7 @@ def read_notification(notification_id: str, user_id=Depends(require_user), sessi
     item = session.get(Notification, notification_id)
     if not item or item.user_id != user_id:
         raise HTTPException(404, "Notification not found")
+    cancel_notifications(session, notification_id=notification_id)
     item.read_at = item.read_at or now()
     session.commit()
     return {"read": True}
@@ -389,6 +393,8 @@ def subscribe_push(body: PushBody, user_id=Depends(require_user), session=Depend
         raise HTTPException(422, "You can enable alerts on up to 10 devices")
     data = {"endpoint": body.endpoint, "keys": body.keys} if body.kind == "web" else {"token": body.token}
     if item:
+        if item.user_id != user_id:
+            cancel_notifications(session, subscription_id=key)
         item.user_id, item.data, item.active = user_id, data, True
     else:
         session.add(PushSubscription(id=key, user_id=user_id, kind=body.kind, data=data))
@@ -401,6 +407,7 @@ def unsubscribe_push(subscription_id: str, user_id=Depends(require_user), sessio
     item = session.get(PushSubscription, subscription_id)
     if not item or item.user_id != user_id:
         raise HTTPException(404, "Subscription not found")
+    cancel_notifications(session, subscription_id=subscription_id)
     item.active = False
     session.commit()
     return {"enabled": False}

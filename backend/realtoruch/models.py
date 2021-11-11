@@ -211,6 +211,7 @@ class PushDelivery(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     receipt_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(100), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -241,6 +242,7 @@ class EmailDelivery(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(100), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
