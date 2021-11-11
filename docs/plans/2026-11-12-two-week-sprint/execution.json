@@ -5,7 +5,7 @@
   "worker_assignments": 4,
   "max_concurrent_workers_with_integrator": 3,
   "cloud_deployment": "excluded",
-  "push": "User explicitly authorized push on 2026-11-11; cf7b146 verified on origin/codex/core-sprint-2026-11. Later local integration corrections will be verified before the next push.",
+  "push": "User explicitly authorized source pushes to codex/core-sprint-2026-11. Application revision d56ae2313f34c574877e16050ea3affd67b064b6 was pushed and all four jobs in run43119698856 passed. Grant follow-up a17cf16f4e6c3c33d629684fd6a75685eb147b53 passed the current full service profile and is included with the final documentation. No default-branch merge or deployment.",
   "tasks": [
     {
       "id": "T01",
@@ -23,7 +23,7 @@
     },
     {
       "id": "T02",
-      "status": "LOCAL_PARTIAL",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "medium",
       "depends": [
@@ -31,7 +31,7 @@
       ],
       "worker_commit": "b7230d7 + db34817 + 7b63e8c",
       "integrated_commit": "fbbd6d9",
-      "review": "Hosted run 43115090311 was triggered by the authorized push of cf7b146. Real services, web and native JS jobs passed; offline Python found one outdated oversized-title test after T12 sanitization. A test-only fixture correction is prepared. Hosted gate remains incomplete until the corrected run passes.",
+      "review": "Local negative checks plus hosted run 43119698856; branch protection is a separate maintainer setting. Final integrated profiles on a17cf16 passed.",
       "evidence": [
         "docs/verification/T02-handoff.md",
         ".local/verification/T01/integrated-t02-services/report.json"
@@ -110,7 +110,7 @@
       ],
       "worker_commit": "b3782cc + 7e310d7",
       "integrated_commit": "dcd5768",
-      "review": "Harness accepted after parent pin, budget and isolation review; 141 combined tests passed without skips. Pinned live run began 2026-11-11T21:27:38.320642Z and needs 72 actual covered hours through 2026-11-14T21:27:38.320642Z. First cycle: four observations from Otodom/Morizon; Gratka discovery parser failed; no real removal. Live gate remains incomplete.",
+      "review": "Pinned live gate incomplete at 2026-11-11T23:34:20.875698Z: 7602.6s covered, 0.0s gaps, 1/12 intervals completed; Otodom/Morizon succeeded, Gratka failed. Pin predates current parser/migrations/optimizations; no final-version live acceptance.",
       "evidence": [
         "docs/verification/T07-handoff.md",
         "docs/verification/collection-soak.md"
@@ -149,7 +149,7 @@
     },
     {
       "id": "T10",
-      "status": "LOCAL_PARTIAL",
+      "status": "VERIFIED",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "xhigh",
       "depends": [
@@ -157,12 +157,14 @@
         "T09"
       ],
       "worker_commit": "2c3688c + d6765de",
-      "integrated_commit": "87cfd34 + b56f0f8 + e7eeb88",
-      "review": "Independent 19 targeted and 90 real-service passes. Combined portal regression tightened fallback to require building evidence; 142 targeted and 14 journey passes. Existing frozen metrics document earlier matcher; final immutable-corpus check reserved to T32, without holdout tuning.",
+      "integrated_commit": "87cfd34 + b56f0f8 + e7eeb88 + d56ae23",
+      "review": "Current frozen-corpus results, independent correction review and final correction/race regression; no holdout tuning. Final integrated profiles on a17cf16 passed.",
       "evidence": [
         "docs/verification/T10-handoff.md",
         "docs/verification/dedupe-after.md",
-        ".local/verification/T01/integrated-t10-review/report.json"
+        ".local/verification/T01/integrated-t10-review/report.json",
+        "docs/verification/dedupe-final.json",
+        "docs/verification/T32-handoff.md"
       ]
     },
     {
@@ -293,7 +295,7 @@
       ],
       "worker_commit": "95bb97f + ddbf681 + ce6087f + 92c5f96 + 087c3d2",
       "integrated_commit": "3bec9db + 2b69e8a",
-      "review": "Two worker full browser runs and parent integrated T12/T14/T15/T16/T17 run each passed 12 tests without skips. Controlled duplicate fault failed as required; trace canaries passed. Hosted CI not run.",
+      "review": "Two worker full browser runs and parent integrated T12/T14/T15/T16/T17 run each passed 12 tests without skips. Controlled duplicate fault failed as required; trace canaries passed. Hosted CI not run. T32 combined candidate a17cf16 passed all required local profiles; current evidence in T32 handoff.",
       "evidence": [
         "docs/verification/T18-handoff.md",
         ".local/verification/T01/integrated-t17-t18/report.json"
@@ -310,7 +312,7 @@
       ],
       "worker_commit": "9e332b8",
       "integrated_commit": "84dfdc1 + 7c8894b",
-      "review": "Parent reviewed normalized request generations, account fencing and shared deadlines; 64 integrated frontend unit tests and typecheck passed. Browser run passed 14 cases and exposed two missing aria-expanded attributes; the focused correction passed both narrow-screen cases. Final combined browser suite is reserved to T32.",
+      "review": "Parent reviewed normalized request generations, account fencing and shared deadlines; 64 integrated frontend unit tests and typecheck passed. Browser run passed 14 cases and exposed two missing aria-expanded attributes; the focused correction passed both narrow-screen cases. Final combined browser suite is reserved to T32. T32 combined candidate a17cf16 passed all required local profiles; current evidence in T32 handoff.",
       "evidence": [
         "docs/verification/T19-handoff.md",
         ".local/verification/T01/integrated-t19-final/report.json",
@@ -329,7 +331,7 @@
       ],
       "worker_commit": "9601581 + ad9af7f + fed07fa",
       "integrated_commit": "bfc4989 + cf7b146",
-      "review": "Parent accessibility/lazy-loading review, integrated typecheck and 118 frontend unit passes. Worker full browser profile passed 28 cases without skips, including 200% text and keyboard polygon controls. Hosted combined frontend browser job also passed on cf7b146; final backend-integrated profile remains T32.",
+      "review": "Parent accessibility/lazy-loading review, integrated typecheck and 118 frontend unit passes. Worker full browser profile passed 28 cases without skips, including 200% text and keyboard polygon controls. Hosted combined frontend browser job also passed on cf7b146; final backend-integrated profile remains T32. T32 combined candidate a17cf16 passed all required local profiles; current evidence in T32 handoff.",
       "evidence": [
         "docs/verification/T20-handoff.md",
         "docs/performance/web-baseline.md"
@@ -345,7 +347,7 @@
       ],
       "worker_commit": "fbd88d0 + a034fa8",
       "integrated_commit": "a30d1d5 + cf7b146",
-      "review": "Parent and worker D reproduced/fixed session-start and delayed-link races. Corrected worktree passed 122 unit tests, typecheck and 8 scoped browser cases with zero skips. Hosted combined web and native JS jobs passed on cf7b146. Installed-device and domain association evidence remains outside T21.",
+      "review": "Parent and worker D reproduced/fixed session-start and delayed-link races. Corrected worktree passed 122 unit tests, typecheck and 8 scoped browser cases with zero skips. Hosted combined web and native JS jobs passed on cf7b146. Installed-device and domain association evidence remains outside T21. T32 combined candidate a17cf16 passed all required local profiles; current evidence in T32 handoff.",
       "evidence": [
         "docs/verification/T21-handoff.md",
         "docs/mobile-validation.md"
@@ -353,7 +355,7 @@
     },
     {
       "id": "T25",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [
@@ -361,10 +363,13 @@
         "T11",
         "T12"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": "Final matched native PostgreSQL comparison is running on fresh equally analyzed clones. Baseline history p95 1837.4 ms failed; candidate uses native month keys, percentile aggregation, bytewise grouping keys with original tie-breaks and source-evidence batches. Numeric acceptance awaits the full five-minute result.",
-      "evidence": []
+      "worker_commit": "dcdd5a9c60c51cb8358ef25a3ca5bf2ba3b8c403",
+      "integrated_commit": "a775a77",
+      "review": "PASS on final native profile; earlier emulated history profile remains FAIL, all-history saturation is a separate failing mix. Final integrated profiles on a17cf16 passed.",
+      "evidence": [
+        "docs/performance/catalog-load.md",
+        "docs/verification/T32-evidence.json"
+      ]
     },
     {
       "id": "T26",
@@ -396,7 +401,7 @@
       ],
       "worker_commit": "66a6546 + 2acb1df",
       "integrated_commit": "ac23172",
-      "review": "Parent independently reviewed ownership manifests, fault preflights, restored account erasure, queue drains and explicit recovery limits. Worker standalone SQLite/PostgreSQL drills and 190 real-service tests passed with zero skips. Final root profile follows T25/T20/T21 integration.",
+      "review": "Parent independently reviewed ownership manifests, fault preflights, restored account erasure, queue drains and explicit recovery limits. Worker standalone SQLite/PostgreSQL drills and 190 real-service tests passed with zero skips. Final root profile follows T25/T20/T21 integration. T32 combined candidate a17cf16 passed all required local profiles; current evidence in T32 handoff.",
       "evidence": [
         "docs/verification/T27-handoff.md",
         ".local/worktrees/t27/.local/verification/T01/t27-service-regression/report.json"
@@ -416,7 +421,7 @@
       ],
       "worker_commit": "998b8e0 + 4877fba",
       "integrated_commit": "a2f53d5 + eceb19d",
-      "review": "Parent real-service profile passed 189 tests without skips; subsequent retention-role review corrected missing narrow writes. Independent actual-role PostgreSQL retention regression passed and denied unrelated writes/private reads. Configuration validation is local only; no cloud resources or metrics scraper were deployed.",
+      "review": "Parent real-service profile passed 189 tests without skips; subsequent retention-role review corrected missing narrow writes. Independent actual-role PostgreSQL retention regression passed and denied unrelated writes/private reads. Configuration validation is local only; no cloud resources or metrics scraper were deployed. T32 combined candidate a17cf16 passed all required local profiles; current evidence in T32 handoff.",
       "evidence": [
         "docs/verification/T28-handoff.md",
         ".local/verification/T01/integrated-t28-final/report.json",
@@ -425,7 +430,7 @@
     },
     {
       "id": "T32",
-      "status": "PLANNED",
+      "status": "LOCAL_PARTIAL",
       "model": "parent integrator",
       "reasoning_effort": "independent review",
       "depends": [
@@ -456,16 +461,22 @@
         "T28"
       ],
       "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "integrated_commit": "a17cf16f4e6c3c33d629684fd6a75685eb147b53",
+      "review": "Final local and hosted profiles passed after independent P1 visibility and correction-alert fixes; 72-hour/provider/version gate remains incomplete. No cloud deployment.",
+      "evidence": [
+        "docs/release-readiness.md",
+        "docs/verification/T32-handoff.md",
+        "docs/verification/T32-evidence.json",
+        "docs/verification/core-acceptance.json"
+      ]
     }
   ],
   "active_assignments": {
-    "A": "T25 final matched capacity run, drain, evidence and service regression",
-    "B": "T19/T21 completed",
-    "C": "T20 and Gratka compatibility correction completed",
-    "D": "T21 integration races completed; parent performing final integration"
+    "A": "complete; T25 and correction-alert fix reviewed",
+    "B": "complete",
+    "C": "complete; web and config/docs reviewed",
+    "D": "complete; independent integration review",
+    "integrator": "T32 LOCAL_PARTIAL; T07 duration/provider/final-version evidence pending"
   },
   "live_soak": {
     "session_id": 50850,

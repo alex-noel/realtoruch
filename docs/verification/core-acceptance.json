@@ -1,0 +1,2878 @@
+{
+  "recorded_at_utc": "2026-11-11T23:35:10.841515+00:00",
+  "candidate": "a17cf16f4e6c3c33d629684fd6a75685eb147b53",
+  "classification": "LOCAL_PARTIAL",
+  "tasks": [
+    {
+      "id": "T01",
+      "scope": "Clean installs, owned cleanup, registry and sanitized artifact checks; see acceptance follow-up superseding initial partial rows.",
+      "acceptance": [
+        {
+          "id": "T01-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T01-handoff.md",
+          "test_cases": [
+            "T01-TC01"
+          ]
+        },
+        {
+          "id": "T01-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T01-handoff.md",
+          "test_cases": [
+            "T01-TC02"
+          ]
+        },
+        {
+          "id": "T01-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T01-handoff.md",
+          "test_cases": [
+            "T01-TC03"
+          ]
+        },
+        {
+          "id": "T01-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T01-handoff.md",
+          "test_cases": [
+            "T01-TC04"
+          ]
+        },
+        {
+          "id": "T01-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T01-handoff.md",
+          "test_cases": [
+            "T01-TC05"
+          ]
+        },
+        {
+          "id": "T01-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T01-handoff.md",
+          "test_cases": [
+            "T01-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T01-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T01-AC01"
+          ],
+          "evidence": "docs/verification/T01-handoff.md"
+        },
+        {
+          "id": "T01-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T01-AC02"
+          ],
+          "evidence": "docs/verification/T01-handoff.md"
+        },
+        {
+          "id": "T01-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T01-AC03"
+          ],
+          "evidence": "docs/verification/T01-handoff.md"
+        },
+        {
+          "id": "T01-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T01-AC04"
+          ],
+          "evidence": "docs/verification/T01-handoff.md"
+        },
+        {
+          "id": "T01-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T01-AC05"
+          ],
+          "evidence": "docs/verification/T01-handoff.md"
+        },
+        {
+          "id": "T01-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T01-AC06"
+          ],
+          "evidence": "docs/verification/T01-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T02",
+      "scope": "Local negative checks plus hosted run 43119698856; branch protection is a separate maintainer setting.",
+      "acceptance": [
+        {
+          "id": "T02-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T02-handoff.md",
+          "test_cases": [
+            "T02-TC01",
+            "T02-TC02"
+          ]
+        },
+        {
+          "id": "T02-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T02-handoff.md",
+          "test_cases": [
+            "T02-TC01",
+            "T02-TC02"
+          ]
+        },
+        {
+          "id": "T02-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T02-handoff.md",
+          "test_cases": [
+            "T02-TC03"
+          ]
+        },
+        {
+          "id": "T02-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T02-handoff.md",
+          "test_cases": [
+            "T02-TC04"
+          ]
+        },
+        {
+          "id": "T02-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T02-handoff.md",
+          "test_cases": [
+            "T02-TC05"
+          ]
+        },
+        {
+          "id": "T02-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T02-handoff.md",
+          "test_cases": [
+            "T02-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T02-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T02-AC01",
+            "T02-AC02"
+          ],
+          "evidence": "docs/verification/T02-handoff.md"
+        },
+        {
+          "id": "T02-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T02-AC01",
+            "T02-AC02"
+          ],
+          "evidence": "docs/verification/T02-handoff.md"
+        },
+        {
+          "id": "T02-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T02-AC03"
+          ],
+          "evidence": "docs/verification/T02-handoff.md"
+        },
+        {
+          "id": "T02-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T02-AC04"
+          ],
+          "evidence": "docs/verification/T02-handoff.md"
+        },
+        {
+          "id": "T02-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T02-AC05"
+          ],
+          "evidence": "docs/verification/T02-handoff.md"
+        },
+        {
+          "id": "T02-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T02-AC06"
+          ],
+          "evidence": "docs/verification/T02-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T03",
+      "scope": "Specified controlled local cases; detailed evidence and limitations in the task handoff.",
+      "acceptance": [
+        {
+          "id": "T03-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T03-handoff.md",
+          "test_cases": [
+            "T03-TC01"
+          ]
+        },
+        {
+          "id": "T03-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T03-handoff.md",
+          "test_cases": [
+            "T03-TC02",
+            "T03-TC06"
+          ]
+        },
+        {
+          "id": "T03-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T03-handoff.md",
+          "test_cases": [
+            "T03-TC03"
+          ]
+        },
+        {
+          "id": "T03-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T03-handoff.md",
+          "test_cases": [
+            "T03-TC03"
+          ]
+        },
+        {
+          "id": "T03-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T03-handoff.md",
+          "test_cases": [
+            "T03-TC04"
+          ]
+        },
+        {
+          "id": "T03-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T03-handoff.md",
+          "test_cases": [
+            "T03-TC05",
+            "T03-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T03-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T03-AC01"
+          ],
+          "evidence": "docs/verification/T03-handoff.md"
+        },
+        {
+          "id": "T03-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T03-AC02"
+          ],
+          "evidence": "docs/verification/T03-handoff.md"
+        },
+        {
+          "id": "T03-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T03-AC03",
+            "T03-AC04"
+          ],
+          "evidence": "docs/verification/T03-handoff.md"
+        },
+        {
+          "id": "T03-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T03-AC05"
+          ],
+          "evidence": "docs/verification/T03-handoff.md"
+        },
+        {
+          "id": "T03-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T03-AC06"
+          ],
+          "evidence": "docs/verification/T03-handoff.md"
+        },
+        {
+          "id": "T03-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T03-AC02",
+            "T03-AC06"
+          ],
+          "evidence": "docs/verification/T03-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T04",
+      "scope": "Specified controlled local cases; detailed evidence and limitations in the task handoff.",
+      "acceptance": [
+        {
+          "id": "T04-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T04-handoff.md",
+          "test_cases": [
+            "T04-TC01"
+          ]
+        },
+        {
+          "id": "T04-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T04-handoff.md",
+          "test_cases": [
+            "T04-TC02"
+          ]
+        },
+        {
+          "id": "T04-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T04-handoff.md",
+          "test_cases": [
+            "T04-TC01",
+            "T04-TC03"
+          ]
+        },
+        {
+          "id": "T04-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T04-handoff.md",
+          "test_cases": [
+            "T04-TC04",
+            "T04-TC05"
+          ]
+        },
+        {
+          "id": "T04-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T04-handoff.md",
+          "test_cases": [
+            "T04-TC05",
+            "T04-TC06"
+          ]
+        },
+        {
+          "id": "T04-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T04-handoff.md",
+          "test_cases": [
+            "T04-TC06",
+            "T04-TC07"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T04-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T04-AC01",
+            "T04-AC03"
+          ],
+          "evidence": "docs/verification/T04-handoff.md"
+        },
+        {
+          "id": "T04-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T04-AC02"
+          ],
+          "evidence": "docs/verification/T04-handoff.md"
+        },
+        {
+          "id": "T04-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T04-AC03"
+          ],
+          "evidence": "docs/verification/T04-handoff.md"
+        },
+        {
+          "id": "T04-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T04-AC04"
+          ],
+          "evidence": "docs/verification/T04-handoff.md"
+        },
+        {
+          "id": "T04-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T04-AC04",
+            "T04-AC05"
+          ],
+          "evidence": "docs/verification/T04-handoff.md"
+        },
+        {
+          "id": "T04-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T04-AC05",
+            "T04-AC06"
+          ],
+          "evidence": "docs/verification/T04-handoff.md"
+        },
+        {
+          "id": "T04-TC07",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T04-AC06"
+          ],
+          "evidence": "docs/verification/T04-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T05",
+      "scope": "Specified controlled local cases; detailed evidence and limitations in the task handoff.",
+      "acceptance": [
+        {
+          "id": "T05-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T05-handoff.md",
+          "test_cases": [
+            "T05-TC01",
+            "T05-TC02"
+          ]
+        },
+        {
+          "id": "T05-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T05-handoff.md",
+          "test_cases": [
+            "T05-TC01",
+            "T05-TC03"
+          ]
+        },
+        {
+          "id": "T05-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T05-handoff.md",
+          "test_cases": [
+            "T05-TC02"
+          ]
+        },
+        {
+          "id": "T05-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T05-handoff.md",
+          "test_cases": [
+            "T05-TC03",
+            "T05-TC04"
+          ]
+        },
+        {
+          "id": "T05-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T05-handoff.md",
+          "test_cases": [
+            "T05-TC05"
+          ]
+        },
+        {
+          "id": "T05-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T05-handoff.md",
+          "test_cases": [
+            "T05-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T05-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T05-AC01",
+            "T05-AC02"
+          ],
+          "evidence": "docs/verification/T05-handoff.md"
+        },
+        {
+          "id": "T05-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T05-AC01",
+            "T05-AC03"
+          ],
+          "evidence": "docs/verification/T05-handoff.md"
+        },
+        {
+          "id": "T05-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T05-AC02",
+            "T05-AC04"
+          ],
+          "evidence": "docs/verification/T05-handoff.md"
+        },
+        {
+          "id": "T05-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T05-AC04"
+          ],
+          "evidence": "docs/verification/T05-handoff.md"
+        },
+        {
+          "id": "T05-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T05-AC05"
+          ],
+          "evidence": "docs/verification/T05-handoff.md"
+        },
+        {
+          "id": "T05-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T05-AC06"
+          ],
+          "evidence": "docs/verification/T05-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T06",
+      "scope": "Configurable/offline and mocked transport acceptance only; automatic live OLX remains blocked.",
+      "acceptance": [
+        {
+          "id": "T06-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T06-handoff.md",
+          "test_cases": [
+            "T06-TC01"
+          ]
+        },
+        {
+          "id": "T06-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T06-handoff.md",
+          "test_cases": [
+            "T06-TC02"
+          ]
+        },
+        {
+          "id": "T06-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T06-handoff.md",
+          "test_cases": [
+            "T06-TC03"
+          ]
+        },
+        {
+          "id": "T06-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T06-handoff.md",
+          "test_cases": [
+            "T06-TC04"
+          ]
+        },
+        {
+          "id": "T06-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T06-handoff.md",
+          "test_cases": [
+            "T06-TC05"
+          ]
+        },
+        {
+          "id": "T06-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T06-handoff.md",
+          "test_cases": [
+            "T06-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T06-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T06-AC01"
+          ],
+          "evidence": "docs/verification/T06-handoff.md"
+        },
+        {
+          "id": "T06-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T06-AC02"
+          ],
+          "evidence": "docs/verification/T06-handoff.md"
+        },
+        {
+          "id": "T06-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T06-AC03"
+          ],
+          "evidence": "docs/verification/T06-handoff.md"
+        },
+        {
+          "id": "T06-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T06-AC04"
+          ],
+          "evidence": "docs/verification/T06-handoff.md"
+        },
+        {
+          "id": "T06-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T06-AC05"
+          ],
+          "evidence": "docs/verification/T06-handoff.md"
+        },
+        {
+          "id": "T06-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T06-AC06"
+          ],
+          "evidence": "docs/verification/T06-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T07",
+      "scope": "Controlled recovery cases pass; real duration/provider gate incomplete and pin differs from candidate.",
+      "acceptance": [
+        {
+          "id": "T07-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T07-handoff.md",
+          "test_cases": [
+            "T07-TC01"
+          ]
+        },
+        {
+          "id": "T07-AC02",
+          "status": "INCOMPLETE",
+          "evidence": "docs/verification/T07-handoff.md",
+          "test_cases": [
+            "T07-TC02"
+          ]
+        },
+        {
+          "id": "T07-AC03",
+          "status": "INCOMPLETE",
+          "evidence": "docs/verification/T07-handoff.md",
+          "test_cases": [
+            "T07-TC02",
+            "T07-TC05"
+          ]
+        },
+        {
+          "id": "T07-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T07-handoff.md",
+          "test_cases": [
+            "T07-TC03",
+            "T07-TC04"
+          ]
+        },
+        {
+          "id": "T07-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T07-handoff.md",
+          "test_cases": [
+            "T07-TC04"
+          ]
+        },
+        {
+          "id": "T07-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T07-handoff.md",
+          "test_cases": [
+            "T07-TC05",
+            "T07-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T07-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T07-AC01"
+          ],
+          "evidence": "docs/verification/T07-handoff.md"
+        },
+        {
+          "id": "T07-TC02",
+          "status": "INCOMPLETE",
+          "covers": [
+            "T07-AC02",
+            "T07-AC03"
+          ],
+          "evidence": "docs/verification/T07-handoff.md"
+        },
+        {
+          "id": "T07-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T07-AC04"
+          ],
+          "evidence": "docs/verification/T07-handoff.md"
+        },
+        {
+          "id": "T07-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T07-AC04",
+            "T07-AC05"
+          ],
+          "evidence": "docs/verification/T07-handoff.md"
+        },
+        {
+          "id": "T07-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T07-AC03",
+            "T07-AC06"
+          ],
+          "evidence": "docs/verification/T07-handoff.md"
+        },
+        {
+          "id": "T07-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T07-AC06"
+          ],
+          "evidence": "docs/verification/T07-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T08",
+      "scope": "Real revision tests plus the documented controlled container-budget timing; not a deployed convergence SLA.",
+      "acceptance": [
+        {
+          "id": "T08-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T08-handoff.md",
+          "test_cases": [
+            "T08-TC01"
+          ]
+        },
+        {
+          "id": "T08-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T08-handoff.md",
+          "test_cases": [
+            "T08-TC02",
+            "T08-TC07"
+          ]
+        },
+        {
+          "id": "T08-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T08-handoff.md",
+          "test_cases": [
+            "T08-TC03"
+          ]
+        },
+        {
+          "id": "T08-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T08-handoff.md",
+          "test_cases": [
+            "T08-TC04",
+            "T08-TC07"
+          ]
+        },
+        {
+          "id": "T08-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T08-handoff.md",
+          "test_cases": [
+            "T08-TC05"
+          ]
+        },
+        {
+          "id": "T08-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T08-handoff.md",
+          "test_cases": [
+            "T08-TC06"
+          ]
+        },
+        {
+          "id": "T08-AC07",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T08-handoff.md",
+          "test_cases": [
+            "T08-TC07"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T08-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T08-AC01"
+          ],
+          "evidence": "docs/verification/T08-handoff.md"
+        },
+        {
+          "id": "T08-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T08-AC02"
+          ],
+          "evidence": "docs/verification/T08-handoff.md"
+        },
+        {
+          "id": "T08-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T08-AC03"
+          ],
+          "evidence": "docs/verification/T08-handoff.md"
+        },
+        {
+          "id": "T08-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T08-AC04"
+          ],
+          "evidence": "docs/verification/T08-handoff.md"
+        },
+        {
+          "id": "T08-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T08-AC05"
+          ],
+          "evidence": "docs/verification/T08-handoff.md"
+        },
+        {
+          "id": "T08-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T08-AC06"
+          ],
+          "evidence": "docs/verification/T08-handoff.md"
+        },
+        {
+          "id": "T08-TC07",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T08-AC02",
+            "T08-AC04",
+            "T08-AC07"
+          ],
+          "evidence": "docs/verification/T08-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T09",
+      "scope": "Frozen synthetic fixture/evaluator acceptance, not live identity accuracy; corpus reused by regression tests.",
+      "acceptance": [
+        {
+          "id": "T09-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/dedupe-baseline.md",
+          "test_cases": [
+            "T09-TC01"
+          ]
+        },
+        {
+          "id": "T09-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/dedupe-baseline.md",
+          "test_cases": [
+            "T09-TC01",
+            "T09-TC02"
+          ]
+        },
+        {
+          "id": "T09-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/dedupe-baseline.md",
+          "test_cases": [
+            "T09-TC03"
+          ]
+        },
+        {
+          "id": "T09-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/dedupe-baseline.md",
+          "test_cases": [
+            "T09-TC04"
+          ]
+        },
+        {
+          "id": "T09-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/dedupe-baseline.md",
+          "test_cases": [
+            "T09-TC05"
+          ]
+        },
+        {
+          "id": "T09-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/dedupe-baseline.md",
+          "test_cases": [
+            "T09-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T09-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T09-AC01",
+            "T09-AC02"
+          ],
+          "evidence": "docs/verification/dedupe-baseline.md"
+        },
+        {
+          "id": "T09-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T09-AC02"
+          ],
+          "evidence": "docs/verification/dedupe-baseline.md"
+        },
+        {
+          "id": "T09-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T09-AC03"
+          ],
+          "evidence": "docs/verification/dedupe-baseline.md"
+        },
+        {
+          "id": "T09-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T09-AC04"
+          ],
+          "evidence": "docs/verification/dedupe-baseline.md"
+        },
+        {
+          "id": "T09-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T09-AC05"
+          ],
+          "evidence": "docs/verification/dedupe-baseline.md"
+        },
+        {
+          "id": "T09-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T09-AC06"
+          ],
+          "evidence": "docs/verification/dedupe-baseline.md"
+        }
+      ]
+    },
+    {
+      "id": "T10",
+      "scope": "Current frozen-corpus results, independent correction review and final correction/race regression; no holdout tuning.",
+      "acceptance": [
+        {
+          "id": "T10-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T10-handoff.md",
+          "test_cases": [
+            "T10-TC01"
+          ]
+        },
+        {
+          "id": "T10-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T10-handoff.md",
+          "test_cases": [
+            "T10-TC01"
+          ]
+        },
+        {
+          "id": "T10-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T10-handoff.md",
+          "test_cases": [
+            "T10-TC02",
+            "T10-TC03"
+          ]
+        },
+        {
+          "id": "T10-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T10-handoff.md",
+          "test_cases": [
+            "T10-TC04",
+            "T10-TC05"
+          ]
+        },
+        {
+          "id": "T10-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T10-handoff.md",
+          "test_cases": [
+            "T10-TC04",
+            "T10-TC05"
+          ]
+        },
+        {
+          "id": "T10-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T10-handoff.md",
+          "test_cases": [
+            "T10-TC03",
+            "T10-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T10-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T10-AC01",
+            "T10-AC02"
+          ],
+          "evidence": "docs/verification/T10-handoff.md"
+        },
+        {
+          "id": "T10-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T10-AC03"
+          ],
+          "evidence": "docs/verification/T10-handoff.md"
+        },
+        {
+          "id": "T10-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T10-AC03",
+            "T10-AC06"
+          ],
+          "evidence": "docs/verification/T10-handoff.md"
+        },
+        {
+          "id": "T10-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T10-AC04",
+            "T10-AC05"
+          ],
+          "evidence": "docs/verification/T10-handoff.md"
+        },
+        {
+          "id": "T10-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T10-AC04",
+            "T10-AC05"
+          ],
+          "evidence": "docs/verification/T10-handoff.md"
+        },
+        {
+          "id": "T10-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T10-AC06"
+          ],
+          "evidence": "docs/verification/T10-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T11",
+      "scope": "Specified controlled local cases; detailed evidence and limitations in the task handoff.",
+      "acceptance": [
+        {
+          "id": "T11-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T11-handoff.md",
+          "test_cases": [
+            "T11-TC01",
+            "T11-TC06"
+          ]
+        },
+        {
+          "id": "T11-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T11-handoff.md",
+          "test_cases": [
+            "T11-TC01",
+            "T11-TC02",
+            "T11-TC03"
+          ]
+        },
+        {
+          "id": "T11-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T11-handoff.md",
+          "test_cases": [
+            "T11-TC03",
+            "T11-TC06"
+          ]
+        },
+        {
+          "id": "T11-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T11-handoff.md",
+          "test_cases": [
+            "T11-TC04"
+          ]
+        },
+        {
+          "id": "T11-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T11-handoff.md",
+          "test_cases": [
+            "T11-TC04"
+          ]
+        },
+        {
+          "id": "T11-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T11-handoff.md",
+          "test_cases": [
+            "T11-TC05"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T11-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T11-AC01",
+            "T11-AC02"
+          ],
+          "evidence": "docs/verification/T11-handoff.md"
+        },
+        {
+          "id": "T11-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T11-AC02"
+          ],
+          "evidence": "docs/verification/T11-handoff.md"
+        },
+        {
+          "id": "T11-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T11-AC02",
+            "T11-AC03"
+          ],
+          "evidence": "docs/verification/T11-handoff.md"
+        },
+        {
+          "id": "T11-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T11-AC04",
+            "T11-AC05"
+          ],
+          "evidence": "docs/verification/T11-handoff.md"
+        },
+        {
+          "id": "T11-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T11-AC06"
+          ],
+          "evidence": "docs/verification/T11-handoff.md"
+        },
+        {
+          "id": "T11-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T11-AC01",
+            "T11-AC03"
+          ],
+          "evidence": "docs/verification/T11-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T12",
+      "scope": "Specified controlled local cases; detailed evidence and limitations in the task handoff.",
+      "acceptance": [
+        {
+          "id": "T12-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T12-handoff.md",
+          "test_cases": [
+            "T12-TC01"
+          ]
+        },
+        {
+          "id": "T12-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T12-handoff.md",
+          "test_cases": [
+            "T12-TC02"
+          ]
+        },
+        {
+          "id": "T12-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T12-handoff.md",
+          "test_cases": [
+            "T12-TC03"
+          ]
+        },
+        {
+          "id": "T12-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T12-handoff.md",
+          "test_cases": [
+            "T12-TC04"
+          ]
+        },
+        {
+          "id": "T12-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T12-handoff.md",
+          "test_cases": [
+            "T12-TC05"
+          ]
+        },
+        {
+          "id": "T12-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T12-handoff.md",
+          "test_cases": [
+            "T12-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T12-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T12-AC01"
+          ],
+          "evidence": "docs/verification/T12-handoff.md"
+        },
+        {
+          "id": "T12-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T12-AC02"
+          ],
+          "evidence": "docs/verification/T12-handoff.md"
+        },
+        {
+          "id": "T12-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T12-AC03"
+          ],
+          "evidence": "docs/verification/T12-handoff.md"
+        },
+        {
+          "id": "T12-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T12-AC04"
+          ],
+          "evidence": "docs/verification/T12-handoff.md"
+        },
+        {
+          "id": "T12-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T12-AC05"
+          ],
+          "evidence": "docs/verification/T12-handoff.md"
+        },
+        {
+          "id": "T12-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T12-AC06"
+          ],
+          "evidence": "docs/verification/T12-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T13",
+      "scope": "Logical delivery fencing and local transports; no exactly-once physical SMTP claim.",
+      "acceptance": [
+        {
+          "id": "T13-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T13-handoff.md",
+          "test_cases": [
+            "T13-TC01"
+          ]
+        },
+        {
+          "id": "T13-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T13-handoff.md",
+          "test_cases": [
+            "T13-TC02"
+          ]
+        },
+        {
+          "id": "T13-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T13-handoff.md",
+          "test_cases": [
+            "T13-TC03",
+            "T13-TC04"
+          ]
+        },
+        {
+          "id": "T13-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T13-handoff.md",
+          "test_cases": [
+            "T13-TC05",
+            "T13-TC06"
+          ]
+        },
+        {
+          "id": "T13-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T13-handoff.md",
+          "test_cases": [
+            "T13-TC06"
+          ]
+        },
+        {
+          "id": "T13-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T13-handoff.md",
+          "test_cases": [
+            "T13-TC04",
+            "T13-TC07"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T13-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T13-AC01"
+          ],
+          "evidence": "docs/verification/T13-handoff.md"
+        },
+        {
+          "id": "T13-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T13-AC02"
+          ],
+          "evidence": "docs/verification/T13-handoff.md"
+        },
+        {
+          "id": "T13-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T13-AC03"
+          ],
+          "evidence": "docs/verification/T13-handoff.md"
+        },
+        {
+          "id": "T13-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T13-AC03",
+            "T13-AC06"
+          ],
+          "evidence": "docs/verification/T13-handoff.md"
+        },
+        {
+          "id": "T13-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T13-AC04"
+          ],
+          "evidence": "docs/verification/T13-handoff.md"
+        },
+        {
+          "id": "T13-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T13-AC04",
+            "T13-AC05"
+          ],
+          "evidence": "docs/verification/T13-handoff.md"
+        },
+        {
+          "id": "T13-TC07",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T13-AC06"
+          ],
+          "evidence": "docs/verification/T13-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T14",
+      "scope": "Unit/backend and real Chromium multi-tab checks; installed native sessions remain external.",
+      "acceptance": [
+        {
+          "id": "T14-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T14-handoff.md",
+          "test_cases": [
+            "T14-TC01"
+          ]
+        },
+        {
+          "id": "T14-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T14-handoff.md",
+          "test_cases": [
+            "T14-TC02",
+            "T14-TC03"
+          ]
+        },
+        {
+          "id": "T14-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T14-handoff.md",
+          "test_cases": [
+            "T14-TC03",
+            "T14-TC04"
+          ]
+        },
+        {
+          "id": "T14-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T14-handoff.md",
+          "test_cases": [
+            "T14-TC04",
+            "T14-TC05"
+          ]
+        },
+        {
+          "id": "T14-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T14-handoff.md",
+          "test_cases": [
+            "T14-TC06"
+          ]
+        },
+        {
+          "id": "T14-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T14-handoff.md",
+          "test_cases": [
+            "T14-TC01",
+            "T14-TC05",
+            "T14-TC07"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T14-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T14-AC01",
+            "T14-AC06"
+          ],
+          "evidence": "docs/verification/T14-handoff.md"
+        },
+        {
+          "id": "T14-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T14-AC02"
+          ],
+          "evidence": "docs/verification/T14-handoff.md"
+        },
+        {
+          "id": "T14-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T14-AC02",
+            "T14-AC03"
+          ],
+          "evidence": "docs/verification/T14-handoff.md"
+        },
+        {
+          "id": "T14-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T14-AC03",
+            "T14-AC04"
+          ],
+          "evidence": "docs/verification/T14-handoff.md"
+        },
+        {
+          "id": "T14-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T14-AC04",
+            "T14-AC06"
+          ],
+          "evidence": "docs/verification/T14-handoff.md"
+        },
+        {
+          "id": "T14-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T14-AC05"
+          ],
+          "evidence": "docs/verification/T14-handoff.md"
+        },
+        {
+          "id": "T14-TC07",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T14-AC06"
+          ],
+          "evidence": "docs/verification/T14-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T15",
+      "scope": "Specified controlled local cases; detailed evidence and limitations in the task handoff.",
+      "acceptance": [
+        {
+          "id": "T15-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T15-handoff.md",
+          "test_cases": [
+            "T15-TC01"
+          ]
+        },
+        {
+          "id": "T15-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T15-handoff.md",
+          "test_cases": [
+            "T15-TC02"
+          ]
+        },
+        {
+          "id": "T15-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T15-handoff.md",
+          "test_cases": [
+            "T15-TC03"
+          ]
+        },
+        {
+          "id": "T15-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T15-handoff.md",
+          "test_cases": [
+            "T15-TC04",
+            "T15-TC07"
+          ]
+        },
+        {
+          "id": "T15-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T15-handoff.md",
+          "test_cases": [
+            "T15-TC04",
+            "T15-TC05",
+            "T15-TC07"
+          ]
+        },
+        {
+          "id": "T15-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T15-handoff.md",
+          "test_cases": [
+            "T15-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T15-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T15-AC01"
+          ],
+          "evidence": "docs/verification/T15-handoff.md"
+        },
+        {
+          "id": "T15-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T15-AC02"
+          ],
+          "evidence": "docs/verification/T15-handoff.md"
+        },
+        {
+          "id": "T15-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T15-AC03"
+          ],
+          "evidence": "docs/verification/T15-handoff.md"
+        },
+        {
+          "id": "T15-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T15-AC04",
+            "T15-AC05"
+          ],
+          "evidence": "docs/verification/T15-handoff.md"
+        },
+        {
+          "id": "T15-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T15-AC05"
+          ],
+          "evidence": "docs/verification/T15-handoff.md"
+        },
+        {
+          "id": "T15-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T15-AC06"
+          ],
+          "evidence": "docs/verification/T15-handoff.md"
+        },
+        {
+          "id": "T15-TC07",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T15-AC04",
+            "T15-AC05"
+          ],
+          "evidence": "docs/verification/T15-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T16",
+      "scope": "Specified controlled local cases; detailed evidence and limitations in the task handoff.",
+      "acceptance": [
+        {
+          "id": "T16-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T16-handoff.md",
+          "test_cases": [
+            "T16-TC01"
+          ]
+        },
+        {
+          "id": "T16-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T16-handoff.md",
+          "test_cases": [
+            "T16-TC02"
+          ]
+        },
+        {
+          "id": "T16-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T16-handoff.md",
+          "test_cases": [
+            "T16-TC03"
+          ]
+        },
+        {
+          "id": "T16-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T16-handoff.md",
+          "test_cases": [
+            "T16-TC04"
+          ]
+        },
+        {
+          "id": "T16-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T16-handoff.md",
+          "test_cases": [
+            "T16-TC05",
+            "T16-TC06"
+          ]
+        },
+        {
+          "id": "T16-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T16-handoff.md",
+          "test_cases": [
+            "T16-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T16-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T16-AC01"
+          ],
+          "evidence": "docs/verification/T16-handoff.md"
+        },
+        {
+          "id": "T16-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T16-AC02"
+          ],
+          "evidence": "docs/verification/T16-handoff.md"
+        },
+        {
+          "id": "T16-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T16-AC03"
+          ],
+          "evidence": "docs/verification/T16-handoff.md"
+        },
+        {
+          "id": "T16-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T16-AC04"
+          ],
+          "evidence": "docs/verification/T16-handoff.md"
+        },
+        {
+          "id": "T16-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T16-AC05"
+          ],
+          "evidence": "docs/verification/T16-handoff.md"
+        },
+        {
+          "id": "T16-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T16-AC05",
+            "T16-AC06"
+          ],
+          "evidence": "docs/verification/T16-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T17",
+      "scope": "Specified controlled local cases; detailed evidence and limitations in the task handoff.",
+      "acceptance": [
+        {
+          "id": "T17-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T17-handoff.md",
+          "test_cases": [
+            "T17-TC01"
+          ]
+        },
+        {
+          "id": "T17-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T17-handoff.md",
+          "test_cases": [
+            "T17-TC02"
+          ]
+        },
+        {
+          "id": "T17-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T17-handoff.md",
+          "test_cases": [
+            "T17-TC03"
+          ]
+        },
+        {
+          "id": "T17-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T17-handoff.md",
+          "test_cases": [
+            "T17-TC04"
+          ]
+        },
+        {
+          "id": "T17-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T17-handoff.md",
+          "test_cases": [
+            "T17-TC05"
+          ]
+        },
+        {
+          "id": "T17-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T17-handoff.md",
+          "test_cases": [
+            "T17-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T17-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T17-AC01"
+          ],
+          "evidence": "docs/verification/T17-handoff.md"
+        },
+        {
+          "id": "T17-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T17-AC02"
+          ],
+          "evidence": "docs/verification/T17-handoff.md"
+        },
+        {
+          "id": "T17-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T17-AC03"
+          ],
+          "evidence": "docs/verification/T17-handoff.md"
+        },
+        {
+          "id": "T17-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T17-AC04"
+          ],
+          "evidence": "docs/verification/T17-handoff.md"
+        },
+        {
+          "id": "T17-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T17-AC05"
+          ],
+          "evidence": "docs/verification/T17-handoff.md"
+        },
+        {
+          "id": "T17-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T17-AC06"
+          ],
+          "evidence": "docs/verification/T17-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T18",
+      "scope": "Final integrated Chromium suite supersedes initial worker-only integration-pending notes; synthetic data and file mail.",
+      "acceptance": [
+        {
+          "id": "T18-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T18-handoff.md",
+          "test_cases": [
+            "T18-TC01"
+          ]
+        },
+        {
+          "id": "T18-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T18-handoff.md",
+          "test_cases": [
+            "T18-TC01",
+            "T18-TC02"
+          ]
+        },
+        {
+          "id": "T18-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T18-handoff.md",
+          "test_cases": [
+            "T18-TC03",
+            "T18-TC04"
+          ]
+        },
+        {
+          "id": "T18-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T18-handoff.md",
+          "test_cases": [
+            "T18-TC05"
+          ]
+        },
+        {
+          "id": "T18-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T18-handoff.md",
+          "test_cases": [
+            "T18-TC06"
+          ]
+        },
+        {
+          "id": "T18-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T18-handoff.md",
+          "test_cases": [
+            "T18-TC06",
+            "T18-TC07"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T18-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T18-AC01",
+            "T18-AC02"
+          ],
+          "evidence": "docs/verification/T18-handoff.md"
+        },
+        {
+          "id": "T18-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T18-AC02"
+          ],
+          "evidence": "docs/verification/T18-handoff.md"
+        },
+        {
+          "id": "T18-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T18-AC03"
+          ],
+          "evidence": "docs/verification/T18-handoff.md"
+        },
+        {
+          "id": "T18-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T18-AC03"
+          ],
+          "evidence": "docs/verification/T18-handoff.md"
+        },
+        {
+          "id": "T18-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T18-AC04"
+          ],
+          "evidence": "docs/verification/T18-handoff.md"
+        },
+        {
+          "id": "T18-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T18-AC05",
+            "T18-AC06"
+          ],
+          "evidence": "docs/verification/T18-handoff.md"
+        },
+        {
+          "id": "T18-TC07",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T18-AC06"
+          ],
+          "evidence": "docs/verification/T18-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T19",
+      "scope": "Specified controlled local cases; detailed evidence and limitations in the task handoff.",
+      "acceptance": [
+        {
+          "id": "T19-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T19-handoff.md",
+          "test_cases": [
+            "T19-TC01",
+            "T19-TC02"
+          ]
+        },
+        {
+          "id": "T19-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T19-handoff.md",
+          "test_cases": [
+            "T19-TC01",
+            "T19-TC02"
+          ]
+        },
+        {
+          "id": "T19-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T19-handoff.md",
+          "test_cases": [
+            "T19-TC03",
+            "T19-TC04"
+          ]
+        },
+        {
+          "id": "T19-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T19-handoff.md",
+          "test_cases": [
+            "T19-TC04",
+            "T19-TC05"
+          ]
+        },
+        {
+          "id": "T19-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T19-handoff.md",
+          "test_cases": [
+            "T19-TC05",
+            "T19-TC06"
+          ]
+        },
+        {
+          "id": "T19-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T19-handoff.md",
+          "test_cases": [
+            "T19-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T19-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T19-AC01",
+            "T19-AC02"
+          ],
+          "evidence": "docs/verification/T19-handoff.md"
+        },
+        {
+          "id": "T19-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T19-AC01",
+            "T19-AC02"
+          ],
+          "evidence": "docs/verification/T19-handoff.md"
+        },
+        {
+          "id": "T19-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T19-AC03"
+          ],
+          "evidence": "docs/verification/T19-handoff.md"
+        },
+        {
+          "id": "T19-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T19-AC03",
+            "T19-AC04"
+          ],
+          "evidence": "docs/verification/T19-handoff.md"
+        },
+        {
+          "id": "T19-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T19-AC04",
+            "T19-AC05"
+          ],
+          "evidence": "docs/verification/T19-handoff.md"
+        },
+        {
+          "id": "T19-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T19-AC05",
+            "T19-AC06"
+          ],
+          "evidence": "docs/verification/T19-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T20",
+      "scope": "Four widths, 200% text, keyboard and measured Chromium budget; not exhaustive assistive-technology certification.",
+      "acceptance": [
+        {
+          "id": "T20-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T20-handoff.md",
+          "test_cases": [
+            "T20-TC01"
+          ]
+        },
+        {
+          "id": "T20-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T20-handoff.md",
+          "test_cases": [
+            "T20-TC02"
+          ]
+        },
+        {
+          "id": "T20-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T20-handoff.md",
+          "test_cases": [
+            "T20-TC03"
+          ]
+        },
+        {
+          "id": "T20-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T20-handoff.md",
+          "test_cases": [
+            "T20-TC04"
+          ]
+        },
+        {
+          "id": "T20-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T20-handoff.md",
+          "test_cases": [
+            "T20-TC05"
+          ]
+        },
+        {
+          "id": "T20-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T20-handoff.md",
+          "test_cases": [
+            "T20-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T20-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T20-AC01"
+          ],
+          "evidence": "docs/verification/T20-handoff.md"
+        },
+        {
+          "id": "T20-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T20-AC02"
+          ],
+          "evidence": "docs/verification/T20-handoff.md"
+        },
+        {
+          "id": "T20-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T20-AC03"
+          ],
+          "evidence": "docs/verification/T20-handoff.md"
+        },
+        {
+          "id": "T20-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T20-AC04"
+          ],
+          "evidence": "docs/verification/T20-handoff.md"
+        },
+        {
+          "id": "T20-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T20-AC05"
+          ],
+          "evidence": "docs/verification/T20-handoff.md"
+        },
+        {
+          "id": "T20-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T20-AC06"
+          ],
+          "evidence": "docs/verification/T20-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T21",
+      "scope": "Parser/lifecycle/Chromium and both native JS exports; installed apps/association deliberately deferred.",
+      "acceptance": [
+        {
+          "id": "T21-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T21-handoff.md",
+          "test_cases": [
+            "T21-TC01"
+          ]
+        },
+        {
+          "id": "T21-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T21-handoff.md",
+          "test_cases": [
+            "T21-TC02"
+          ]
+        },
+        {
+          "id": "T21-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T21-handoff.md",
+          "test_cases": [
+            "T21-TC03",
+            "T21-TC04"
+          ]
+        },
+        {
+          "id": "T21-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T21-handoff.md",
+          "test_cases": [
+            "T21-TC04"
+          ]
+        },
+        {
+          "id": "T21-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T21-handoff.md",
+          "test_cases": [
+            "T21-TC05"
+          ]
+        },
+        {
+          "id": "T21-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T21-handoff.md",
+          "test_cases": [
+            "T21-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T21-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T21-AC01"
+          ],
+          "evidence": "docs/verification/T21-handoff.md"
+        },
+        {
+          "id": "T21-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T21-AC02"
+          ],
+          "evidence": "docs/verification/T21-handoff.md"
+        },
+        {
+          "id": "T21-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T21-AC03"
+          ],
+          "evidence": "docs/verification/T21-handoff.md"
+        },
+        {
+          "id": "T21-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T21-AC03",
+            "T21-AC04"
+          ],
+          "evidence": "docs/verification/T21-handoff.md"
+        },
+        {
+          "id": "T21-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T21-AC05"
+          ],
+          "evidence": "docs/verification/T21-handoff.md"
+        },
+        {
+          "id": "T21-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T21-AC06"
+          ],
+          "evidence": "docs/verification/T21-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T25",
+      "scope": "PASS on final native profile; earlier emulated history profile remains FAIL, all-history saturation is a separate failing mix.",
+      "acceptance": [
+        {
+          "id": "T25-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/performance/catalog-load.md",
+          "test_cases": [
+            "T25-TC01",
+            "T25-TC06"
+          ]
+        },
+        {
+          "id": "T25-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/performance/catalog-load.md",
+          "test_cases": [
+            "T25-TC02"
+          ]
+        },
+        {
+          "id": "T25-AC03",
+          "status": "PASS_NATIVE_PROFILE_ONLY",
+          "evidence": "docs/performance/catalog-load.md",
+          "test_cases": [
+            "T25-TC02"
+          ]
+        },
+        {
+          "id": "T25-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/performance/catalog-load.md",
+          "test_cases": [
+            "T25-TC03",
+            "T25-TC04"
+          ]
+        },
+        {
+          "id": "T25-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/performance/catalog-load.md",
+          "test_cases": [
+            "T25-TC05"
+          ]
+        },
+        {
+          "id": "T25-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/performance/catalog-load.md",
+          "test_cases": [
+            "T25-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T25-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T25-AC01"
+          ],
+          "evidence": "docs/performance/catalog-load.md"
+        },
+        {
+          "id": "T25-TC02",
+          "status": "PASS_NATIVE_PROFILE_ONLY",
+          "covers": [
+            "T25-AC02",
+            "T25-AC03"
+          ],
+          "evidence": "docs/performance/catalog-load.md"
+        },
+        {
+          "id": "T25-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T25-AC04"
+          ],
+          "evidence": "docs/performance/catalog-load.md"
+        },
+        {
+          "id": "T25-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T25-AC04"
+          ],
+          "evidence": "docs/performance/catalog-load.md"
+        },
+        {
+          "id": "T25-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T25-AC05"
+          ],
+          "evidence": "docs/performance/catalog-load.md"
+        },
+        {
+          "id": "T25-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T25-AC01",
+            "T25-AC06"
+          ],
+          "evidence": "docs/performance/catalog-load.md"
+        }
+      ]
+    },
+    {
+      "id": "T26",
+      "scope": "Specified controlled local cases; detailed evidence and limitations in the task handoff.",
+      "acceptance": [
+        {
+          "id": "T26-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T26-handoff.md",
+          "test_cases": [
+            "T26-TC01",
+            "T26-TC02"
+          ]
+        },
+        {
+          "id": "T26-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T26-handoff.md",
+          "test_cases": [
+            "T26-TC02"
+          ]
+        },
+        {
+          "id": "T26-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T26-handoff.md",
+          "test_cases": [
+            "T26-TC03"
+          ]
+        },
+        {
+          "id": "T26-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T26-handoff.md",
+          "test_cases": [
+            "T26-TC04"
+          ]
+        },
+        {
+          "id": "T26-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T26-handoff.md",
+          "test_cases": [
+            "T26-TC05"
+          ]
+        },
+        {
+          "id": "T26-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T26-handoff.md",
+          "test_cases": [
+            "T26-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T26-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T26-AC01"
+          ],
+          "evidence": "docs/verification/T26-handoff.md"
+        },
+        {
+          "id": "T26-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T26-AC01",
+            "T26-AC02"
+          ],
+          "evidence": "docs/verification/T26-handoff.md"
+        },
+        {
+          "id": "T26-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T26-AC03"
+          ],
+          "evidence": "docs/verification/T26-handoff.md"
+        },
+        {
+          "id": "T26-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T26-AC04"
+          ],
+          "evidence": "docs/verification/T26-handoff.md"
+        },
+        {
+          "id": "T26-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T26-AC05"
+          ],
+          "evidence": "docs/verification/T26-handoff.md"
+        },
+        {
+          "id": "T26-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T26-AC06"
+          ],
+          "evidence": "docs/verification/T26-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T27",
+      "scope": "Paired quiesced SQLite/PostgreSQL local restore and erasure/replay; no live PITR/RPO claim.",
+      "acceptance": [
+        {
+          "id": "T27-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T27-handoff.md",
+          "test_cases": [
+            "T27-TC01",
+            "T27-TC02"
+          ]
+        },
+        {
+          "id": "T27-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T27-handoff.md",
+          "test_cases": [
+            "T27-TC01",
+            "T27-TC02"
+          ]
+        },
+        {
+          "id": "T27-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T27-handoff.md",
+          "test_cases": [
+            "T27-TC03"
+          ]
+        },
+        {
+          "id": "T27-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T27-handoff.md",
+          "test_cases": [
+            "T27-TC03",
+            "T27-TC04"
+          ]
+        },
+        {
+          "id": "T27-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T27-handoff.md",
+          "test_cases": [
+            "T27-TC05",
+            "T27-TC06"
+          ]
+        },
+        {
+          "id": "T27-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T27-handoff.md",
+          "test_cases": [
+            "T27-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T27-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T27-AC01",
+            "T27-AC02"
+          ],
+          "evidence": "docs/verification/T27-handoff.md"
+        },
+        {
+          "id": "T27-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T27-AC01",
+            "T27-AC02"
+          ],
+          "evidence": "docs/verification/T27-handoff.md"
+        },
+        {
+          "id": "T27-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T27-AC03",
+            "T27-AC04"
+          ],
+          "evidence": "docs/verification/T27-handoff.md"
+        },
+        {
+          "id": "T27-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T27-AC04"
+          ],
+          "evidence": "docs/verification/T27-handoff.md"
+        },
+        {
+          "id": "T27-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T27-AC05"
+          ],
+          "evidence": "docs/verification/T27-handoff.md"
+        },
+        {
+          "id": "T27-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T27-AC05",
+            "T27-AC06"
+          ],
+          "evidence": "docs/verification/T27-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T28",
+      "scope": "Configuration and representative real SQL roles only; live cloud IAM/network/CDN enforcement unverified.",
+      "acceptance": [
+        {
+          "id": "T28-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T28-handoff.md",
+          "test_cases": [
+            "T28-TC01",
+            "T28-TC05"
+          ]
+        },
+        {
+          "id": "T28-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T28-handoff.md",
+          "test_cases": [
+            "T28-TC02"
+          ]
+        },
+        {
+          "id": "T28-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T28-handoff.md",
+          "test_cases": [
+            "T28-TC03"
+          ]
+        },
+        {
+          "id": "T28-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T28-handoff.md",
+          "test_cases": [
+            "T28-TC04",
+            "T28-TC05"
+          ]
+        },
+        {
+          "id": "T28-AC05",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T28-handoff.md",
+          "test_cases": [
+            "T28-TC02",
+            "T28-TC06"
+          ]
+        },
+        {
+          "id": "T28-AC06",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T28-handoff.md",
+          "test_cases": [
+            "T28-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T28-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T28-AC01"
+          ],
+          "evidence": "docs/verification/T28-handoff.md"
+        },
+        {
+          "id": "T28-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T28-AC02",
+            "T28-AC05"
+          ],
+          "evidence": "docs/verification/T28-handoff.md"
+        },
+        {
+          "id": "T28-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T28-AC03"
+          ],
+          "evidence": "docs/verification/T28-handoff.md"
+        },
+        {
+          "id": "T28-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T28-AC04"
+          ],
+          "evidence": "docs/verification/T28-handoff.md"
+        },
+        {
+          "id": "T28-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T28-AC01",
+            "T28-AC04"
+          ],
+          "evidence": "docs/verification/T28-handoff.md"
+        },
+        {
+          "id": "T28-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T28-AC05",
+            "T28-AC06"
+          ],
+          "evidence": "docs/verification/T28-handoff.md"
+        }
+      ]
+    },
+    {
+      "id": "T32",
+      "scope": "Integrated checks and truthful report pass; overall LOCAL_PARTIAL because T07 is incomplete.",
+      "acceptance": [
+        {
+          "id": "T32-AC01",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T32-handoff.md",
+          "test_cases": [
+            "T32-TC01",
+            "T32-TC06"
+          ]
+        },
+        {
+          "id": "T32-AC02",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T32-handoff.md",
+          "test_cases": [
+            "T32-TC01",
+            "T32-TC02"
+          ]
+        },
+        {
+          "id": "T32-AC03",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T32-handoff.md",
+          "test_cases": [
+            "T32-TC03"
+          ]
+        },
+        {
+          "id": "T32-AC04",
+          "status": "PASS_LOCAL",
+          "evidence": "docs/verification/T32-handoff.md",
+          "test_cases": [
+            "T32-TC04"
+          ]
+        },
+        {
+          "id": "T32-AC05",
+          "status": "PASS_REPORTING_LOCAL_PARTIAL",
+          "evidence": "docs/verification/T32-handoff.md",
+          "test_cases": [
+            "T32-TC05"
+          ]
+        },
+        {
+          "id": "T32-AC06",
+          "status": "PASS_REPORTING_LOCAL_PARTIAL",
+          "evidence": "docs/verification/T32-handoff.md",
+          "test_cases": [
+            "T32-TC06"
+          ]
+        }
+      ],
+      "test_cases": [
+        {
+          "id": "T32-TC01",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T32-AC01",
+            "T32-AC02"
+          ],
+          "evidence": "docs/verification/T32-handoff.md"
+        },
+        {
+          "id": "T32-TC02",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T32-AC02"
+          ],
+          "evidence": "docs/verification/T32-handoff.md"
+        },
+        {
+          "id": "T32-TC03",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T32-AC03"
+          ],
+          "evidence": "docs/verification/T32-handoff.md"
+        },
+        {
+          "id": "T32-TC04",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T32-AC04"
+          ],
+          "evidence": "docs/verification/T32-handoff.md"
+        },
+        {
+          "id": "T32-TC05",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T32-AC05"
+          ],
+          "evidence": "docs/verification/T32-handoff.md"
+        },
+        {
+          "id": "T32-TC06",
+          "status": "PASS_LOCAL",
+          "covers": [
+            "T32-AC01",
+            "T32-AC06"
+          ],
+          "evidence": "docs/verification/T32-handoff.md"
+        }
+      ]
+    }
+  ]
+}

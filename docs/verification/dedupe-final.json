@@ -1,0 +1,190 @@
+{
+  "commit": "a775a776885ce6c4269f209ad99aaf82138cd647",
+  "start_utc": "2026-11-11T23:08:50.113938+00:00",
+  "dataset_sha256": "511c5f6c7ef1e4a16bffb706ddd94e30a18e8c13423ea37eea0bd541da40940c",
+  "row_count": 220,
+  "evaluation": "Exactly one call per partition; no holdout tuning",
+  "partitions": {
+    "development": {
+      "prediction_coverage": {
+        "predicted": 100,
+        "expected": 100,
+        "complete": true
+      },
+      "confusion_known": {
+        "tp": 60,
+        "fp": 0,
+        "tn": 20,
+        "fn": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "ambiguous_auto_merge_count": 0,
+      "per_label": {
+        "same_home": {
+          "auto_merge": 60,
+          "no_merge": 0
+        },
+        "different_home": {
+          "auto_merge": 0,
+          "no_merge": 20
+        },
+        "ambiguous": {
+          "auto_merge": 0,
+          "no_merge": 20
+        }
+      },
+      "per_scenario": {
+        "address_image": {
+          "count": 20,
+          "auto_merge": 20,
+          "failures": []
+        },
+        "missing_address_location": {
+          "count": 20,
+          "auto_merge": 0,
+          "failures": []
+        },
+        "morizon_gratka": {
+          "count": 20,
+          "auto_merge": 20,
+          "failures": []
+        },
+        "same_home_repost": {
+          "count": 20,
+          "auto_merge": 20,
+          "failures": []
+        },
+        "stock_photo": {
+          "count": 20,
+          "auto_merge": 0,
+          "failures": []
+        }
+      },
+      "failure_ids": []
+    },
+    "holdout": {
+      "prediction_coverage": {
+        "predicted": 120,
+        "expected": 120,
+        "complete": true
+      },
+      "confusion_known": {
+        "tp": 20,
+        "fp": 0,
+        "tn": 80,
+        "fn": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "ambiguous_auto_merge_count": 0,
+      "per_label": {
+        "same_home": {
+          "auto_merge": 20,
+          "no_merge": 0
+        },
+        "different_home": {
+          "auto_merge": 0,
+          "no_merge": 80
+        },
+        "ambiguous": {
+          "auto_merge": 0,
+          "no_merge": 20
+        }
+      },
+      "per_scenario": {
+        "building_no_unit": {
+          "count": 20,
+          "auto_merge": 0,
+          "failures": []
+        },
+        "city_conflict": {
+          "count": 20,
+          "auto_merge": 0,
+          "failures": []
+        },
+        "resized_image_url": {
+          "count": 20,
+          "auto_merge": 20,
+          "failures": []
+        },
+        "room_area_boundary": {
+          "count": 20,
+          "auto_merge": 0,
+          "failures": []
+        },
+        "shared_agency_phone": {
+          "count": 20,
+          "auto_merge": 0,
+          "failures": []
+        },
+        "unit_floor_conflict": {
+          "count": 20,
+          "auto_merge": 0,
+          "failures": []
+        }
+      },
+      "failure_ids": []
+    }
+  },
+  "sequence": {
+    "steps": [
+      {
+        "truth_home": "home-a",
+        "source_id": "seq-home-a",
+        "canonical_id": "canonical-01"
+      },
+      {
+        "truth_home": "home-a",
+        "source_id": "seq-home-a-repost-1",
+        "canonical_id": "canonical-01"
+      },
+      {
+        "truth_home": "home-a",
+        "source_id": "seq-home-a-repost-2",
+        "canonical_id": "canonical-01"
+      },
+      {
+        "truth_home": "unit-b",
+        "source_id": "seq-unit-b",
+        "canonical_id": "canonical-02"
+      },
+      {
+        "truth_home": "unit-c",
+        "source_id": "seq-unit-c",
+        "canonical_id": "canonical-03"
+      }
+    ],
+    "expected_canonical_count": 3,
+    "canonical_count": 3,
+    "canonical_count_correct": true,
+    "false_merge_pairs": [],
+    "false_merge_count": 0,
+    "duplicate_canonical_homes": {},
+    "duplicate_canonical_count": 0,
+    "expected_logical_notifications": 3,
+    "actual_logical_notifications": 3,
+    "notification_kinds": {
+      "new_match": 3
+    },
+    "notification_canonical_ids": [
+      "canonical-01",
+      "canonical-02",
+      "canonical-03"
+    ],
+    "logical_notifications_by_truth_home": {
+      "home-a": 1,
+      "unit-b": 1,
+      "unit-c": 1
+    },
+    "lost_notifications": 0,
+    "extra_notifications": 0,
+    "notifications_correct": true,
+    "repost_same_canonical": true,
+    "distinct_units_separate": true,
+    "processed_alert_event_count": 5,
+    "matcher": "production default"
+  },
+  "end_utc": "2026-11-11T23:08:50.337364+00:00",
+  "methodology_limit": "One formal reporting evaluation per partition. Existing automated determinism tests also execute the frozen corpus; this is a reused synthetic regression set, not an untouched statistical holdout. No labels or matcher were tuned to these results."
+}

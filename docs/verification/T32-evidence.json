@@ -1,0 +1,123 @@
+{
+  "candidate": "a17cf16f4e6c3c33d629684fd6a75685eb147b53",
+  "recorded_at_utc": "2026-11-11T23:35:10.841515+00:00",
+  "classification": "LOCAL_PARTIAL",
+  "compatible_runtime_revision": "d56ae2313f34c574877e16050ea3affd67b064b6",
+  "revision_limit": "Final service profile includes the grant/test/documentation follow-up. Offline, browser and hosted reference ran on the application-identical predecessor; exact per-profile SHAs are retained.",
+  "profiles": {
+    "offline": {
+      "run_id": "t32-release-offline",
+      "start_utc": "2026-11-11T23:21:48.648195+00:00",
+      "end_utc": "2026-11-11T23:22:27.149194+00:00",
+      "counts": {
+        "passed": 392,
+        "failed": 0,
+        "skipped": 115
+      },
+      "status": "PASS",
+      "platform": {
+        "system": "macOS-15.7.7-arm64-arm-64bit",
+        "python": "3.12.9 (main, Feb  4 2025, 14:38:38) [Clang 16.0.0 (clang-1600.0.26.6)]",
+        "node": "v24.6.0",
+        "git_revision": "d56ae2313f34c574877e16050ea3affd67b064b6",
+        "worktree_dirty": false
+      }
+    },
+    "services": {
+      "run_id": "t32-roles-services",
+      "start_utc": "2026-11-11T23:32:32.917131+00:00",
+      "end_utc": "2026-11-11T23:34:38.737368+00:00",
+      "counts": {
+        "passed": 240,
+        "failed": 0,
+        "skipped": 0
+      },
+      "status": "PASS",
+      "platform": {
+        "system": "macOS-15.7.7-arm64-arm-64bit",
+        "python": "3.12.9 (main, Feb  4 2025, 14:38:38) [Clang 16.0.0 (clang-1600.0.26.6)]",
+        "node": "v24.6.0",
+        "git_revision": "a17cf16f4e6c3c33d629684fd6a75685eb147b53",
+        "worktree_dirty": false
+      }
+    },
+    "web": {
+      "run_id": "t32-release-web",
+      "start_utc": "2026-11-11T23:21:48.648198+00:00",
+      "end_utc": "2026-11-11T23:24:32.966207+00:00",
+      "counts": {
+        "passed": 36,
+        "failed": 0,
+        "skipped": 0
+      },
+      "status": "PASS",
+      "platform": {
+        "system": "macOS-15.7.7-arm64-arm-64bit",
+        "python": "3.12.9 (main, Feb  4 2025, 14:38:38) [Clang 16.0.0 (clang-1600.0.26.6)]",
+        "node": "v24.6.0",
+        "git_revision": "d56ae2313f34c574877e16050ea3affd67b064b6",
+        "worktree_dirty": false
+      }
+    }
+  },
+  "frontend_unit_tests": {
+    "passed": 122,
+    "failed": 0,
+    "skipped": 0
+  },
+  "hosted_ci": {
+    "run_id": 43119698856,
+    "head_sha": "d56ae2313f34c574877e16050ea3affd67b064b6",
+    "url": "https://github.com/alex-noel/realtoruch/actions/runs/43119698856",
+    "jobs": [
+      {
+        "id": 130856709988,
+        "name": "Web export",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 130856710254,
+        "name": "Python and TypeScript",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 130856710326,
+        "name": "Android and iOS JavaScript bundle validation",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 130856710497,
+        "name": "PostgreSQL and Elasticsearch",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "config_evidence": ".local/verification/T32/config-final/report.json",
+  "soak": {
+    "status": "INCOMPLETE",
+    "commit": "b3782cca0f4a05b788e4fd00656ef01327deb552",
+    "started_at": "2026-11-11T21:27:38.320642Z",
+    "target_end": "2026-11-14T21:27:38.320642Z",
+    "observed_through": "2026-11-11T23:34:20.875698Z",
+    "runner_covered_seconds": 7602.555056,
+    "runner_gap_seconds": 0,
+    "cycle_counts": {
+      "attempted": 1,
+      "eligible": 1,
+      "completed": 1,
+      "deferred": 0,
+      "missed": 0,
+      "interrupted": 0,
+      "running": 0,
+      "pending": 11
+    },
+    "budget_violations": 0,
+    "live_removal": "UNVERIFIED"
+  },
+  "dedupe_evidence": "docs/verification/dedupe-final.json",
+  "no_cloud_deployment": true
+}

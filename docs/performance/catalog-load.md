@@ -338,3 +338,7 @@ this worktree; they contain only synthetic run data. The named service test
 fixture has not been claimed as hosted CI evidence. The current code and
 performance results require the integrator's independent query-correctness
 review, including the grouping-collation assumptions documented above.
+
+## Integrator acceptance — 12 November 2026
+
+Integrated as `a775a77`; the parent reviewed source-evidence batching, deterministic grouping equivalence and original tie-breaks. The final combined candidate `a17cf16f4e6c3c33d629684fd6a75685eb147b53` passed the complete required real-service profile, including query parity, loaded race regression, roles and restore. The native five-minute profile is accepted for its documented machine/workload. The earlier emulated history profile remains failed. Later identity-correction changes do not alter the measured search/history query paths; their functional notification effects are separately covered in T32. No performance sample is relabelled as a new measurement.

@@ -57,7 +57,7 @@ The scanner queries public advisories for the committed Python runtime and npm l
 
 The repository maintainer reviews changes to `config/ci-audit-exceptions.json`. Each accepted exception names the exact `ecosystem`, `package`, `version`, and `advisory`, an accountable `owner`, an `expires` date in UTC (YYYY-MM-DD, inclusive), and a `reason`. An expired or invalid exception fails the audit. Remove exceptions after remediation. There are no approved exceptions at the introduction of this policy.
 
-Hosted execution and required-check settings remain pending G07.
+Hosted execution passed after the authorized integration push; see [T32](verification/T32-handoff.md) for the recorded run. Required-check/branch-protection settings remain a separate maintainer decision.
 
 ## Migrations
 
