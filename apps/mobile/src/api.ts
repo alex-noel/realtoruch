@@ -15,6 +15,7 @@ export const API_URL =
 const AUTH_URL = process.env.EXPO_PUBLIC_AUTH_URL || "http://localhost:8001";
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
+let accountId: string | null = null;
 let generation = 0;
 let refreshing: { generation: number; promise: Promise<string | null> } | null = null;
 let storageQueue: Promise<void> = Promise.resolve();
@@ -54,7 +55,7 @@ async function clearStorage() {
   });
 }
 function clearMemory(state: SessionState) {
-  generation++; accessToken = null; refreshToken = null; publish(state);
+  generation++; accessToken = null; refreshToken = null; accountId = null; publish(state);
   return generation;
 }
 export async function setToken(token: string | null) {
@@ -88,6 +89,7 @@ async function acceptSession(result: SessionResult, intent: number) {
       }
       refreshToken = result.refresh_token ?? null;
       accessToken = result.access_token;
+      accountId = result.user.id;
     });
     checkIntent(intent);
   } catch (error) {
@@ -110,6 +112,9 @@ async function refreshSession(intent = generation, lockHeld = false) {
       method: "POST", body: JSON.stringify(Platform.OS === "web" ? {} : { refresh_token: refreshToken }),
     }, true, false);
     checkIntent(intent);
+    if (accountId !== null && result.user.id !== accountId) {
+      throw new SessionError("invalid", "The account changed in another tab. Sign in again.");
+    }
     await acceptSession(result, intent);
     return result.access_token;
   };

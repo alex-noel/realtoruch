@@ -60,6 +60,24 @@ describe("session resilience", () => {
     expect(await client.request("/probe")).toEqual({ token: "Bearer account-b" });
   });
 
+  it("does not replay a mutation when another tab changed the cookie account", async () => {
+    f.platform.OS = "web";
+    vi.stubGlobal("navigator", { locks: { request: (_name: string, run: () => Promise<unknown>) => run() } });
+    const mutationTokens: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, options: RequestInit) => {
+      if (url.endsWith("/login")) return response({ ...result("account-a"), user: { ...result("a").user, id: "a" } });
+      if (url.endsWith("/refresh")) return response({ ...result("account-b"), user: { ...result("b").user, id: "b" } });
+      mutationTokens.push((options.headers as Record<string, string>).Authorization);
+      return response({}, 401);
+    }));
+    const client = await load();
+    await client.api.signIn("a@example.test", "synthetic-password", false);
+    await expect(client.api.favorite("home-a", true)).rejects.toMatchObject({ kind: "invalid" });
+    expect(mutationTokens).toEqual(["Bearer account-a"]);
+    expect(client.getSessionState()).toBe("reauth");
+    expect(client.isCurrentAccessToken("account-b")).toBe(false);
+  });
+
   it("fences an in-progress secure write behind confirmed logout cleanup", async () => {
     f.store.set("realtoruch_refresh", "original");
     vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/refresh") ? response(result("new", "new-refresh")) : response({ signed_out: true })));
