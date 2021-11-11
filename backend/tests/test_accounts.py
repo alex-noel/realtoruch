@@ -196,3 +196,17 @@ def test_account_deletion_is_reauthenticated_retried_and_cleans_rental_data(
         assert identity.scalar(select(LoginSession).where(LoginSession.user_id == user_id)) is None
     assert client.get(f"/v1/listings/{listing_id}").status_code == 200
     erase(user_id)  # idempotent cross-service cleanup
+
+
+def test_production_web_cookie_flags(auth_client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "environment", "production")
+    response = auth_client.post(
+        "/v1/auth/register",
+        json={**CREDENTIALS, "client": "web"},
+        headers={"Origin": "http://localhost:8081"},
+    )
+    assert response.status_code == 201
+    cookie = response.headers["set-cookie"]
+    assert "HttpOnly" in cookie and "Secure" in cookie
+    assert "SameSite=strict" in cookie and "Path=/v1/auth" in cookie
+    assert "refresh_token" not in response.json()

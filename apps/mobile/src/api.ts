@@ -16,12 +16,26 @@ const AUTH_URL = process.env.EXPO_PUBLIC_AUTH_URL || "http://localhost:8001";
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
 let refreshing: Promise<string | null> | null = null;
+export type SessionState = "signed-out" | "active" | "offline" | "reauth" | "logout-retry";
+let sessionState: SessionState = "signed-out";
+const listeners = new Set<(state: SessionState) => void>();
+export function subscribeSession(listener: (state: SessionState) => void) {
+  listeners.add(listener);
+  listener(sessionState);
+  return () => { listeners.delete(listener); };
+}
+function publish(state: SessionState) {
+  sessionState = state;
+  listeners.forEach((listener) => listener(state));
+}
+export class SessionError extends Error {
+  constructor(public kind: "invalid" | "forbidden" | "transient" | "http" | "storage", message: string, public status?: number) {
+    super(message);
+    this.name = "SessionError";
+  }
+}
 export type Account = { id: string; email: string; email_verified: boolean };
-type SessionResult = {
-  access_token: string;
-  refresh_token?: string;
-  user: Account;
-};
+type SessionResult = { access_token: string; refresh_token?: string; user: Account };
 export async function setToken(token: string | null) {
   accessToken = token;
   if (!token) refreshToken = null;
@@ -33,63 +47,68 @@ export async function setToken(token: string | null) {
     }
   }
 }
+async function invalidate() {
+  // Clear in-memory state even if secure storage is unavailable.
+  accessToken = null;
+  refreshToken = null;
+  publish("reauth");
+  try { await setToken(null); } catch { /* Reauthentication remains required. */ }
+}
 async function acceptSession(result: SessionResult) {
-  await setToken(result.access_token);
-  if (Platform.OS !== "web" && result.refresh_token) {
-    refreshToken = result.refresh_token;
-    await SecureStore.setItemAsync("realtoruch_refresh", refreshToken);
+  try {
+    if (Platform.OS !== "web" && result.refresh_token) {
+      await SecureStore.setItemAsync("realtoruch_refresh", result.refresh_token);
+      refreshToken = result.refresh_token;
+    }
+    await setToken(result.access_token);
+  } catch {
+    await invalidate();
+    throw new SessionError("storage", "Secure storage is unavailable. Sign in again.");
   }
+  publish("active");
   return result;
 }
 async function refreshSession() {
   if (refreshing) return refreshing;
   const run = async () => {
     if (Platform.OS !== "web" && !refreshToken) return null;
-    const result = await request<SessionResult>(
-      "/v1/auth/refresh",
-      {
-        method: "POST",
-        body: JSON.stringify(
-          Platform.OS === "web" ? {} : { refresh_token: refreshToken },
-        ),
-      },
-      true,
-      false,
-    );
+    const result = await request<SessionResult>("/v1/auth/refresh", {
+      method: "POST",
+      body: JSON.stringify(Platform.OS === "web" ? {} : { refresh_token: refreshToken }),
+    }, true, false);
     await acceptSession(result);
     return result.access_token;
   };
-  // Serialize browser refreshes across tabs: a refresh token is used only once.
-  refreshing = (async () =>
-    await (Platform.OS === "web" &&
-    typeof navigator !== "undefined" &&
-    navigator.locks
-      ? navigator.locks.request("realtoruch-refresh", run)
-      : run()))();
-  try {
-    return await refreshing;
-  } finally {
-    refreshing = null;
-  }
+  refreshing = (async () => {
+    try {
+      if (Platform.OS === "web") {
+        if (typeof navigator === "undefined" || !navigator.locks) {
+          throw new SessionError("invalid", "Sign in again. This browser cannot safely restore a session across tabs.");
+        }
+        return await navigator.locks.request("realtoruch-refresh", run);
+      }
+      return await run();
+    } catch (error) {
+      if (error instanceof SessionError && (error.kind === "invalid" || error.kind === "forbidden")) await invalidate();
+      else if (!(error instanceof SessionError && error.kind === "storage")) publish("offline");
+      throw error;
+    }
+  })();
+  try { return await refreshing; } finally { refreshing = null; }
 }
 export async function restoreToken() {
   if (Platform.OS !== "web") {
-    accessToken = await SecureStore.getItemAsync("realtoruch_token");
-    refreshToken = await SecureStore.getItemAsync("realtoruch_refresh");
+    try {
+      accessToken = await SecureStore.getItemAsync("realtoruch_token");
+      refreshToken = await SecureStore.getItemAsync("realtoruch_refresh");
+    } catch {
+      publish("offline");
+      throw new SessionError("storage", "Secure storage is unavailable. Try again.");
+    }
   }
-  try {
-    return await refreshSession();
-  } catch {
-    await setToken(null);
-    return null;
-  }
+  return refreshSession();
 }
-export async function request<T>(
-  path: string,
-  options: RequestInit = {},
-  authService = false,
-  retry = true,
-): Promise<T> {
+export async function request<T>(path: string, options: RequestInit = {}, authService = false, retry = true, retried = false): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   const usedToken = accessToken;
@@ -98,36 +117,21 @@ export async function request<T>(
       ...options,
       credentials: authService && Platform.OS === "web" ? "include" : "omit",
       signal: options.signal || controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        ...options.headers,
-      },
+      headers: { "Content-Type": "application/json", ...(usedToken ? { Authorization: `Bearer ${usedToken}` } : {}), ...options.headers },
     });
-    if (response.status === 401 && retry && usedToken) {
-      if (accessToken !== usedToken || (await refreshSession()))
-        return request<T>(path, options, authService, false);
+    if (response.status === 401 && retry && usedToken && path !== "/v1/auth/refresh") {
+      if (accessToken !== usedToken || (await refreshSession())) return request<T>(path, options, authService, false, true);
     }
-    const data = await response.json();
     if (!response.ok) {
-      const detail = Array.isArray(data.detail)
-        ? data.detail.map((e: { msg: string }) => e.msg).join(". ")
-        : data.detail;
-      throw new Error(detail || "Something went wrong. Please try again.");
+      const kind = response.status === 401 ? "invalid" : response.status === 403 ? "forbidden" : response.status >= 500 ? "transient" : "http";
+      if (kind === "invalid" && usedToken && (retry || retried) && path !== "/v1/auth/refresh") await invalidate();
+      throw new SessionError(kind, kind === "invalid" ? "Session expired or revoked. Sign in again." : kind === "transient" ? "Cannot reach the service. Try again." : "Request could not be completed.", response.status);
     }
-    return data;
+    return await response.json();
   } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.name === "AbortError" || /fetch|network/i.test(error.message))
-    )
-      throw new Error(
-        "Cannot reach the service. Check your connection and try again.",
-      );
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
+    if (error instanceof SessionError) throw error;
+    throw new SessionError("transient", "Cannot reach the service. Check your connection and try again.");
+  } finally { clearTimeout(timeout); }
 }
 export function queryString(values: object) {
   return Object.entries(values)
@@ -195,8 +199,16 @@ export const api = {
     ),
   me: () => request<Account>("/v1/auth/me", {}, true),
   signOut: async () => {
-    await request("/v1/auth/logout", { method: "POST" }, true);
+    try {
+      await request("/v1/auth/logout", { method: "POST" }, true);
+    } catch (error) {
+      if (!(error instanceof SessionError && error.kind === "invalid")) {
+        publish("logout-retry");
+        throw new SessionError("transient", "Could not confirm sign out. Check your connection and try again.");
+      }
+    }
     await setToken(null);
+    publish("signed-out");
   },
   resetRequest: (email: string) =>
     request<{ message: string }>(
