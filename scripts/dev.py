@@ -11,12 +11,21 @@ from local import ROOT, local_environment
 
 os.chdir(ROOT)
 live = "--live" in sys.argv
-environment = local_environment(live=live)
+journey = "--journey" in sys.argv
+environment = local_environment(live=live, journey=journey)
 python = str(ROOT / ".venv/bin/python")
-if not live:
+subprocess.run(
+    [python, "-m", "realtoruch.worker", "migrate"], env=environment, check=True
+)
+if journey:
+    subprocess.run(
+        [python, "scripts/journey.py", "prepare"], env=environment, check=True
+    )
+elif not live:
     subprocess.run([python, "-m", "realtoruch.seed"], env=environment, check=True)
 processes = []
 commands = [
+    ([python, "-m", "realtoruch.worker", "alerts", "--loop"], ROOT),
     (
         [
             python,

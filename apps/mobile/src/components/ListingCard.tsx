@@ -23,6 +23,7 @@ export function ListingCard({
   selected,
   saved,
   compared,
+  seen = false,
   onOpen,
   onSave,
   onCompare,
@@ -31,6 +32,7 @@ export function ListingCard({
   selected: boolean;
   saved: boolean;
   compared: boolean;
+  seen?: boolean;
   onOpen: () => void;
   onSave: () => void;
   onCompare: () => void;
@@ -117,6 +119,20 @@ export function ListingCard({
         </View>
       </Pressable>
       <View style={{ flex: 1, padding: 19, gap: 10 }}>
+        {home.status !== "active" || seen ? (
+          <View style={[s.row, { gap: 8 }]}>
+            {home.status !== "active" ? (
+              <Text style={[s.label, { color: c.warning }]}>
+                {home.status === "inactive"
+                  ? "DELISTED"
+                  : "AVAILABILITY UNCONFIRMED"}
+              </Text>
+            ) : null}
+            {seen ? (
+              <Text style={[s.label, { color: c.muted }]}>SEEN</Text>
+            ) : null}
+          </View>
+        ) : null}
         <View style={[s.row, { justifyContent: "space-between", gap: 8 }]}>
           <View style={[s.row, { gap: 5, flex: 1 }]}>
             <MapPin size={11} color={c.muted} />

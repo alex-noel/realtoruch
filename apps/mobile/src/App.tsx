@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Linking,
   Platform,
   Pressable,
@@ -10,6 +11,10 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import NotificationInbox from "./components/NotificationInbox";
+import { disablePush, listenForPush } from "./pushClient";
+import type { NotificationInbox as Inbox, RentalNotification } from "./types";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import ArrowDownUp from "lucide-react-native/icons/arrow-down-up";
@@ -32,7 +37,7 @@ import Sprout from "lucide-react-native/icons/sprout";
 import TrendingUp from "lucide-react-native/icons/trending-up";
 import User from "lucide-react-native/icons/user";
 import X from "lucide-react-native/icons/x";
-import { api, API_URL, restoreToken, setToken } from "./api";
+import { api, API_URL, request, restoreToken, setToken } from "./api";
 import {
   DEFAULT_FILTERS,
   Filters,
@@ -53,12 +58,13 @@ import {
 import Insights from "./components/Insights";
 
 if (Platform.OS === "web") require("./web.css");
-type Tab = "discover" | "saved" | "insights" | "searches";
+type Tab = "discover" | "saved" | "insights" | "searches" | "notifications";
 const tabs = [
   { id: "discover", title: "Discover homes", icon: Compass },
   { id: "saved", title: "Saved homes", icon: Heart },
   { id: "insights", title: "Rent insights", icon: TrendingUp },
-  { id: "searches", title: "Saved searches", icon: Bell },
+  { id: "searches", title: "Saved searches", icon: Bookmark },
+  { id: "notifications", title: "Notifications", icon: Bell },
 ] as const;
 
 export default function App() {
@@ -81,7 +87,7 @@ function RentalApp() {
   const [tab, setTab] = useState<Tab>("discover");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [query, setQuery] = useState("");
-  const [city, setCity] = useState("Warszawa");
+  const [city, setCity] = useState(DEFAULT_FILTERS.city);
   const [homes, setHomes] = useState<Listing[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -99,11 +105,21 @@ function RentalApp() {
   const [searches, setSearches] = useState<SavedSearch[]>([]);
   const [comparison, setComparison] = useState<Listing[]>([]);
   const [user, setUser] = useState<string | null>(null);
+  const [emailMessage, setEmailMessage] = useState("");
   const [toast, setToast] = useState("");
-  const [searchName, setSearchName] = useState("My Warsaw shortlist");
+  const [searchName, setSearchName] = useState("My Kraków shortlist");
   const [reportReason, setReportReason] = useState("");
   const [formError, setFormError] = useState("");
   const [formBusy, setFormBusy] = useState(false);
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+  const [inbox, setInbox] = useState<Inbox>({
+    items: [],
+    unread_count: 0,
+    page: 1,
+    page_size: 30,
+  });
+  const currentUser = useRef(user);
+  currentUser.current = user;
   const detailRequest = useRef(0);
   const pendingFavorite = useRef<Listing | null>(null);
   const favoriteBusy = useRef(new Set<string>());
@@ -160,6 +176,14 @@ function RentalApp() {
     else {
       setFavorites([]);
       setSearches([]);
+      setInbox({ items: [], unread_count: 0, page: 1, page_size: 30 });
+      setSeenIds(new Set());
+      AsyncStorage.getItem("realtoruch.guest-seen.v1")
+        .then((value) => {
+          if (!currentUser.current && value)
+            setSeenIds(new Set(JSON.parse(value)));
+        })
+        .catch(() => {});
     }
   }, [user]);
   useEffect(() => {
@@ -168,18 +192,131 @@ function RentalApp() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (
+        AppState.currentState === "active" &&
+        (Platform.OS !== "web" || document.visibilityState === "visible")
+      ) {
+        setRetry((value) => value + 1);
+        if (currentUser.current) refreshAccount();
+      }
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+  const stateIds = [...new Set([...homes, ...favorites].map((home) => home.id))]
+    .slice(0, 100)
+    .join(",");
+  useEffect(() => {
+    if (!user || !stateIds) return;
+    let active = true;
+    api
+      .listingState(stateIds.split(","))
+      .then((state) => {
+        if (active)
+          setSeenIds((current) => new Set([...current, ...state.seen_ids]));
+      })
+      .catch((e) => {
+        if (active) setToast(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user, stateIds]);
+  useEffect(() => {
+    if (!detail) return;
+    const id = detail.id;
+    if (user) {
+      let active = true;
+      api
+        .seen(id)
+        .then(() => {
+          if (!active) return;
+          setSeenIds((current) => new Set([...current, id]));
+          refreshAccount();
+        })
+        .catch((e) => {
+          if (active) setToast(e.message);
+        });
+      return () => {
+        active = false;
+      };
+    }
+    setSeenIds((current) => new Set([...current, id]));
+    AsyncStorage.getItem("realtoruch.guest-seen.v1")
+      .then((value) => {
+        const previous: string[] = value ? JSON.parse(value) : [];
+        return AsyncStorage.setItem(
+          "realtoruch.guest-seen.v1",
+          JSON.stringify([...new Set([...previous, id])].slice(-1000)),
+        );
+      })
+      .catch(() => {});
+  }, [detail?.id, detail?.rent_pln, user]);
+  useEffect(() => {
+    const open = (id: string) =>
+      api
+        .detail(id)
+        .then(openHome)
+        .catch((e) => setToast(e.message));
+    const stop = listenForPush(open, () => {
+      if (currentUser.current) refreshAccount();
+      setRetry((value) => value + 1);
+    });
+    if (Platform.OS === "web") {
+      const id = new URLSearchParams(window.location.search).get("listing");
+      if (id) open(id);
+      const action = new URLSearchParams(window.location.hash.slice(1));
+      const confirm = action.get("confirm_email"),
+        unsubscribe = action.get("unsubscribe_email");
+      if (confirm || unsubscribe) {
+        window.history.replaceState(
+          null,
+          "",
+          window.location.pathname + window.location.search,
+        );
+        setTab("notifications");
+        request<{ message: string }>(
+          `/v1/notifications/email/${confirm ? "confirm" : "unsubscribe"}`,
+          {
+            method: "POST",
+            body: JSON.stringify({ token: confirm || unsubscribe }),
+          },
+        )
+          .then((result) => setEmailMessage(result.message))
+          .catch((e) => setEmailMessage(e.message));
+      }
+    }
+    return stop;
+  }, []);
+
   function changeFilters(value: Filters) {
     setFilters(value);
     setPage(1);
   }
   async function refreshAccount() {
+    const expected = currentUser.current;
+    if (!expected) return;
     try {
-      const [saved, searches] = await Promise.all([
+      const [saved, searches, notifications] = await Promise.all([
         api.favorites(),
         api.searches(),
+        api.notifications(),
       ]);
+      if (currentUser.current !== expected) return;
       setFavorites(saved.items);
       setSearches(searches.items);
+      setInbox((previous) => ({
+        ...notifications,
+        page: previous.page,
+        items: [
+          ...notifications.items,
+          ...previous.items.filter(
+            (item) =>
+              !notifications.items.some((newer) => newer.id === item.id),
+          ),
+        ],
+      }));
     } catch (e) {
       setToast((e as Error).message);
     }
@@ -211,13 +348,14 @@ function RentalApp() {
   }
   async function signedIn(token: string, email: string) {
     await setToken(token);
-    setUser(email);
     if (pendingFavorite.current) {
       const home = pendingFavorite.current;
       pendingFavorite.current = null;
       await api.favorite(home.id, true);
     }
-    await refreshAccount();
+    currentUser.current = email;
+    setSeenIds(new Set());
+    setUser(email);
   }
   function openHome(home: Listing) {
     const request = ++detailRequest.current;
@@ -247,7 +385,7 @@ function RentalApp() {
       await api.saveSearch(searchName.trim(), filters);
       await refreshAccount();
       setDialog(null);
-      setToast("Search saved. New matches appear under Saved searches.");
+      setToast("Search saved. New matches will appear in Notifications.");
     } catch (e) {
       setFormError((e as Error).message);
     } finally {
@@ -274,6 +412,7 @@ function RentalApp() {
   const showList = tab === "saved" || view !== "map";
   const visibleHomes = tab === "saved" ? favorites : homes;
   const activeFilterCount =
+    Number(!!filters.polygon) +
     Number(!!filters.max_price) +
     Number(!!filters.min_price) +
     Number(!!filters.rooms) +
@@ -318,6 +457,11 @@ function RentalApp() {
             {title}
           </Text>
         )}
+        {id === "notifications" && inbox.unread_count > 0 ? (
+          <Text style={{ color: compact ? c.green : "#B6C7A7", fontSize: 11 }}>
+            {inbox.unread_count}
+          </Text>
+        ) : null}
         {id === "saved" && favorites.length > 0 && (
           <Text style={{ color: compact ? c.green : "#B6C7A7", fontSize: 11 }}>
             {favorites.length}
@@ -479,9 +623,17 @@ function RentalApp() {
               accessibilityLabel={user ? "Sign out" : "Sign in"}
               onPress={async () => {
                 if (user) {
+                  let pushWarning = "";
+                  try {
+                    await disablePush();
+                  } catch {
+                    pushWarning =
+                      " Device alert removal could not be confirmed. You can disable alerts in device settings.";
+                  }
                   await setToken(null);
+                  currentUser.current = null;
                   setUser(null);
-                  setToast("Signed out.");
+                  setToast("Signed out." + pushWarning);
                 } else setDialog("auth");
               }}
               style={[s.row, { gap: 8 }]}
@@ -519,7 +671,45 @@ function RentalApp() {
           }}
           keyboardShouldPersistTaps="handled"
         >
-          {tab === "insights" ? (
+          {tab === "notifications" ? (
+            <NotificationInbox
+              message={emailMessage}
+              user={user}
+              inbox={inbox}
+              onSignIn={() => setDialog("auth")}
+              onOpen={(item: RentalNotification) =>
+                api
+                  .detail(item.listing_id)
+                  .then(openHome)
+                  .catch((e) => setToast(e.message))
+              }
+              onRead={async (id) => {
+                try {
+                  await api.readNotification(id);
+                  await refreshAccount();
+                } catch (e) {
+                  setToast((e as Error).message);
+                }
+              }}
+              onMore={async () => {
+                try {
+                  const next = await api.notifications(inbox.page + 1);
+                  setInbox((previous) => ({
+                    ...next,
+                    items: [
+                      ...previous.items,
+                      ...next.items.filter(
+                        (item) =>
+                          !previous.items.some((old) => old.id === item.id),
+                      ),
+                    ],
+                  }));
+                } catch (e) {
+                  setToast((e as Error).message);
+                }
+              }}
+            />
+          ) : tab === "insights" ? (
             <Insights
               city={filters.city}
               districts={summary?.districts || []}
@@ -529,8 +719,8 @@ function RentalApp() {
               <Text style={s.label}>KEEP AN EYE ON WHAT MATTERS</Text>
               <Text style={s.title}>Your saved searches.</Text>
               <Text style={s.muted}>
-                New matches are counted against the time you saved each search.
-                Open a search to see the latest homes.
+                Your saved area and filters run in the background. New homes
+                appear in Notifications; existing matches start quietly.
               </Text>
               {!user ? (
                 <Button onPress={() => setDialog("auth")}>
@@ -550,7 +740,8 @@ function RentalApp() {
                       {search.name}
                     </Text>
                     <Text style={s.muted}>
-                      {search.filters.city} · {search.new_matches} new matches
+                      {search.filters.city} · {search.new_matches} unread
+                      matches{search.filters.polygon ? " · Drawn area" : ""}
                     </Text>
                     <View style={[s.row, { gap: 12 }]}>
                       <Button
@@ -615,7 +806,7 @@ function RentalApp() {
                   </Text>
                   <Text style={[s.muted, { marginTop: 12, fontSize: 13 }]}>
                     {tab === "saved"
-                      ? "Your favorite homes, all in one place."
+                      ? "Your favorite homes, including delisted ones. We’ll notify you when a saved home returns at a lower price."
                       : "Rentals from across the web. Duplicates removed. Details made clear."}
                   </Text>
                 </View>
@@ -697,6 +888,10 @@ function RentalApp() {
                           changeFilters({
                             ...filters,
                             city: city.trim(),
+                            polygon:
+                              city.trim() !== filters.city
+                                ? undefined
+                                : filters.polygon,
                             q: query.trim(),
                           })
                         }
@@ -716,6 +911,10 @@ function RentalApp() {
                         changeFilters({
                           ...filters,
                           city: city.trim(),
+                          polygon:
+                            city.trim() !== filters.city
+                              ? undefined
+                              : filters.polygon,
                           q: query.trim(),
                           district:
                             city.trim() !== filters.city
@@ -749,6 +948,15 @@ function RentalApp() {
                         },
                       ]}
                     >
+                      {filters.polygon ? (
+                        <Chip
+                          label="Drawn area ×"
+                          selected
+                          onPress={() =>
+                            changeFilters({ ...filters, polygon: undefined })
+                          }
+                        />
+                      ) : null}
                       <Chip
                         label="Direct offers"
                         selected={filters.advertiser === "private"}
@@ -802,7 +1010,10 @@ function RentalApp() {
                     </View>
                     <Pressable
                       accessibilityRole="button"
-                      onPress={() => openDialog(user ? "save-search" : "auth")}
+                      onPress={() => {
+                        setSearchName(`My ${filters.city} shortlist`);
+                        openDialog(user ? "save-search" : "auth");
+                      }}
                       style={[s.row, { gap: 6, minHeight: 38 }]}
                     >
                       <Bookmark size={14} color={c.green} />
@@ -997,7 +1208,7 @@ function RentalApp() {
                             outline
                             onPress={() => {
                               changeFilters(DEFAULT_FILTERS);
-                              setCity("Warszawa");
+                              setCity(DEFAULT_FILTERS.city);
                               setQuery("");
                               setTab("discover");
                             }}
@@ -1013,6 +1224,7 @@ function RentalApp() {
                           selected={home.id === selected}
                           saved={favorites.some((h) => h.id === home.id)}
                           compared={comparison.some((h) => h.id === home.id)}
+                          seen={seenIds.has(home.id)}
                           onOpen={() => openHome(home)}
                           onSave={() => toggleFavorite(home)}
                           onCompare={() => toggleCompare(home)}
@@ -1064,12 +1276,17 @@ function RentalApp() {
                           homes={homes}
                           selected={selected}
                           onSelect={openHome}
+                          city={filters.city}
+                          polygon={filters.polygon}
+                          onPolygonChange={(polygon) =>
+                            changeFilters({ ...filters, polygon })
+                          }
                         />
                         <View
                           pointerEvents="none"
                           style={{
                             position: "absolute",
-                            top: 15,
+                            bottom: 15,
                             left: 15,
                             backgroundColor: "#FFFFFFF2",
                             paddingVertical: 9,
@@ -1264,8 +1481,9 @@ function RentalApp() {
             onChange={setSearchName}
           />
           <Text style={s.muted}>
-            Your current filters will be saved. New matches are counted in Saved
-            searches; email and push delivery are not enabled.
+            Your current filters{filters.polygon ? " and drawn map area" : ""}{" "}
+            will be saved. New matches go to your notification inbox. Enable
+            email alerts there to receive updates when the app is closed.
           </Text>
           {!!formError && (
             <Text accessibilityRole="alert" style={{ color: "#A3422D" }}>

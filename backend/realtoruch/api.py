@@ -1,16 +1,31 @@
 import hmac
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
+
+from .alerts import baseline_search, insert_once, notification_data, unread_count
 from .db import get_session, init_db
-from .models import Listing, SourceListing, Observation, Favorite, SavedSearch, Report, now
-from .schemas import RawListing, SearchFilters
-from .query import search_db, serialize_many, market_history, filtered_query
 from .ingest import ingest
+from .models import (
+    Favorite,
+    Listing,
+    Notification,
+    Observation,
+    PushSubscription,
+    Report,
+    SavedSearch,
+    SeenPrice,
+    SourceListing,
+    now,
+)
+from .normalization import fold
+from .push import PushBody
+from .query import market_history, search_db, serialize_many
+from .schemas import RawListing, SearchFilters
 from .security import install_http, require_user
 from .settings import get_settings
 
@@ -31,6 +46,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 install_http(app)
+from .email_alerts import router as email_router
+
+app.include_router(email_router)
 
 
 @app.get("/healthz", tags=["Operations"])
@@ -131,7 +149,7 @@ def summary(city: str = "", session=Depends(get_session)):
         "private_homes": sum(home.advertiser_type == "private" for home in homes),
         "median_rent_pln": median(home.rent_pln for home in homes) if homes else None,
         "demo": any(home.is_demo for home in homes),
-        "districts": sorted({home.district for home in homes}),
+        "districts": sorted({home.district for home in homes if home.district}),
         "cities": sorted(set(session.scalars(select(Listing.city).distinct()).all())),
     }
 
@@ -142,10 +160,16 @@ def sources(session=Depends(get_session)):
 
     observations = {
         row.source: row
-        for row in session.execute(select(
-            SourceListing.source, func.max(SourceListing.observed_at).label("last_observed"),
-            func.count().label("stored_adverts"),
-        ).join(Listing).where(Listing.is_demo.is_(False)).group_by(SourceListing.source))
+        for row in session.execute(
+            select(
+                SourceListing.source,
+                func.max(SourceListing.observed_at).label("last_observed"),
+                func.count().label("stored_adverts"),
+            )
+            .join(Listing)
+            .where(Listing.is_demo.is_(False))
+            .group_by(SourceListing.source)
+        )
     }
     return {
         "sources": [
@@ -156,7 +180,8 @@ def sources(session=Depends(get_session)):
                 "status": "configured" if s.get("enabled") else "disabled",
                 "disabled_reason": s.get("disabled_reason") if not s.get("enabled") else None,
                 "last_observed_at": observations[s["name"]].last_observed.isoformat() + "Z"
-                if s["name"] in observations else None,
+                if s["name"] in observations
+                else None,
                 "stored_adverts": observations[s["name"]].stored_adverts if s["name"] in observations else 0,
             }
             for s in load_sources()
@@ -175,10 +200,11 @@ def favorites(user_id=Depends(require_user), session=Depends(get_session)):
 
 @app.put("/v1/me/favorites/{listing_id}", tags=["Account"])
 def save_favorite(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
-    if not session.get(Listing, listing_id):
+    home = session.get(Listing, listing_id)
+    if not home:
         raise HTTPException(404, "Home not found")
     if not session.get(Favorite, (user_id, listing_id)):
-        session.add(Favorite(user_id=user_id, listing_id=listing_id))
+        session.add(Favorite(user_id=user_id, listing_id=listing_id, price_floor=home.rent_pln))
         from sqlalchemy.exc import IntegrityError
 
         try:
@@ -209,8 +235,15 @@ def save_search(body: SaveSearchBody, user_id=Depends(require_user), session=Dep
         >= 30
     ):
         raise HTTPException(422, "You can save up to 30 searches")
-    search = SavedSearch(user_id=user_id, name=body.name, filters=body.filters.model_dump(exclude_none=True))
+    search = SavedSearch(
+        user_id=user_id,
+        name=body.name,
+        filters=body.filters.model_dump(exclude_none=True),
+        city_key=fold(body.filters.city),
+    )
     session.add(search)
+    session.flush()
+    baseline_search(session, search)
     session.commit()
     return {"id": search.id, "name": search.name, "filters": search.filters}
 
@@ -226,8 +259,12 @@ def saved_searches(user_id=Depends(require_user), session=Depends(get_session)):
                 "filters": s.filters,
                 "new_matches": session.scalar(
                     select(func.count()).select_from(
-                        filtered_query(SearchFilters(**s.filters))
-                        .where(Listing.first_seen > s.created_at)
+                        select(Notification.id)
+                        .where(
+                            Notification.search_id == s.id,
+                            Notification.user_id == user_id,
+                            Notification.read_at.is_(None),
+                        )
                         .subquery()
                     )
                 ),
@@ -245,6 +282,118 @@ def delete_search(search_id: str, user_id=Depends(require_user), session=Depends
     session.delete(search)
     session.commit()
     return {"deleted": True}
+
+
+@app.put("/v1/me/seen/{listing_id}", tags=["Account"])
+def mark_seen(listing_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    home = session.get(Listing, listing_id)
+    if not home:
+        raise HTTPException(404, "Home not found")
+    insert_once(session, SeenPrice, {"user_id": user_id, "listing_id": listing_id, "rent_pln": home.rent_pln})
+    from sqlalchemy import update
+
+    session.execute(
+        update(Notification)
+        .where(
+            Notification.user_id == user_id,
+            Notification.listing_id == listing_id,
+            Notification.read_at.is_(None),
+        )
+        .values(read_at=now())
+    )
+    session.commit()
+    return {"seen": True, "listing_id": listing_id, "rent_pln": home.rent_pln}
+
+
+class ListingStateBody(BaseModel):
+    listing_ids: list[str] = Field(max_length=100)
+
+
+@app.post("/v1/me/listing-state", tags=["Account"])
+def listing_state(body: ListingStateBody, user_id=Depends(require_user), session=Depends(get_session)):
+    ids = session.scalars(
+        select(SeenPrice.listing_id)
+        .where(SeenPrice.user_id == user_id, SeenPrice.listing_id.in_(body.listing_ids))
+        .distinct()
+    ).all()
+    return {"seen_ids": ids}
+
+
+@app.get("/v1/me/notifications", tags=["Account"])
+def notifications(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(30, ge=1, le=100),
+    user_id=Depends(require_user),
+    session=Depends(get_session),
+):
+    rows = session.execute(
+        select(Notification, Listing.status)
+        .join(Listing)
+        .where(Notification.user_id == user_id)
+        .order_by(Notification.created_at.desc(), Notification.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return {
+        "items": [notification_data(n, status) for n, status in rows],
+        "unread_count": unread_count(session, user_id),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@app.put("/v1/me/notifications/{notification_id}/read", tags=["Account"])
+def read_notification(notification_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    item = session.get(Notification, notification_id)
+    if not item or item.user_id != user_id:
+        raise HTTPException(404, "Notification not found")
+    item.read_at = item.read_at or now()
+    session.commit()
+    return {"read": True}
+
+
+@app.get("/v1/notifications/config", tags=["Public"])
+def notification_config():
+    return {
+        "web_push_enabled": bool(settings.vapid_public_key and settings.vapid_subject),
+        "vapid_public_key": settings.vapid_public_key,
+        "expo_push_enabled": settings.expo_push_enabled,
+    }
+
+
+@app.post("/v1/me/push-subscriptions", tags=["Account"])
+def subscribe_push(body: PushBody, user_id=Depends(require_user), session=Depends(get_session)):
+    import hashlib
+
+    if body.kind == "web" and not notification_config()["web_push_enabled"]:
+        raise HTTPException(503, "Browser push is not configured on this server")
+    if body.kind == "expo" and not settings.expo_push_enabled:
+        raise HTTPException(503, "Mobile push is not configured on this server")
+    key = hashlib.sha256((body.endpoint if body.kind == "web" else body.token).encode()).hexdigest()
+    item = session.get(PushSubscription, key)
+    if (not item or item.user_id != user_id or not item.active) and session.scalar(
+        select(func.count())
+        .select_from(PushSubscription)
+        .where(PushSubscription.user_id == user_id, PushSubscription.active.is_(True))
+    ) >= 10:
+        raise HTTPException(422, "You can enable alerts on up to 10 devices")
+    data = {"endpoint": body.endpoint, "keys": body.keys} if body.kind == "web" else {"token": body.token}
+    if item:
+        item.user_id, item.data, item.active = user_id, data, True
+    else:
+        session.add(PushSubscription(id=key, user_id=user_id, kind=body.kind, data=data))
+    session.commit()
+    return {"id": key, "enabled": True}
+
+
+@app.delete("/v1/me/push-subscriptions/{subscription_id}", tags=["Account"])
+def unsubscribe_push(subscription_id: str, user_id=Depends(require_user), session=Depends(get_session)):
+    item = session.get(PushSubscription, subscription_id)
+    if not item or item.user_id != user_id:
+        raise HTTPException(404, "Subscription not found")
+    item.active = False
+    session.commit()
+    return {"enabled": False}
 
 
 class ReportBody(BaseModel):

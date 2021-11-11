@@ -10,13 +10,22 @@
       ],
       "requests_per_minute": 6,
       "listing_urls": [],
-      "city": "Warszawa",
+      "city": "Kraków",
       "search_urls": [
-        "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie/mazowieckie/warszawa/warszawa/warszawa"
+        "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie/malopolskie/krakow/krakow/krakow"
       ],
       "max_pages": 2,
       "max_listings": 12,
-      "max_rechecks": 24
+      "max_rechecks": 24,
+      "search_urls_by_city": {
+        "Kraków": [
+          "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie/malopolskie/krakow/krakow/krakow"
+        ],
+        "Warszawa": [
+          "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie/mazowieckie/warszawa/warszawa/warszawa"
+        ]
+      },
+      "recheck_interval_minutes": 360
     },
     {
       "name": "olx",
@@ -42,13 +51,22 @@
       ],
       "requests_per_minute": 6,
       "listing_urls": [],
-      "city": "Warszawa",
+      "city": "Kraków",
       "search_urls": [
-        "https://gratka.pl/nieruchomosci/mieszkania/warszawa/wynajem"
+        "https://gratka.pl/nieruchomosci/mieszkania/krakow/wynajem"
       ],
       "max_pages": 2,
       "max_listings": 12,
-      "max_rechecks": 24
+      "max_rechecks": 24,
+      "search_urls_by_city": {
+        "Kraków": [
+          "https://gratka.pl/nieruchomosci/mieszkania/krakow/wynajem"
+        ],
+        "Warszawa": [
+          "https://gratka.pl/nieruchomosci/mieszkania/warszawa/wynajem"
+        ]
+      },
+      "recheck_interval_minutes": 360
     },
     {
       "name": "morizon",
@@ -60,13 +78,22 @@
       ],
       "requests_per_minute": 6,
       "listing_urls": [],
-      "city": "Warszawa",
+      "city": "Kraków",
       "search_urls": [
-        "https://www.morizon.pl/do-wynajecia/mieszkania/warszawa/"
+        "https://www.morizon.pl/do-wynajecia/mieszkania/krakow/"
       ],
       "max_pages": 2,
       "max_listings": 12,
-      "max_rechecks": 24
+      "max_rechecks": 24,
+      "search_urls_by_city": {
+        "Kraków": [
+          "https://www.morizon.pl/do-wynajecia/mieszkania/krakow/"
+        ],
+        "Warszawa": [
+          "https://www.morizon.pl/do-wynajecia/mieszkania/warszawa/"
+        ]
+      },
+      "recheck_interval_minutes": 360
     }
   ]
 }

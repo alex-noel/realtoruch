@@ -1,11 +1,12 @@
 locals {
-  identities = toset(["nodes", "api", "auth", "search", "collector", "indexer", "dataflow"])
+  identities = toset(["nodes", "api", "auth", "search", "collector", "indexer", "alerts", "dataflow"])
   roles = {
     nodes     = ["roles/logging.logWriter", "roles/monitoring.metricWriter", "roles/artifactregistry.reader"]
     api       = ["roles/cloudsql.client", "roles/cloudsql.instanceUser"]
     auth      = ["roles/cloudsql.client", "roles/cloudsql.instanceUser"]
     search    = []
     collector = ["roles/bigtable.user"]
+    alerts    = ["roles/cloudsql.client", "roles/cloudsql.instanceUser"]
     indexer   = ["roles/cloudsql.client", "roles/cloudsql.instanceUser"]
     dataflow  = ["roles/dataflow.worker", "roles/cloudsql.client", "roles/cloudsql.instanceUser", "roles/artifactregistry.reader"]
   }
@@ -26,14 +27,14 @@ resource "google_project_iam_member" "roles" {
   member   = "serviceAccount:${google_service_account.services[each.value.identity].email}"
 }
 resource "google_service_account_iam_member" "workload_identity" {
-  for_each           = toset(["api", "auth", "search", "collector", "indexer"])
+  for_each           = toset(["api", "auth", "search", "collector", "indexer", "alerts"])
   service_account_id = google_service_account.services[each.key].name
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.project_id}.svc.id.goog[realtoruch/${each.key}]"
   depends_on         = [google_container_cluster.main]
 }
 resource "google_secret_manager_secret" "config" {
-  for_each  = toset(["api", "auth", "search", "collector", "indexer", "dataflow"])
+  for_each  = toset(["api", "auth", "search", "collector", "indexer", "alerts", "dataflow"])
   secret_id = "${var.name}-${each.key}-config"
   replication {
     user_managed {

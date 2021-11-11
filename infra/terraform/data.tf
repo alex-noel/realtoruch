@@ -41,7 +41,7 @@ resource "google_sql_database" "databases" {
   instance = google_sql_database_instance.main.name
 }
 resource "google_sql_user" "iam_users" {
-  for_each = toset(["api", "auth", "indexer", "dataflow"])
+  for_each = toset(["api", "auth", "indexer", "alerts", "dataflow"])
   name     = trimsuffix(google_service_account.services[each.key].email, ".gserviceaccount.com")
   instance = google_sql_database_instance.main.name
   type     = "CLOUD_IAM_SERVICE_ACCOUNT"

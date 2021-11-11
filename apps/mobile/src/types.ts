@@ -56,6 +56,8 @@ export type Filters = {
   district: string;
   min_price?: number;
   max_price?: number;
+  max_price_exclusive?: boolean;
+  polygon?: string;
   min_area?: number;
   max_area?: number;
   rooms?: number;
@@ -100,14 +102,33 @@ export type SavedSearch = {
   filters: Filters;
   new_matches: number;
 };
+export type RentalNotification = {
+  id: string;
+  listing_id: string;
+  search_id: string | null;
+  kind: "new_match" | "price_drop";
+  title: string;
+  rent_pln: number;
+  previous_rent_pln: number | null;
+  created_at: string;
+  read_at: string | null;
+  listing_status: string;
+};
+export type NotificationInbox = {
+  items: RentalNotification[];
+  unread_count: number;
+  page: number;
+  page_size: number;
+};
 export const DEFAULT_FILTERS: Filters = {
-  city: "Warszawa",
+  city: "Kraków",
   q: "",
   district: "",
   advertiser: "all",
   no_commission: false,
   hide_suspicious: false,
-  property_type: "all",
+  property_type: "apartment",
+  max_price_exclusive: true,
   amenity: "",
   sort: "newest",
 };

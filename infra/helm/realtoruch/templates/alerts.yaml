@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: alerts }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: alerts }
+  template:
+    metadata:
+      labels: { app: alerts }
+    spec:
+      serviceAccountName: alerts
+      nodeSelector: { workload: core }
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: alerts
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command: ["python", "-m", "realtoruch.runtime", "python", "-m", "realtoruch.worker", "alerts", "--loop"]
+          env:
+            - name: GCP_CONFIG_SECRET
+              value: "projects/{{ .Values.projectId }}/secrets/realtoruch-alerts-config/versions/latest"
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]

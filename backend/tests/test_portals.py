@@ -328,3 +328,59 @@ def test_only_explicit_unambiguous_description_costs_are_used():
         description_costs("Czynsz administracyjny: 900 PLN. Administrative fee: 1000 PLN.")["fees_pln"]
         is None
     )
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_fresh_adverts_do_not_use_the_new_listing_budget(monkeypatch, explicit):
+    from types import SimpleNamespace
+
+    from realtoruch.models import now
+
+    fresh = DETAIL["otodom"].replace("fixture", "fresh")
+    config = configured(max_listings=1, recheck_interval_minutes=360)
+    if explicit:
+        config.update(search_urls=[], listing_urls=[fresh, DETAIL["otodom"]])
+    connector = Connector(
+        config, previous_lookup=lambda url: {"observed_at": now().isoformat()} if url == fresh else None
+    )
+    calls = []
+    monkeypatch.setattr(
+        "realtoruch.connectors.discover",
+        lambda *args: SimpleNamespace(urls=[fresh, DETAIL["otodom"]], next_url=None),
+    )
+
+    def fetch(url, **kwargs):
+        calls.append(url)
+        return 200, fixture("otodom").encode()
+
+    monkeypatch.setattr(connector, "fetch", fetch)
+    try:
+        assert len(list(connector.records())) == 1
+        assert fresh not in calls
+        assert connector.report["checked"] == 1 and connector.report["fresh_skipped"] == 1
+    finally:
+        connector.close()
+
+
+def test_rechecks_are_scoped_to_city_and_freshness(session, record, monkeypatch):
+    from datetime import timedelta
+
+    from realtoruch.models import now
+
+    ingest(session, record)
+    ingest(session, record.model_copy(update={"city": "Kraków", "external_id": "krakow-old"}))
+    ingest(
+        session,
+        record.model_copy(
+            update={
+                "city": "Kraków",
+                "external_id": "krakow-new",
+                "address": "Another 42",
+                "observed_at": now() - timedelta(minutes=1),
+            }
+        ),
+    )
+    session.commit()
+    monkeypatch.setattr(worker, "Session", sessionmaker(session.bind, expire_on_commit=False))
+    _, due = worker.source_state(configured(city="Kraków", recheck_interval_minutes=360), False)
+    assert [item["previous"]["external_id"] for item in due] == ["krakow-old"]

@@ -1,5 +1,6 @@
 import math
 import re
+
 from .normalization import fold
 
 
@@ -25,6 +26,9 @@ def matching_property(candidate, data, sources):
     address = fold(data["address"])
     same_address = bool(re.search(r"\d", address)) and fold(candidate.address) == address
     distance = distance_m(candidate, data)
+    same_phone = bool(data.get("phone_hash")) and any(s.phone_hash == data["phone_hash"] for s in sources)
+    images = {image for source in sources for image in source.data.get("images", [])}
+    same_image = bool(images.intersection(data["images"]))
     if (
         data["source"] in ("gratka", "morizon")
         and data.get("syndication_key")
@@ -39,10 +43,20 @@ def matching_property(candidate, data, sources):
         )
     ):
         return "Shared Morizon–Gratka listing identity, street, area and rooms"
+    # A repost may omit the building number. Require two independent corroborating
+    # signals plus close coordinates; one shared contact never merges properties.
+    if (
+        address
+        and fold(candidate.address) == address
+        and same_phone
+        and same_image
+        and any(s.source == data["source"] for s in sources)
+        and distance is not None
+        and distance <= 50
+    ):
+        return "Same street, contact, photo, area, rooms and nearby location"
     if not same_address or (distance is not None and distance > 100):
         return None
-    same_phone = bool(data.get("phone_hash")) and any(s.phone_hash == data["phone_hash"] for s in sources)
-    same_image = bool(set(candidate.images).intersection(data["images"]))
     if same_phone or same_image:
         return "Same building address, area, rooms and " + (
             "contact fingerprint" if same_phone else "image URL"

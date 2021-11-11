@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, Query
 import httpx
+from fastapi import FastAPI, HTTPException, Query
+
 from .schemas import SearchFilters
-from .settings import get_settings
 from .security import install_http
+from .settings import get_settings
 
 settings = get_settings()
 app = FastAPI(
@@ -46,6 +47,8 @@ def build_query(f: SearchFilters):
             filters.append({"term": {field: value}})
     for field, lower, upper in (("rent_pln", f.min_price, f.max_price), ("area_m2", f.min_area, f.max_area)):
         bounds = {key: value for key, value in (("gte", lower), ("lte", upper)) if value is not None}
+        if field == "rent_pln" and f.max_price_exclusive and "lte" in bounds:
+            bounds["lt"] = bounds.pop("lte")
         if bounds:
             filters.append({"range": {field: bounds}})
     if f.no_commission:
@@ -58,6 +61,20 @@ def build_query(f: SearchFilters):
             {
                 "geo_bounding_box": {
                     "location": {"top_left": {"lat": n, "lon": w}, "bottom_right": {"lat": s, "lon": e}}
+                }
+            }
+        )
+    if f.polygon:
+        from .geometry import parse_polygon
+
+        points = parse_polygon(f.polygon)
+        filters.append(
+            {
+                "geo_shape": {
+                    "location": {
+                        "shape": {"type": "polygon", "coordinates": [points + points[:1]]},
+                        "relation": "intersects",
+                    }
                 }
             }
         )

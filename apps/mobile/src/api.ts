@@ -7,6 +7,7 @@ import type {
   Summary,
   History,
   SavedSearch,
+  NotificationInbox,
 } from "./types";
 
 export const API_URL =
@@ -90,6 +91,16 @@ export const api = {
   favorite: (id: string, saved: boolean) =>
     request(`/v1/me/favorites/${id}`, { method: saved ? "PUT" : "DELETE" }),
   searches: () => request<{ items: SavedSearch[] }>("/v1/me/searches"),
+  seen: (id: string) => request(`/v1/me/seen/${id}`, { method: "PUT" }),
+  listingState: (ids: string[]) =>
+    request<{ seen_ids: string[] }>("/v1/me/listing-state", {
+      method: "POST",
+      body: JSON.stringify({ listing_ids: ids }),
+    }),
+  notifications: (page = 1) =>
+    request<NotificationInbox>(`/v1/me/notifications?page=${page}`),
+  readNotification: (id: string) =>
+    request(`/v1/me/notifications/${id}/read`, { method: "PUT" }),
   saveSearch: (name: string, filters: Filters) =>
     request("/v1/me/searches", {
       method: "POST",
