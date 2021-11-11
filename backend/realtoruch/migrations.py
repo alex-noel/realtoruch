@@ -68,7 +68,7 @@ def upgrade_local(engine, database="rentals"):
     """Run immutable versioned SQLite-only callbacks; never execute PostgreSQL DDL."""
     if engine.dialect.name != "sqlite" or database not in {"rentals", "auth"}:
         raise ValueError("SQLite and a known database are required")
-    hooks = {"rentals": [("001", _baseline_local), ("005", _collection_fetch_local), ("006", _search_revision_local), ("008", _delivery_rentals_local)], "auth": [("005", _delivery_auth_local)]}[database]
+    hooks = {"rentals": [("001", _baseline_local), ("005", _collection_fetch_local), ("006", _search_revision_local), ("008", _delivery_rentals_local), ("010", _message_cursors_local)], "auth": [("005", _delivery_auth_local)]}[database]
     versions = [version for version, _ in hooks]
     if versions != sorted(set(versions)):
         raise ValueError("Duplicate or out-of-order local hooks")
@@ -160,6 +160,18 @@ def _delivery_rentals_local(engine):
 
 def _delivery_auth_local(engine):
     _add_claim_columns(engine, ("auth_jobs",))
+
+
+def _message_cursors_local(engine):
+    with engine.begin() as connection:
+        columns = {c["name"] for c in inspect(connection).get_columns("conversations")}
+        for column in ("renter_read_message_id", "owner_read_message_id"):
+            if column not in columns:
+                connection.execute(text(f"ALTER TABLE conversations ADD COLUMN {column} VARCHAR(36)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_conversations_renter_order ON conversations (renter_id, updated_at, id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_conversations_owner_order ON conversations (owner_id, updated_at, id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_message_thread_order ON messages (conversation_id, created_at, id)"))
+
 
 def main():
     import argparse
