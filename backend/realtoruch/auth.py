@@ -128,12 +128,19 @@ class RefreshBody(BaseModel):
 
 
 def init_auth_db():
+    if auth_engine.dialect.name != "sqlite":
+        from .migrations import apply_postgres
+        with auth_engine.begin() as connection:
+            apply_postgres(connection, "auth")
+        return
     AuthBase.metadata.create_all(auth_engine)
     columns = {c["name"] for c in inspect(auth_engine).get_columns("users")}
     with auth_engine.begin() as connection:
         for column in ("verified_at", "deleted_at"):
             if column not in columns:
                 connection.execute(text(f"ALTER TABLE users ADD COLUMN {column} TIMESTAMP"))
+    from .migrations import upgrade_local
+    upgrade_local(auth_engine, "auth")
 
 
 @asynccontextmanager

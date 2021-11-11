@@ -63,7 +63,11 @@ def get_session():
 def init_db():
     from . import models  # noqa: F401
 
-    Base.metadata.create_all(engine)
-    from .migrations import upgrade_local
+    from .migrations import apply_postgres, upgrade_local
 
-    upgrade_local(engine)
+    if engine.dialect.name == "sqlite":
+        Base.metadata.create_all(engine)
+        upgrade_local(engine)
+    else:
+        with engine.begin() as connection:
+            apply_postgres(connection, "rentals")

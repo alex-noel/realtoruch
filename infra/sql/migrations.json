@@ -1,0 +1,12 @@
+{
+  "rentals": [
+    {"version": "001", "file": "001_rentals.sql"},
+    {"version": "002", "file": "002_alerts.sql"},
+    {"version": "003", "file": "003_email_alerts.sql"},
+    {"version": "004", "file": "004_marketplace_rentals.sql"}
+  ],
+  "auth": [
+    {"version": "001", "file": "001_auth.sql"},
+    {"version": "004", "file": "004_accounts_auth.sql"}
+  ]
+}
