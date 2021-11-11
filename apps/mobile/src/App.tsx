@@ -37,7 +37,7 @@ import Sprout from "lucide-react-native/icons/sprout";
 import TrendingUp from "lucide-react-native/icons/trending-up";
 import User from "lucide-react-native/icons/user";
 import X from "lucide-react-native/icons/x";
-import { api, API_URL, request, restoreToken, setToken, subscribeSession, SessionState, SessionError, getSessionState, isCurrentAccessToken } from "./api";
+import { api, API_URL, restoreToken, setToken, subscribeSession, SessionState, SessionError, getSessionState, isCurrentAccessToken } from "./api";
 import { AccountDialog, ResetPasswordDialog } from "./components/AccountDialog";
 import { market } from "./marketplaceApi";
 import {
@@ -316,27 +316,33 @@ function RentalApp() {
         }
         const owner = currentUser.current;
         const accountGeneration = sessionGeneration.current;
+        const requestId = ++detailRequest.current;
         const stillCurrent = () =>
           isCurrent() &&
+          detailRequest.current === requestId &&
           (destination.type !== "saved-listing" ||
-            (!!owner && currentUser.current === owner && sessionGeneration.current === accountGeneration));
-        const listingId = destination.type === "advert"
-          ? (await market.publicAdvert(destination.id)).listing_id
-          : destination.id;
-        if (!stillCurrent()) return;
-        if (listingFromPush(listingId).type !== "listing")
-          throw new SessionError("http", "This home is unavailable.", 404);
-        const home = await api.detail(listingId);
-        if (!stillCurrent()) return;
-        if (destination.type === "saved-listing") {
-          const saved = await api.favorites();
+            (!!owner && isCurrentAccount(accountGeneration, owner)));
+        try {
+          const listingId = destination.type === "advert"
+            ? (await market.publicAdvert(destination.id)).listing_id
+            : destination.id;
           if (!stillCurrent()) return;
-          if (!saved.items.some((favorite) => favorite.id === home.id))
-            throw new SessionError("http", "This home is unavailable in your saved homes.", 404);
-          setTab("saved");
+          if (listingFromPush(listingId).type !== "listing")
+            throw new SessionError("http", "This home is unavailable.", 404);
+          const home = await api.detail(listingId);
+          if (!stillCurrent()) return;
+          if (destination.type === "saved-listing") {
+            const saved = await api.favorites();
+            if (!stillCurrent()) return;
+            if (!saved.items.some((favorite) => favorite.id === home.id))
+              throw new SessionError("http", "This home is unavailable in your saved homes.", 404);
+            setTab("saved");
+          }
+          setDialog(null);
+          openHome(home, false);
+        } catch (error) {
+          if (stillCurrent()) throw error;
         }
-        setDialog(null);
-        openHome(home, false);
       },
       async consume(action) {
         if (action.type === "verify-account") {
@@ -344,14 +350,8 @@ function RentalApp() {
           return "Email verified. You can return to your account.";
         }
         setTab("notifications");
-        const endpoint = action.type === "confirm-email" ? "confirm" : "unsubscribe";
-        await request(
-          `/v1/notifications/email/${endpoint}`,
-          { method: "POST", body: JSON.stringify({ token: action.token }) },
-          false,
-          false,
-        );
-        return endpoint === "confirm"
+        await api.emailAlertLink(action.type, action.token);
+        return action.type === "confirm-email"
           ? "Email alerts are enabled. New matches and lower prices on liked homes will arrive by email."
           : "Email alerts are disabled. Your saved homes and in-app notifications are still available.";
       },
@@ -1644,11 +1644,21 @@ function RentalApp() {
               refreshAccount();
             }}
             onOpenHome={(id) => {
+              const generation = sessionGeneration.current;
+              const owner = currentUser.current;
+              const requestId = ++detailRequest.current;
+              const stillCurrent = () =>
+                requestId === detailRequest.current &&
+                isCurrentAccount(generation, owner);
               setDialog(null);
               api
                 .detail(id)
-                .then(openHome)
-                .catch((e) => setToast(e.message));
+                .then((home) => {
+                  if (stillCurrent()) openHome(home, false);
+                })
+                .catch((e) => {
+                  if (stillCurrent()) setToast(e.message);
+                });
             }}
           />
         </Suspense>

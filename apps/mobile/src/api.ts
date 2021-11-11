@@ -292,7 +292,8 @@ export const api = {
       `/v1/listings?${queryString({ ...filters, page, page_size: 24 })}`,
       { signal, anonymous: true },
     ),
-  detail: (id: string) => request<Listing>(`/v1/listings/${id}`),
+  detail: (id: string) =>
+    request<Listing>(`/v1/listings/${id}`, { anonymous: true }),
   summary: (city: string, signal?: AbortSignal) =>
     request<Summary>(`/v1/market/summary?${queryString({ city })}`, { signal, anonymous: true }),
   sources: (city: string, signal?: AbortSignal) =>
@@ -392,8 +393,16 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify({ token }),
+        anonymous: true,
       },
       true,
+      false,
+    ),
+  emailAlertLink: (action: "confirm-email" | "unsubscribe-email", token: string) =>
+    request<{ message: string }>(
+      `/v1/notifications/email/${action === "confirm-email" ? "confirm" : "unsubscribe"}`,
+      { method: "POST", body: JSON.stringify({ token }), anonymous: true },
+      false,
       false,
     ),
   requestVerification: () =>
