@@ -32,3 +32,107 @@ spec:
         - podSelector: { matchLabels: { app: search } }
         - podSelector: { matchLabels: { app: indexer } }
       ports: [{ protocol: TCP, port: 9200 }]
+---
+# Restrict SQL port to workloads that actually use SQL. Database grants still
+# enforce rentals/auth isolation when both databases share one SQL instance.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: workload-egress }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    # Workload Identity metadata; actual address depends on GKE dataplane.
+    - to: [{ ipBlock: { cidr: 169.254.169.254/32 } }, { ipBlock: { cidr: 169.254.169.252/32 } }]
+      ports: [{ protocol: TCP, port: 80 }, { protocol: TCP, port: 988 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: sql-egress }
+spec:
+  podSelector:
+    matchExpressions: [{ key: app, operator: In, values: [api, auth, auth-worker, alerts, indexer] }]
+  policyTypes: [Egress]
+  egress:
+    - to: [{ ipBlock: { cidr: {{ .Values.network.sqlCidr | quote }} } }]
+      ports: [{ protocol: TCP, port: 5432 }, { protocol: TCP, port: 3307 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: external-https-egress }
+spec:
+  podSelector:
+    matchExpressions: [{ key: app, operator: In, values: [api, auth, auth-worker, alerts, indexer, search, collector] }]
+  policyTypes: [Egress]
+  egress:
+    # Private Google APIs, Secret Manager, queue, provider and push HTTPS.
+    - ports: [{ protocol: TCP, port: 443 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: api-service-egress }
+spec:
+  podSelector: { matchLabels: { app: api } }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: auth } }
+        - podSelector: { matchLabels: { app: search } }
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: auth-worker-api-egress }
+spec:
+  podSelector: { matchLabels: { app: auth-worker } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: api } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: elasticsearch-client-egress }
+spec:
+  podSelector:
+    matchExpressions: [{ key: app, operator: In, values: [search, indexer] }]
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: elasticsearch } } }]
+      ports: [{ protocol: TCP, port: 9200 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: delivery-smtp-egress }
+spec:
+  podSelector:
+    matchExpressions: [{ key: app, operator: In, values: [auth-worker, alerts] }]
+  policyTypes: [Egress]
+  egress:
+    - ports: [{ protocol: TCP, port: 465 }, { protocol: TCP, port: 587 }]
+---
+# The operator must label the trusted private scraper and configure the
+# X-Internal-Key header from a secret; this does not expose a public route.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: private-metrics-scraper }
+spec:
+  podSelector:
+    matchExpressions: [{ key: app, operator: In, values: [api, auth] }]
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { realtoruch-metrics-scraper: "true" } } }]
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: private-metrics-scraper-egress }
+spec:
+  podSelector: { matchLabels: { realtoruch-metrics-scraper: "true" } }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: api } }
+        - podSelector: { matchLabels: { app: auth } }
+      ports: [{ protocol: TCP, port: 8000 }]

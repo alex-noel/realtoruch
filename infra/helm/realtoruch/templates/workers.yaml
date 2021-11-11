@@ -26,6 +26,7 @@ spec:
       labels: { app: indexer }
     spec:
       serviceAccountName: indexer
+      terminationGracePeriodSeconds: 30
       nodeSelector: { workload: core }
       securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
       containers:
@@ -67,6 +68,7 @@ spec:
         spec:
           restartPolicy: OnFailure
           serviceAccountName: collector
+          terminationGracePeriodSeconds: 30
           nodeSelector: { workload: collectors }
           tolerations: [{ key: workload, operator: Equal, value: collectors, effect: NoSchedule }]
           securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
@@ -103,6 +105,7 @@ spec:
         spec:
           restartPolicy: OnFailure
           serviceAccountName: indexer
+          terminationGracePeriodSeconds: 30
           nodeSelector: { workload: core }
           securityContext: { runAsNonRoot: true, runAsUser: 10001 }
           containers:
