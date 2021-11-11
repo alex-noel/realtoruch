@@ -5,6 +5,7 @@ from datetime import timedelta
 from sqlalchemy import select, text
 
 from .dedupe import matching_property
+from .delivery_claims import cancel_notifications
 from .models import AlertEvent, EventReceipt, Listing, Observation, Outbox, SourceListing, now
 from .normalization import normalize
 from .schemas import RawListing
@@ -50,6 +51,8 @@ def recompute_listing(session, listing, *, new_property=False):
     )
     if listing.hidden:
         listing.status = "inactive"
+    if before["status"] == "active" and listing.status != "active":
+        cancel_notifications(session, listing_id=listing.id)
     listing.last_seen = max(s.observed_at for s in sources)
     flags = []
     cutoff = now() - timedelta(days=90)

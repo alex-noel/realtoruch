@@ -13,6 +13,7 @@ import httpx
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import or_, select
 
+from .delivery_claims import claim, finish, lock_owned
 from .models import Favorite, Listing, Notification, PushDelivery, PushSubscription, now
 from .settings import get_settings
 
@@ -190,43 +191,48 @@ def check_receipt(receipt_id):
     return True
 
 
+def _safe_error(code):
+    # Provider-supplied details may contain a destination or other private data.
+    if not isinstance(code, str):
+        return "push_error"
+    if code in {"DeviceNotRegistered", "InvalidCredentials", "MessageTooBig",
+                "expo_push_rejected", "expo_receipt_error", "web_push_not_configured",
+                "expo_push_not_configured", "invalid_push_endpoint", "web_push_network",
+                "web_push_rejected", "temporary", "gone"} or re.fullmatch(r"web_push_[0-9]{3}", code):
+        return code
+    return "push_error"
+
+
+def _eligible(session, delivery):
+    item = session.get(Notification, delivery.notification_id)
+    subscription = session.get(PushSubscription, delivery.subscription_id)
+    home = session.get(Listing, item.listing_id) if item else None
+    valid = bool(item and subscription and home and subscription.active
+                 and subscription.user_id == item.user_id and not item.read_at
+                 and home.status == "active" and home.rent_pln == item.rent_pln
+                 and (item.kind != "price_drop" or session.get(Favorite, (item.user_id, home.id)))
+                 and (item.kind != "new_match" or item.search_id))
+    return valid, item, subscription
+
+
 def dispatch_push(session_factory, *, limit=50, sender=send_push, receipt_checker=check_receipt):
     """Lease in SQL, send outside the transaction, then acknowledge. Providers are at-least-once."""
     count = 0
+    statuses = ["pending", "retry", "receipt"]
     for _ in range(limit):
         with session_factory.begin() as session:
-            delivery = session.scalar(
-                select(PushDelivery)
-                .where(
-                    PushDelivery.status.in_(["pending", "retry", "receipt"]),
-                    PushDelivery.next_attempt_at <= now(),
-                    or_(PushDelivery.lease_until.is_(None), PushDelivery.lease_until < now()),
-                )
-                .order_by(PushDelivery.next_attempt_at)
-                .limit(1)
-                .with_for_update(skip_locked=True)
-            )
+            delivery, token = claim(session, PushDelivery, statuses)
             if not delivery:
                 break
-            item = session.get(Notification, delivery.notification_id)
-            subscription = session.get(PushSubscription, delivery.subscription_id)
-            home = session.get(Listing, item.listing_id)
-            if (
-                not subscription.active
-                or subscription.user_id != item.user_id
-                or item.read_at
-                or home.status != "active"
-                or home.rent_pln != item.rent_pln
-                or (item.kind == "price_drop" and not session.get(Favorite, (item.user_id, home.id)))
-                or (item.kind == "new_match" and not item.search_id)
-            ):
-                delivery.status = "cancelled"
+            valid, item, subscription = _eligible(session, delivery)
+            if (not valid and not delivery.receipt_id) or (not delivery.receipt_id and delivery.attempts > 8):
+                finish(session, PushDelivery, delivery.id, token, statuses,
+                       {"status": "cancelled" if not valid else "failed"})
                 continue
-            delivery.lease_until = now() + timedelta(seconds=60)
-            delivery.attempts += 1
-            delivery_id, receipt_id = delivery.id, delivery.receipt_id
-            payload = payload_for(item)
-            session.expunge(subscription)
+            delivery_id, receipt_id, attempts = delivery.id, delivery.receipt_id, delivery.attempts
+            payload = payload_for(item) if not receipt_id else None
+            if subscription:
+                session.expunge(subscription)
         error, accepted, ticket = None, False, receipt_id
         try:
             if receipt_id:
@@ -237,25 +243,27 @@ def dispatch_push(session_factory, *, limit=50, sender=send_push, receipt_checke
         except PushFailure as exc:
             error = exc
         except Exception as exc:
-            # Error classes only: provider exceptions can contain private push tokens.
             error = PushFailure(type(exc).__name__)
         with session_factory.begin() as session:
+            if not lock_owned(session, PushDelivery, delivery_id, token, statuses):
+                continue
             delivery = session.get(PushDelivery, delivery_id)
-            delivery.lease_until = None
-            if error:
-                delivery.last_error = error.code[:100]
-                delivery.status = (
-                    "failed" if error.permanent or error.gone or delivery.attempts >= 8 else "retry"
-                )
-                if error.gone:
-                    session.get(PushSubscription, delivery.subscription_id).active = False
-                delivery.next_attempt_at = now() + timedelta(seconds=min(3600, 30 * 2**delivery.attempts))
+            valid, _, current_subscription = _eligible(session, delivery)
+            if not valid and not receipt_id:
+                values = {"status": "cancelled", "last_error": None}
+            elif error:
+                # An accepted Expo ticket stays a receipt even when the receipt request fails.
+                status = "failed" if error.permanent or error.gone or attempts >= (20 if receipt_id else 8) else ("receipt" if receipt_id else "retry")
+                values = {"status": status, "last_error": _safe_error(error.code),
+                          "next_attempt_at": now() + timedelta(seconds=min(3600, 30 * 2**min(attempts, 7)))}
+                if error.gone and current_subscription:
+                    current_subscription.active = False
             elif accepted:
-                delivery.status, delivery.delivered_at, delivery.last_error = "sent", now(), None
+                values = {"status": "sent", "delivered_at": now(), "last_error": None}
             else:
-                delivery.receipt_id = ticket
-                delivery.status = "receipt" if delivery.attempts < 20 else "failed"
-                delivery.last_error = None if delivery.attempts < 20 else "receipt_timeout"
-                delivery.next_attempt_at = now() + timedelta(minutes=2)
+                values = {"receipt_id": ticket, "status": "receipt" if attempts < 20 else "failed",
+                          "last_error": None if attempts < 20 else "receipt_timeout",
+                          "next_attempt_at": now() + timedelta(minutes=2)}
+            finish(session, PushDelivery, delivery_id, token, statuses, values)
         count += 1
     return count
