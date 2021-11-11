@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select, text, update
 
 from .account_data import guard_account_write
-from .alerts import insert_once
+from .alerts import insert_once, process_alerts
 from .db import get_session
 from .ingest import PROPERTY_FIELDS, lock_identity, recompute_listing
 from .marketplace import require_moderator
@@ -24,14 +24,19 @@ from .models import (
     Outbox,
     PushDelivery,
     Report,
+    SavedSearch,
     SearchMatch,
     SeenPrice,
     SourceListing,
     now,
 )
-from .query import serialize_many
+from .normalization import fold
+from .query import filtered_query, serialize_many
+from .schemas import SearchFilters
 
 router = APIRouter(tags=["Identity review"])
+
+MAX_MERGE_EVENTS = 100
 
 
 def resolve_id(session, listing_id):
@@ -68,6 +73,32 @@ def copy_preferences(session, source_id, target_id, *, move):
             if move:
                 session.delete(row)
     session.flush()
+
+
+def baseline_corrected_home(session, home):
+    """Account silently for newly linked prices, without inventing past favorites.
+
+    Genuine pending work is evaluated against each original card before merge.
+    After correction, never raise a historical floor; a lower selected price
+    becomes the new silent baseline, including while hidden or inactive.
+    """
+    visible_active = home.status == "active" and not home.hidden
+    for favorite in session.scalars(select(Favorite).where(Favorite.listing_id == home.id)).yield_per(100):
+        favorite.price_floor = (home.rent_pln if favorite.price_floor is None
+                                else min(favorite.price_floor, home.rent_pln))
+    session.flush()
+    if not visible_active:
+        return
+    searches = session.scalars(select(SavedSearch).where(
+        SavedSearch.city_key.in_(["", fold(home.city)])
+    )).yield_per(100)
+    for search in searches:
+        if session.get(SearchMatch, (search.id, home.id)):
+            continue
+        match = session.scalar(filtered_query(SearchFilters(**search.filters))
+                               .with_only_columns(Listing.id).where(Listing.id == home.id))
+        if match:
+            insert_once(session, SearchMatch, {"search_id": search.id, "listing_id": home.id})
 
 
 class MergeBody(BaseModel):
@@ -149,13 +180,30 @@ def merge(
     sources = session.scalars(select(SourceListing).where(SourceListing.listing_id == source_id)).all()
     if not sources:
         raise HTTPException(409, "Source identity has already changed")
-    prior_events = list(
-        session.scalars(
-            select(AlertEvent.id).where(
-                AlertEvent.listing_id.in_([source_id, target_id]), AlertEvent.processed_at.is_(None)
-            )
-        )
-    )
+    # Evaluate real pending work against each original card before changing its
+    # identity or price. Large backlogs can be drained normally and retried.
+    pending = session.scalars(select(AlertEvent.id).where(
+        AlertEvent.listing_id.in_([source_id, target_id]), AlertEvent.processed_at.is_(None)
+    ).limit(MAX_MERGE_EVENTS + 1)).all()
+    if len(pending) > MAX_MERGE_EVENTS:
+        raise HTTPException(409, "Pending alert state prevents this merge; drain it and retry")
+    created = []
+    if pending:
+        process_alerts(session, limit=MAX_MERGE_EVENTS, listing_ids=[source_id, target_id],
+                       created_notifications=created)
+        if session.scalar(select(AlertEvent.id).where(
+            AlertEvent.listing_id.in_([source_id, target_id]), AlertEvent.processed_at.is_(None)
+        ).limit(1)):
+            raise HTTPException(409, "Pending alert state prevents this merge; retry after it is resolved")
+    # Two pre-correction cards can produce both kinds for the same user/price.
+    # Suppress only a newly created new-match, never historical notifications.
+    drops = {(item.user_id, item.rent_pln) for item in created if item.kind == "price_drop"}
+    for item in created:
+        if item.kind == "new_match" and (item.user_id, item.rent_pln) in drops:
+            session.execute(delete(EmailDelivery).where(EmailDelivery.notification_id == item.id))
+            session.execute(delete(PushDelivery).where(PushDelivery.notification_id == item.id))
+            session.delete(item)
+    session.flush()
     copy_preferences(session, source_id, target_id, move=True)
     for notification in session.scalars(
         select(Notification).where(Notification.listing_id == source_id)
@@ -165,8 +213,8 @@ def merge(
         ).hexdigest()
         existing = session.scalar(select(Notification).where(Notification.dedupe_key == key))
         if existing:
-            session.execute(delete(PushDelivery).where(PushDelivery.notification_id == notification.id))
             session.execute(delete(EmailDelivery).where(EmailDelivery.notification_id == notification.id))
+            session.execute(delete(PushDelivery).where(PushDelivery.notification_id == notification.id))
             if notification.read_at and not existing.read_at:
                 existing.read_at = notification.read_at
             session.delete(notification)
@@ -187,22 +235,9 @@ def merge(
     if source_id < target_id:
         queue_listing(session, source_id)
     recompute_listing(session, target, identity_correction=True)
+    baseline_corrected_home(session, target)
     if source_id > target_id:
         queue_listing(session, source_id)
-    session.execute(
-        update(AlertEvent)
-        .where(
-            AlertEvent.listing_id.in_([source_id, target_id]),
-            AlertEvent.processed_at.is_(None),
-            ~AlertEvent.id.in_(prior_events),
-        )
-        .values(processed_at=now())
-    )
-    session.execute(
-        update(AlertEvent)
-        .where(AlertEvent.listing_id == source_id, AlertEvent.processed_at.is_(None))
-        .values(listing_id=target_id)
-    )
     session.add(
         IdentityDecision(
             moderator_id=moderator,
@@ -279,8 +314,8 @@ def split(
     session.flush()
     for listing in sorted((home, new), key=lambda row: row.id):
         recompute_listing(session, listing, identity_correction=True)
-    for favorite in session.scalars(select(Favorite).where(Favorite.listing_id == new.id)):
-        favorite.price_floor = min(favorite.price_floor or new.rent_pln, new.rent_pln)
+    baseline_corrected_home(session, home)
+    baseline_corrected_home(session, new)
     session.flush()
     session.add(
         IdentityDecision(
