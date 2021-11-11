@@ -10,6 +10,7 @@ from .connectors import Connector, load_sources
 from .db import Session, init_db
 from .fetch_state import CachedPage, Validators, url_key
 from .ingest import ingest, lock_identity, recompute_listing, record_unchanged_check
+from .metrics import lifecycle_log, provider_label, worker_readiness
 from .models import CollectionFetchState, EventReceipt, Listing, Outbox, SourceListing, now
 from .normalization import normalize
 from .query import serialize_many
@@ -291,7 +292,9 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
         return reports
     for configured in configurations:
         config = {**configured, **(limits or {})}
+        provider = provider_label(config["name"])
         if not config.get("enabled"):
+            lifecycle_log(log, "collection_report", provider=provider, outcome="disabled")
             reports.append({"source": config["name"], "status": "disabled", "errors": []})
             continue
         from .collection_health import LeaseHeartbeat, LeaseLost, claim, finish, guard
@@ -300,6 +303,7 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
         if not cloud:
             run_id, deferred = claim(Session, config)
             if deferred:
+                lifecycle_log(log, "collection_report", provider=provider, outcome="deferred", reason=deferred["reason"])
                 reports.append(deferred)
                 continue
         lease = LeaseHeartbeat(Session, config["name"], run_id) if run_id else None
@@ -374,7 +378,6 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
             # Store class/status only; upstream exceptions may contain raw contact data or secrets.
             if not connector.report["errors"]:
                 connector.note_error(exc, "collection")
-            log.error("source_failed source=%s error=%s", config["name"], type(exc).__name__)
         finally:
             connector.close()
             if lease:
@@ -395,7 +398,12 @@ def collect(cloud=False, *, source_names=None, limits=None, city=None, workers=1
             if not report["errors"]:
                 connector.note_error(LeaseLost("Collection lease was lost"), "collection")
         reports.append(report)
-        log.info("collection_report %s", json.dumps(report, sort_keys=True))
+        http_statuses = [error.get("http_status") for error in report["errors"]]
+        lifecycle_log(
+            log, "collection_report", provider=provider, outcome=report["status"],
+            ingested=ingested, errors=len(http_statuses),
+            forbidden=http_statuses.count(403), throttled=http_statuses.count(429),
+        )
     if any(report["errors"] for report in reports):
         raise CollectionFailed(reports)
     return reports
@@ -468,10 +476,11 @@ def alerts_once():
         processed = process_alerts(session)
     from .push import dispatch_push
 
-    dispatch_push(Session)
+    push_count = dispatch_push(Session)
     from .email_alerts import dispatch_email
 
-    dispatch_email(Session)
+    email_count = dispatch_email(Session)
+    lifecycle_log(log, "delivery_cycle", alerts=processed, push=push_count, email=email_count)
     return processed
 
 
@@ -482,6 +491,7 @@ def main():
     )
     parser.add_argument("--cloud", action="store_true")
     parser.add_argument("--loop", action="store_true")
+    parser.add_argument("--check-ready", action="store_true", help="Read-only delivery readiness check")
     parser.add_argument("--source", action="append", help="Collect only this configured source; repeatable")
     parser.add_argument("--city", help="Select a configured city, for example Kraków or Warszawa")
     parser.add_argument(
@@ -500,6 +510,23 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    if args.check_ready:
+        if args.command != "alerts":
+            parser.error("--check-ready requires alerts")
+        from .models import (
+            AlertEvent, EmailDelivery, EmailSubscription, Favorite, Notification, PushDelivery,
+            PushSubscription, SavedSearch, SearchMatch, SeenPrice,
+        )
+
+        outcome = worker_readiness(
+            Session, (
+                Listing, SourceListing, AlertEvent, Notification, EmailDelivery, EmailSubscription,
+                PushDelivery, PushSubscription, Favorite, SavedSearch, SearchMatch, SeenPrice,
+            ),
+            get_settings(),
+        )
+        lifecycle_log(log, "delivery_readiness", outcome=outcome)
+        return 0 if outcome == "ready" else 1
     if args.command == "baseline-searches":
         from .alerts import baseline_search
         from .models import SavedSearch
@@ -549,7 +576,7 @@ def main():
             if failure and not args.loop:
                 raise SystemExit(1)
         elif args.command == "index":
-            index_once()
+            lifecycle_log(log, "index_cycle", acknowledged=index_once())
         elif args.command == "alerts":
             alerts_once()
         else:
@@ -560,4 +587,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        raise SystemExit(main())
+    except Exception:
+        lifecycle_log(log, "worker_failed")
+        raise SystemExit(1) from None

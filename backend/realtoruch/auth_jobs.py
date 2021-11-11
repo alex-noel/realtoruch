@@ -1,6 +1,7 @@
 """Durable identity mail and account-erasure jobs. Run beside the auth service."""
 
 import argparse
+import logging
 import time
 from datetime import timedelta
 from email.message import EmailMessage
@@ -9,11 +10,19 @@ from email.utils import format_datetime
 import httpx
 from sqlalchemy import delete, or_, select, update
 
-from .auth import AccountToken, AuthJob, AuthSession, LoginSession, User, digest, init_auth_db
+from .auth import AccountToken, AuthJob, AuthSession, LoginSession, RefreshToken, User, digest, init_auth_db
 from .delivery_claims import claim, finish, lock_owned
 from .email_alerts import send_email
+from .metrics import lifecycle_log, worker_readiness
 from .models import now
 from .settings import get_settings
+
+
+log = logging.getLogger(__name__)
+
+
+def job_queue(kind):
+    return "account_erasure" if kind == "delete" else "auth_mail"
 
 
 def erase_rental_data(user_id):
@@ -39,8 +48,10 @@ def process_jobs(*, limit=20, sender=send_email, eraser=erase_rental_data):
             if job.kind != "delete":
                 link = session.get(AccountToken, digest(job.secret)) if job.secret else None
                 if not user or user.deleted_at or not link or link.used_at or link.expires_at <= now() or job.attempts > 8:
-                    finish(session, AuthJob, job.id, token, ["pending", "retry"],
-                           {"status": "failed" if job.attempts > 8 else "cancelled", "secret": None})
+                    status = "failed" if job.attempts > 8 else "cancelled"
+                    owned = finish(session, AuthJob, job.id, token, ["pending", "retry"],
+                                   {"status": status, "secret": None})
+                    lifecycle_log(log, "auth_job", queue="auth_mail", outcome=status if owned else "fenced")
                     continue
                 message = EmailMessage()
                 message["From"], message["To"] = settings.email_from, user.email
@@ -54,7 +65,8 @@ def process_jobs(*, limit=20, sender=send_email, eraser=erase_rental_data):
                     "If you did not request this, ignore this email.\n"
                 )
             elif user and not user.deleted_at:
-                finish(session, AuthJob, job.id, token, ["pending", "retry"], {"status": "cancelled"})
+                owned = finish(session, AuthJob, job.id, token, ["pending", "retry"], {"status": "cancelled"})
+                lifecycle_log(log, "auth_job", queue="account_erasure", outcome="cancelled" if owned else "fenced")
                 continue
             job_id, user_id, kind, attempts = job.id, job.user_id, job.kind, job.attempts
         error = None
@@ -67,6 +79,7 @@ def process_jobs(*, limit=20, sender=send_email, eraser=erase_rental_data):
             error = type(exc).__name__[:100]
         with AuthSession.begin() as session:
             if not lock_owned(session, AuthJob, job_id, token, ["pending", "retry"]):
+                lifecycle_log(log, "auth_job", queue=job_queue(kind), outcome="fenced")
                 continue
             job = session.get(AuthJob, job_id)
             user = session.get(User, user_id)
@@ -85,6 +98,7 @@ def process_jobs(*, limit=20, sender=send_email, eraser=erase_rental_data):
             owned = finish(session, AuthJob, job_id, token, ["pending", "retry"], values)
             if owned and not error and not invalid and kind == "delete":
                 session.execute(delete(User).where(User.id == user_id, User.deleted_at.is_not(None)))
+        lifecycle_log(log, "auth_job", queue=job_queue(kind), outcome=values["status"] if owned else "fenced")
         count += 1
     # Retain spent refresh hashes until their session expires to detect reuse.
     with AuthSession.begin() as session:
@@ -102,15 +116,29 @@ def process_jobs(*, limit=20, sender=send_email, eraser=erase_rental_data):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--loop", action="store_true")
+    parser.add_argument("--check-ready", action="store_true", help="Read-only delivery readiness check")
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    if args.check_ready:
+        outcome = worker_readiness(
+            AuthSession, (User, LoginSession, RefreshToken, AccountToken, AuthJob),
+            get_settings(), needs_cleanup_api=True,
+        )
+        lifecycle_log(log, "auth_worker_readiness", outcome=outcome)
+        return 0 if outcome == "ready" else 1
     if get_settings().environment != "production":
         init_auth_db()
     while True:
-        print({"processed_auth_jobs": process_jobs()}, flush=True)
+        lifecycle_log(log, "auth_job_cycle", processed=process_jobs())
         if not args.loop:
             return
         time.sleep(5)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        raise SystemExit(main())
+    except Exception:
+        lifecycle_log(log, "auth_worker_failed")
+        raise SystemExit(1) from None
