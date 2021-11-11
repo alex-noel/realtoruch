@@ -1,18 +1,146 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const f = vi.hoisted(() => ({ platform: { OS: "ios" }, store: new Map<string, string>(), failRead: false, failWrite: false }));
+const f = vi.hoisted(() => ({ platform: { OS: "ios" }, store: new Map<string, string>(), failRead: false, failWrite: false, failDelete: false, writeGate: null as Promise<void> | null, enteredWrite: false }));
 vi.mock("react-native", () => ({ Platform: f.platform }));
 vi.mock("expo-secure-store", () => ({
   getItemAsync: async (key: string) => { if (f.failRead) throw Error("storage"); return f.store.get(key) ?? null; },
-  setItemAsync: async (key: string, value: string) => { if (f.failWrite) throw Error("storage"); f.store.set(key, value); },
-  deleteItemAsync: async (key: string) => { f.store.delete(key); },
+  setItemAsync: async (key: string, value: string) => { if (f.failWrite) throw Error("storage"); if (f.writeGate) { f.enteredWrite = true; await f.writeGate; } f.store.set(key, value); },
+  deleteItemAsync: async (key: string) => { if (f.failDelete) throw Error("storage"); f.store.delete(key); },
 }));
 const result = (access: string, refresh = "rotated") => ({ access_token: access, refresh_token: refresh, user: { id: "1", email: "x@example.test", email_verified: true } });
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 async function load() { return import("../src/api"); }
-beforeEach(() => { vi.resetModules(); f.platform.OS = "ios"; f.store.clear(); f.failRead = false; f.failWrite = false; vi.unstubAllGlobals(); });
+beforeEach(() => { vi.resetModules(); f.platform.OS = "ios"; f.store.clear(); f.failRead = false; f.failWrite = false; f.failDelete = false; f.writeGate = null; f.enteredWrite = false; vi.unstubAllGlobals(); });
 
 describe("session resilience", () => {
+  it("cannot restore credentials from a refresh completing after confirmed logout", async () => {
+    f.store.set("realtoruch_refresh", "original");
+    let release!: (value: Response) => void;
+    const pending = new Promise<Response>(resolve => { release = resolve; });
+    let refreshes = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/refresh")) return ++refreshes === 1 ? response(result("old", "original")) : pending;
+      return response({ signed_out: true });
+    }));
+    const client = await load();
+    const states: string[] = [];
+    client.subscribeSession(state => states.push(state));
+    await client.restoreToken();
+    const late = client.restoreToken();
+    await vi.waitFor(() => expect(refreshes).toBe(2));
+    await client.api.signOut();
+    release(response(result("late", "late-refresh")));
+    await late.catch(() => null);
+    expect(f.store.has("realtoruch_refresh")).toBe(false);
+    expect(f.store.has("realtoruch_token")).toBe(false);
+    expect(states.at(-1)).toBe("signed-out");
+  });
+
+  it("never replays an old account mutation under a newly signed-in account", async () => {
+    let release!: (value: Response) => void;
+    const delayed = new Promise<Response>(resolve => { release = resolve; });
+    let logins = 0;
+    const mutationTokens: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, options: RequestInit) => {
+      if (url.endsWith("/login")) return response(result(++logins === 1 ? "account-a" : "account-b"));
+      const token = (options.headers as Record<string, string>).Authorization;
+      if (url.includes("/favorites/")) {
+        mutationTokens.push(token);
+        return mutationTokens.length === 1 ? delayed : response({ saved: true });
+      }
+      return response({ token });
+    }));
+    const client = await load();
+    await client.api.signIn("a@example.test", "synthetic-password", false);
+    const mutation = client.request("/v1/me/favorites/home", { method: "PUT" });
+    await client.api.signIn("b@example.test", "synthetic-password", false);
+    release(response({}, 401));
+    await expect(mutation).rejects.toBeInstanceOf(Error);
+    expect(mutationTokens).toEqual(["Bearer account-a"]);
+    expect(await client.request("/probe")).toEqual({ token: "Bearer account-b" });
+  });
+
+  it("fences an in-progress secure write behind confirmed logout cleanup", async () => {
+    f.store.set("realtoruch_refresh", "original");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/refresh") ? response(result("new", "new-refresh")) : response({ signed_out: true })));
+    const client = await load(); await client.setToken("old");
+    let release!: () => void; f.writeGate = new Promise<void>(resolve => { release = resolve; });
+    const restore = client.restoreToken();
+    await vi.waitFor(() => expect(f.enteredWrite).toBe(true));
+    const logout = client.api.signOut();
+    await vi.waitFor(() => expect(client.getSessionState()).toBe("signed-out"));
+    release(); await logout; await expect(restore).rejects.toMatchObject({ kind: "superseded" });
+    expect(f.store.size).toBe(0); expect(client.getSessionState()).toBe("signed-out");
+  });
+  it("reports local cleanup failure after confirmed logout and blocks same-instance restore", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ signed_out: true })));
+    const client = await load(); await client.setToken("old"); f.store.set("realtoruch_refresh", "revoked"); f.failDelete = true;
+    await client.api.signOut(); expect(client.getSessionState()).toBe("storage-cleanup");
+    expect(await client.restoreToken()).toBe(null); expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+    expect(client.getSessionState()).toBe("storage-cleanup");
+  });
+  it("publishes signed out for an empty native store", async () => {
+    const client = await load(); const states: string[] = []; client.subscribeSession(s => states.push(s));
+    expect(await client.restoreToken()).toBe(null); expect(states.at(-1)).toBe("signed-out");
+  });
+  it("serializes web refresh before a newer login changes the cookie", async () => {
+    f.platform.OS = "web"; let tail = Promise.resolve(); let cookie = "old";
+    const locks = { request: (_name: string, run: () => Promise<unknown>) => {
+      const next = tail.then(run); tail = next.then(() => undefined, () => undefined); return next;
+    } };
+    vi.stubGlobal("navigator", { locks }); let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let started = false; const order: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/refresh")) { started = true; await gate; cookie = "rotated-old"; order.push("refresh"); return response(result("old")); }
+      cookie = "new-account"; order.push("login"); return response(result("new"));
+    }));
+    const client = await load(); const refresh = client.restoreToken();
+    await vi.waitFor(() => expect(started).toBe(true));
+    const login = client.api.signIn("new@example.test", "synthetic-password", false);
+    release(); await expect(refresh).rejects.toMatchObject({ kind: "superseded" }); await login;
+    expect(order).toEqual(["refresh", "login"]); expect(cookie).toBe("new-account");
+  });
+  it("serializes web refresh before logout deletes the cookie", async () => {
+    f.platform.OS = "web"; let tail = Promise.resolve(); let cookie = "old";
+    const locks = { request: (_name: string, run: () => Promise<unknown>) => { const next = tail.then(run); tail = next.then(() => undefined, () => undefined); return next; } };
+    vi.stubGlobal("navigator", { locks }); let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }); let started = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/refresh")) { started = true; await gate; cookie = "rotated"; return response(result("new")); }
+      cookie = ""; return response({ signed_out: true });
+    }));
+    const client = await load(); await client.setToken("old"); const refresh = client.restoreToken();
+    await vi.waitFor(() => expect(started).toBe(true)); const logout = client.api.signOut(); release();
+    await refresh; await logout; expect(cookie).toBe(""); expect(client.getSessionState()).toBe("signed-out");
+  });
+  it("does not deadlock logout refresh when another refresh is queued for the web lock", async () => {
+    f.platform.OS = "web"; let release!: () => void; let locked!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { locked = resolve; });
+    let tail = Promise.resolve();
+    const locks = { request: (_name: string, run: () => Promise<unknown>) => { const next = tail.then(run); tail = next.then(() => undefined, () => undefined); return next; } };
+    vi.stubGlobal("navigator", { locks }); const blocker = locks.request("realtoruch-refresh", async () => { locked(); await gate; }); await entered;
+    let logoutCount = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/refresh") ? response(result("new")) : response({ signed_out: true }, ++logoutCount === 1 ? 401 : 200)));
+    const client = await load(); await client.setToken("old");
+    const logout = client.api.signOut(); const queued = client.restoreToken();
+    release(); await blocker; await logout; await expect(queued).rejects.toMatchObject({ kind: "superseded" });
+    expect(logoutCount).toBe(2); expect(client.getSessionState()).toBe("signed-out");
+  });
+  it("replaces an old in-progress secure write only after it finishes", async () => {
+    f.store.set("realtoruch_refresh", "original");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/refresh") ? response(result("old-rotation", "old-refresh")) : response(result("account-b", "refresh-b"))));
+    const client = await load(); let release!: () => void;
+    f.writeGate = new Promise<void>(resolve => { release = resolve; });
+    const old = client.restoreToken(); await vi.waitFor(() => expect(f.enteredWrite).toBe(true));
+    const login = client.api.signIn("b@example.test", "synthetic-password", false);
+    f.writeGate = null; release(); await expect(old).rejects.toMatchObject({ kind: "superseded" }); await login;
+    expect(f.store.get("realtoruch_refresh")).toBe("refresh-b"); expect(f.store.get("realtoruch_token")).toBe("account-b");
+  });
+  it("returns bounded validation feedback without echoing server-provided secrets", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(response({ detail: [{ loc: ["body", "email"], msg: "secret" }] }, 422)).mockResolvedValueOnce(response({ detail: "secret" }, 400)));
+    const client = await load(); await expect(client.request("/test", {}, false, false)).rejects.toThrow("Please check: email.");
+    await expect(client.request("/test", {}, false, false)).rejects.toThrow("Request could not be completed. Please check your details.");
+  });
   it("preserves native refresh on 503 and restores on retry", async () => {
     f.store.set("realtoruch_refresh", "original");
     const fetch = vi.fn().mockResolvedValueOnce(response({}, 503)).mockResolvedValueOnce(response(result("new")));

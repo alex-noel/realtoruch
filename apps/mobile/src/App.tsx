@@ -37,7 +37,7 @@ import Sprout from "lucide-react-native/icons/sprout";
 import TrendingUp from "lucide-react-native/icons/trending-up";
 import User from "lucide-react-native/icons/user";
 import X from "lucide-react-native/icons/x";
-import { api, API_URL, request, restoreToken, setToken, subscribeSession, SessionState, SessionError } from "./api";
+import { api, API_URL, request, restoreToken, setToken, subscribeSession, SessionState, SessionError, getSessionState, isCurrentAccessToken } from "./api";
 import { AccountDialog, ResetPasswordDialog } from "./components/AccountDialog";
 import { market } from "./marketplaceApi";
 import {
@@ -151,16 +151,16 @@ function RentalApp() {
       const token = await restoreToken();
       if (token) {
         const me = await api.me();
-        if (generation === sessionGeneration.current) setUser(me.email);
+        if (generation === sessionGeneration.current) { currentUser.current = me.email; setUser(me.email); }
       }
     } catch (error) {
-      if (error instanceof SessionError && (error.kind === "transient" || error.kind === "storage")) setSessionState("offline");
+      if (error instanceof SessionError && (error.kind === "transient" || error.kind === "storage") && getSessionState() !== "reauth") setSessionState("offline");
     }
   }
   useEffect(() => {
     const unsubscribe = subscribeSession((state) => {
       setSessionState(state);
-      if (state === "reauth") {
+      if (state === "reauth" || state === "signed-out" || state === "storage-cleanup") {
         sessionGeneration.current++;
         currentUser.current = null;
         setUser(null);
@@ -168,7 +168,7 @@ function RentalApp() {
         setSearches([]);
         setInbox({ items: [], unread_count: 0, page: 1, page_size: 30 });
         setSeenIds(new Set());
-        setDialog(null);
+        setDialog(current => current === "account" || current === "marketplace" ? null : current);
       }
     });
     void retrySession();
@@ -410,12 +410,14 @@ function RentalApp() {
     }
   }
   async function signedIn(token: string, email: string) {
-    await setToken(token);
+    if (!isCurrentAccessToken(token)) return;
     if (pendingFavorite.current) {
       const home = pendingFavorite.current;
       pendingFavorite.current = null;
       await api.favorite(home.id, true);
     }
+    if (!isCurrentAccessToken(token)) return;
+    sessionGeneration.current++;
     currentUser.current = email;
     setSeenIds(new Set());
     setUser(email);
@@ -536,10 +538,10 @@ function RentalApp() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg, flexDirection: "row" }}>
       <StatusBar style="dark" />
-      {(sessionState === "offline" || sessionState === "reauth" || sessionState === "logout-retry") && (
+      {(sessionState === "offline" || sessionState === "reauth" || sessionState === "logout-retry" || sessionState === "storage-cleanup") && (
         <View style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 100, backgroundColor: c.bg, padding: 12 }}>
           <Text accessibilityRole="alert" style={s.text}>
-            {sessionState === "reauth" ? "Your session ended. Sign in again." : sessionState === "logout-retry" ? "Sign out could not be confirmed. Open your account to retry." : "Session unavailable. Check your connection and retry."}
+            {sessionState === "reauth" ? "Your session ended. Sign in again." : sessionState === "logout-retry" ? "Sign out could not be confirmed. Open your account to retry." : sessionState === "storage-cleanup" ? "Signed out, but local secure storage could not be cleared. Sign in again to replace it." : "Session unavailable. Check your connection and retry."}
           </Text>
           {sessionState === "offline" && <Button onPress={() => void retrySession()}>Retry session</Button>}
           {sessionState === "reauth" && <Button onPress={() => setDialog("auth")}>Sign in</Button>}
