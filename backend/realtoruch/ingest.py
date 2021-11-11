@@ -34,6 +34,22 @@ PROPERTY_FIELDS = (
 )
 
 
+def candidate_match(session, candidates, data):
+    """Preserve candidate order while loading source evidence in bounded batches."""
+    for start in range(0, len(candidates), 100):
+        batch = candidates[start:start + 100]
+        related = {candidate.id: [] for candidate in batch}
+        for source in session.scalars(
+            select(SourceListing).where(SourceListing.listing_id.in_(related))
+        ):
+            related[source.listing_id].append(source)
+        for candidate in batch:
+            reason = matching_property(candidate, data, related[candidate.id])
+            if reason:
+                return candidate, reason
+    return None, "New property"
+
+
 def lock_identity(session, *, shared=False):
     """Serialize canonical writers before they acquire advert or listing locks.
 
@@ -190,14 +206,7 @@ def ingest(session, raw: RawListing):
                     Listing.area_m2.between(raw.area_m2 - 3, raw.area_m2 + 3),
                 )
             ).all()
-            for candidate in candidates:
-                related = session.scalars(
-                    select(SourceListing).where(SourceListing.listing_id == candidate.id)
-                ).all()
-                reason_match = matching_property(candidate, data, related)
-                if reason_match:
-                    listing, reason = candidate, reason_match
-                    break
+            listing, reason = candidate_match(session, candidates, data)
         if not listing:
             new_property = True
             listing = Listing(
