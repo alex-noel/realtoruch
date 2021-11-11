@@ -20,17 +20,17 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 | T04 | VERIFIED | gpt-6.1-sol | high | T03 |
 | T05 | VERIFIED | gpt-6.1-sol | medium | None |
 | T06 | VERIFIED | gpt-6-luna | medium | T05 |
-| T07 | PLANNED | gpt-6.1-sol | high | T03, T04, T05 |
+| T07 | LIVE_SOAK_RUNNING | gpt-6.1-sol | high | T03, T04, T05 |
 | T08 | LOCAL_PARTIAL | gpt-6.1-terra | xhigh | T01 |
 | T09 | VERIFIED | gpt-6-luna | high | None |
 | T10 | LOCAL_PARTIAL | gpt-6.1-terra | xhigh | T08, T09 |
 | T11 | VERIFIED | gpt-6.1-terra | high | T10 |
-| T12 | PLANNED | gpt-6.1-sol | high | T08, T11 |
+| T12 | IN_PROGRESS | gpt-6.1-sol | high | T08, T11 |
 | T13 | VERIFIED | gpt-6.1-terra | xhigh | T01 |
 | T14 | LOCAL_PARTIAL | gpt-6.1-terra | high | T01 |
-| T15 | IN_PROGRESS | gpt-6.1-terra | xhigh | T10, T13, T14 |
-| T16 | IN_REVIEW | gpt-6.1-sol | high | T10 |
-| T17 | PLANNED | gpt-6.1-sol | medium | T14, T16 |
+| T15 | VERIFIED | gpt-6.1-terra | xhigh | T10, T13, T14 |
+| T16 | VERIFIED | gpt-6.1-sol | high | T10 |
+| T17 | IN_PROGRESS | gpt-6.1-sol | high | T14, T16 |
 | T18 | IN_PROGRESS | gpt-6.1-terra | high | T01, T14, T02 |
 | T19 | PLANNED | gpt-6.1-sol | medium | T03, T14 |
 | T20 | PLANNED | gpt-6.1-sol | high | T17, T19, T18 |
@@ -61,3 +61,7 @@ T13 is accepted at `4e6f00b` after parent security/concurrency review, 82 combin
 T02 is integrated at `fbbd6d9` with hosted CI still unrun. T10 corrections are at `87cfd34`; combined testing subsequently required building evidence for the contact/photo fallback (`b56f0f8`, `e7eeb88`). T32 will repeat the frozen corpus without tuning. T14 is integrated at `edf5e59` after independent session-race and dependency-audit corrections; actual browser evidence remains T18. T04 is accepted at `1049292` after 95 real-service passes and the checked-only T10 gate integration. T11 is accepted at `79fc5b7` after SQL/methodology review and 101 real-service passes. Current workers: T18 browser, T16 message cursors, T15 account lifecycle. T26 operational changes are in parent review; T12 and T07 are dependency-ready.
 
 T26 is accepted after independent privacy/operations review,105 real-service passes,6 SQLite/Helm passes and12 API regression passes. Hosted/cloud readiness is not claimed; T28 owns scraper authentication and probe wiring.
+
+T15 is accepted at `ade29cb` after independent privacy/concurrency review and 152 combined real-service passes. T16 is accepted at `7cf3994`; its tuple cursors and account guards are integrated. Parent session fixes `3fbab65` and `64b949a` passed targeted actual-browser regressions, with the complete integrated T18 suite still pending.
+
+T07 is integrated at `dcd5768`; 141 combined local tests passed without skips. The live run uses the immutable `b3782cc` detached checkout, beginning 2026-11-11 21:27:38 UTC with a fixed target end of 2026-11-14 21:27:38 UTC. The first cycle obtained four observations from Otodom/Morizon, while Gratka discovery parsing failed. No live removal or long-duration reliability is claimed. T12, T17 and T18 are active; T19, T21, T27 and T28 are dependency-ready.

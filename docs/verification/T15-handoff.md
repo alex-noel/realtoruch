@@ -2,7 +2,7 @@
 
 ## Identity and outcome
 
-- Task: T15. Status: IMPLEMENTED_LOCAL; independent privacy/concurrency review and combined T16 integration remain pending.
+- Task: T15. Status: VERIFIED locally after parent privacy/concurrency review and combined T16 integration; see the parent review below.
 - Base: `49d4bcf77114675d62fa9578aee559bdee4b4bff`. Result: the commit containing this report, created with `python3 scripts/commit.py`; obtain its ID with `git log -1`.
 - Actual work and verification: 2026-11-11, Europe/Warsaw (CET); the service run below was 22:12:40–22:13:54 CET. Git timestamps are intentionally different per repository policy.
 - Outcome: closure fences stale rental writes; a password-reauthenticated user can obtain a bounded, private own-data export.
