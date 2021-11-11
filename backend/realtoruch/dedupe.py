@@ -25,6 +25,20 @@ def matching_property(candidate, data, sources):
     address = fold(data["address"])
     same_address = bool(re.search(r"\d", address)) and fold(candidate.address) == address
     distance = distance_m(candidate, data)
+    if (
+        data["source"] in ("gratka", "morizon")
+        and data.get("syndication_key")
+        and address
+        and fold(candidate.address) == address
+        and (distance is None or distance <= 100)
+        and any(
+            s.source in ("gratka", "morizon")
+            and s.source != data["source"]
+            and s.data.get("syndication_key") == data["syndication_key"]
+            for s in sources
+        )
+    ):
+        return "Shared Morizon–Gratka listing identity, street, area and rooms"
     if not same_address or (distance is not None and distance > 100):
         return None
     same_phone = bool(data.get("phone_hash")) and any(s.phone_hash == data["phone_hash"] for s in sources)

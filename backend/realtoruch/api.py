@@ -137,16 +137,27 @@ def summary(city: str = "", session=Depends(get_session)):
 
 
 @app.get("/v1/sources", tags=["Public"])
-def sources():
+def sources(session=Depends(get_session)):
     from .connectors import load_sources
 
+    observations = {
+        row.source: row
+        for row in session.execute(select(
+            SourceListing.source, func.max(SourceListing.observed_at).label("last_observed"),
+            func.count().label("stored_adverts"),
+        ).join(Listing).where(Listing.is_demo.is_(False)).group_by(SourceListing.source))
+    }
     return {
         "sources": [
             {
                 "name": s["name"],
                 "enabled": s.get("enabled", False),
                 "mode": s.get("mode", "feed"),
-                "status": "configured" if s.get("enabled") else "awaiting_access",
+                "status": "configured" if s.get("enabled") else "disabled",
+                "disabled_reason": s.get("disabled_reason") if not s.get("enabled") else None,
+                "last_observed_at": observations[s["name"]].last_observed.isoformat() + "Z"
+                if s["name"] in observations else None,
+                "stored_adverts": observations[s["name"]].stored_adverts if s["name"] in observations else 0,
             }
             for s in load_sources()
         ],

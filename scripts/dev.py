@@ -1,43 +1,20 @@
 #!/usr/bin/env python3
 """Run the complete local demo. Ctrl-C shuts down all child processes."""
 
-import json
 import os
-import secrets
 import signal
 import subprocess
 import sys
 import time
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from local import ROOT, local_environment
+
 os.chdir(ROOT)
-local = ROOT / ".local"
-local.mkdir(exist_ok=True)
-secret_file = local / "development-secrets.json"
-
-if not secret_file.exists():
-    secret_file.write_text(
-        json.dumps(
-            {
-                name: secrets.token_urlsafe(48)
-                for name in ("JWT_SECRET", "PHONE_HASH_KEY", "INTERNAL_API_KEY")
-            }
-        )
-    )
-    secret_file.chmod(0o600)
-environment = {
-    **os.environ,
-    **json.loads(secret_file.read_text()),
-    "DEMO_MODE": "true",
-    "EXPO_NO_TELEMETRY": "1",
-    "EXPO_OFFLINE": "1",
-    "CONNECTORS_CONFIG": str(ROOT / "config/sources.json"),
-    "DATABASE_URL": f"sqlite:///{local}/rentals.db",
-    "AUTH_DATABASE_URL": f"sqlite:///{local}/auth.db",
-}
+live = "--live" in sys.argv
+environment = local_environment(live=live)
 python = str(ROOT / ".venv/bin/python")
-subprocess.run([python, "-m", "realtoruch.seed"], env=environment, check=True)
+if not live:
+    subprocess.run([python, "-m", "realtoruch.seed"], env=environment, check=True)
 processes = []
 commands = [
     (

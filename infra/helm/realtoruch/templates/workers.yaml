@@ -77,6 +77,8 @@ spec:
               env:
                 - name: GCP_CONFIG_SECRET
                   value: "projects/{{ .Values.projectId }}/secrets/realtoruch-collector-config/versions/latest"
+                - name: CONNECTORS_CONFIG
+                  value: /config/sources.json
               resources:
                 requests: { cpu: 250m, memory: 256Mi }
                 limits: { cpu: "1", memory: 768Mi }

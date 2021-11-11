@@ -31,6 +31,10 @@ spec:
           env:
             - name: GCP_CONFIG_SECRET
               value: "projects/{{ $.Values.projectId }}/secrets/realtoruch-{{ $name }}-config/versions/latest"
+            {{- if eq $name "api" }}
+            - name: CONNECTORS_CONFIG
+              value: /config/sources.json
+            {{- end }}
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
           resources:
             requests: { cpu: {{ $config.cpu }}, memory: {{ $config.memory }} }
@@ -47,11 +51,17 @@ spec:
             periodSeconds: 30
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            {{- if eq $name "api" }}
+            - { name: config, mountPath: /config, readOnly: true }
+            {{- end }}
             {{- if eq $name "search" }}
             - { name: es-ca, mountPath: /etc/elasticsearch, readOnly: true }
             {{- end }}
       volumes:
         - { name: tmp, emptyDir: {} }
+        {{- if eq $name "api" }}
+        - { name: config, configMap: { name: source-config } }
+        {{- end }}
         {{- if eq $name "search" }}
         - name: es-ca
           secret:

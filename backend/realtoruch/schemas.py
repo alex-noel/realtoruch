@@ -27,6 +27,8 @@ class RawListing(BaseModel):
     status: Literal["active", "inactive", "unknown"] = "active"
     phone: str | None = Field(default=None, max_length=50)
     phone_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    # Private source evidence, never included in the public listing serializer.
+    syndication_key: str | None = Field(default=None, pattern=r"^morizon-gratka:[0-9]{1,20}$")
     amenities: list[str] = Field(default_factory=list, max_length=40)
     images: list[HttpUrl] = Field(default_factory=list, max_length=30)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), validate_default=True)

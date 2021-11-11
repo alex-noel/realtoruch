@@ -1164,7 +1164,7 @@ function RentalApp() {
                 ))}
                 <Text style={[s.muted, { fontSize: 10 }]}>
                   {summary?.demo
-                    ? "Connectors awaiting source access · All homes shown are examples"
+                    ? "Sample catalog · All homes shown are examples"
                     : "Independent aggregator · No portal affiliation"}
                 </Text>
               </View>
