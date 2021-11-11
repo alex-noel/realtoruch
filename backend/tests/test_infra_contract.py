@@ -1,6 +1,7 @@
 """Exercise actual grants on fresh, disposable PostgreSQL databases."""
 import json
 import os
+from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,15 +9,15 @@ import psycopg
 import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, delete, select, text
+from sqlalchemy.orm import Session, sessionmaker
 
 from realtoruch.delivery_claims import cancel_notifications
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_runtime_role_grants():
+def test_runtime_role_grants(monkeypatch, record):
     url = os.environ.get("TEST_POSTGRES_URL")
     if not url:
         pytest.skip("requires disposable PostgreSQL")
@@ -80,6 +81,9 @@ def test_runtime_role_grants():
                                 session.execute(text('SET ROLE "' + roles["dataflow"] + '"'))
                                 cancel_notifications(session, listing_id="listing")
                                 session.commit()
+                            assert conn.execute("SELECT status, claim_token, lease_until, confirmation_token FROM email_deliveries WHERE id='email'").fetchone() == ("cancelled", None, None, None)
+                            assert conn.execute("SELECT status, claim_token, lease_until FROM push_deliveries WHERE id='push'").fetchone() == ("cancelled", None, None)
+                            _assert_retention_permissions(engine, conn, roles["indexer"], record, monkeypatch)
                         finally:
                             engine.dispose()
                         assert conn.execute("SELECT status, claim_token, lease_until, confirmation_token FROM email_deliveries WHERE id='email'").fetchone() == ("cancelled", None, None, None)
@@ -92,6 +96,11 @@ def test_runtime_role_grants():
                                     ("api", "SELECT * FROM collection_fetch_state", False),
                                     ("api", "DELETE FROM listing_aliases WHERE false", True),
                                     ("indexer", "SELECT * FROM search_revisions FOR UPDATE", True),
+                                    ("indexer", "SELECT confirmation_token FROM email_deliveries", False),
+                                    ("indexer", "SELECT user_id FROM email_deliveries", False),
+                                    ("indexer", "SELECT title FROM notifications", False),
+                                    ("indexer", "UPDATE source_listings SET url=url WHERE false", False),
+                                    ("indexer", "DELETE FROM listings WHERE false", False),
                                     ("dataflow", "SELECT confirmation_token FROM email_deliveries", False),
                                     ("dataflow", "SELECT user_id FROM email_deliveries", False),
                                     ("dataflow", "SELECT subscription_id FROM push_deliveries", False),
@@ -118,3 +127,47 @@ def test_runtime_role_grants():
                 admin.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(database)))
             for role in roles.values():
                 admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+
+def _assert_retention_permissions(engine, conn, role, record, monkeypatch):
+    """Exercise the chart's shared indexer/retention identity with real data."""
+    from realtoruch import worker
+    from realtoruch.ingest import ingest
+    from realtoruch.models import AlertEvent, Listing, Outbox, SearchRevision, SourceListing, now
+
+    with Session(engine) as session:
+        # A pooled connection used for Dataflow above retains SET ROLE across
+        # commits. Reset as the schema owner before constructing the fixture.
+        session.execute(text("RESET ROLE"))
+        listing_id = ingest(session, record.model_copy(update={
+            "external_id": "retention-role-fixture",
+            "observed_at": now() - timedelta(days=120),
+        }))["listing_id"]
+        session.flush()
+        session.execute(delete(Outbox).where(Outbox.listing_id == listing_id))
+        session.execute(delete(SearchRevision).where(SearchRevision.listing_id == listing_id))
+        session.execute(delete(AlertEvent).where(AlertEvent.listing_id == listing_id))
+        session.commit()
+    conn.execute("UPDATE notifications SET listing_id=%s WHERE id='notice'", (listing_id,))
+    conn.execute("UPDATE email_deliveries SET status='pending', claim_token='retention-lease', lease_until=now(), confirmation_token='private-token' WHERE id='email'")
+    conn.execute("UPDATE push_deliveries SET status='pending', claim_token='retention-lease', lease_until=now() WHERE id='push'")
+    with engine.connect() as maintenance:
+        maintenance.execute(text('SET ROLE "' + role + '"'))
+        maintenance.commit()
+        try:
+            with monkeypatch.context() as patch:
+                patch.setattr(worker, "Session", sessionmaker(maintenance, expire_on_commit=False))
+                worker.retention()
+                worker.retention()
+        finally:
+            maintenance.rollback()
+            maintenance.execute(text("RESET ROLE"))
+            maintenance.commit()
+    with Session(engine) as session:
+        source = session.scalar(select(SourceListing).where(SourceListing.listing_id == listing_id))
+        assert source.phone_hash is None and source.data["phone_hash"] is None
+        assert source.status == source.data["status"] == "unknown"
+        assert session.get(Listing, listing_id).status == "unknown"
+        assert session.get(SearchRevision, listing_id).revision == 1
+        assert len(session.scalars(select(Outbox).where(Outbox.listing_id == listing_id)).all()) == 1
+        assert len(session.scalars(select(AlertEvent).where(AlertEvent.listing_id == listing_id)).all()) == 1

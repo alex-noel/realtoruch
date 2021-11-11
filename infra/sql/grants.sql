@@ -45,6 +45,17 @@ GRANT SELECT, DELETE ON event_receipts, alert_events TO :"indexer_user";
 GRANT SELECT, UPDATE, DELETE ON outbox TO :"indexer_user";
 -- SELECT FOR UPDATE takes a row lock and requires UPDATE privilege.
 GRANT SELECT, UPDATE ON search_revisions TO :"indexer_user";
+-- The retention CronJob shares the indexer identity. Its implemented work
+-- scrubs expired contact evidence, recomputes stale homes and queues revisions.
+-- It never creates/deletes a home or reads account/recipient/token data.
+GRANT UPDATE ON listings TO :"indexer_user";
+GRANT UPDATE (phone_hash, data, status) ON source_listings TO :"indexer_user";
+GRANT INSERT ON search_revisions, outbox, alert_events TO :"indexer_user";
+GRANT SELECT (id, listing_id) ON notifications TO :"indexer_user";
+GRANT SELECT (id, notification_id, status) ON email_deliveries TO :"indexer_user";
+GRANT UPDATE (status, claim_token, lease_until, confirmation_token) ON email_deliveries TO :"indexer_user";
+GRANT SELECT (id, notification_id, status, receipt_id) ON push_deliveries TO :"indexer_user";
+GRANT UPDATE (status, claim_token, lease_until) ON push_deliveries TO :"indexer_user";
 \connect auth
 REVOKE ALL ON DATABASE auth FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
