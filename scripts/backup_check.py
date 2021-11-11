@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from local import ROOT
+from restore_manifest import isolated_main, profile_args, status
 
 
 def inventory(connection):
@@ -30,10 +31,11 @@ def inventory(connection):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--catalog", choices=["sample", "live", "journey"], default="live"
-    )
+    profile_args(parser).add_argument("--catalog", choices=["sample", "live", "journey"],
+                                      help="Legacy check of the explicitly chosen existing catalog")
     args = parser.parse_args()
+    if not args.catalog:
+        return status(lambda: isolated_main("sqlite", args))
     rental = {
         "sample": "rentals.db",
         "live": "live-rentals.db",
@@ -88,4 +90,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
