@@ -70,8 +70,8 @@ test('owner publishes, edits, messages a renter and withdraws', async ({ page, c
     await createVerified(visitor, `renter-${suffix}@example.test`);
     await expect(visitor.getByRole('button', { name: title, exact: true })).toBeVisible();
     await visitor.getByRole('button', { name: title, exact: true }).click();
-    await expect(visitor.getByText(/4\s?500/).first()).toBeVisible();
-    await expect(visitor.getByText(/4\s?200/).first()).toBeVisible();
+    await expect(visitor.getByRole('dialog').getByText(/4\s?500/).first()).toBeVisible();
+    await expect(visitor.getByRole('dialog').getByText(/4\s?200/).first()).toBeVisible();
     await visitor.getByRole('button', { name: `Message Owner ${suffix}` }).click();
     await visitor.getByLabel('YOUR MESSAGE').fill('Hello, is this synthetic home still available?');
     await visitor.getByRole('button', { name: 'Send message' }).click();
