@@ -128,3 +128,13 @@ An operator can save a freshly viewed public detail page and import it without n
 ```
 
 The file must be at most 5 MB and less than 24 hours old. Its modification time becomes the observation timestamp; keep captures private and capture again before rechecking. This is a manual ingestion path, not a working scheduled scraper. Automatic robots/search requests still returned 403 on the same day. No OLX account, session cookies, proxy rotation or access-control bypass was used. Approved feeds or an accessible collection path are still needed for continuous OLX updates.
+
+## OLX onboarding preflight (T06)
+
+Run `python3 scripts/source_preflight.py` for an offline report. Offline mode performs no HTTP or DNS lookups. It reports `not_configured` when the approved transport or required feed URL is absent, and `ready_offline` when a disabled profile is structurally ready for a later authorized sample. Neither state enables collection. Use `--config` to point at a local profile; secrets are read only from the named environment variable and never printed.
+
+`--network` is an explicit opt-in for one bounded sample: at most robots, one feed/discovery page and one detail page, with redirects refused, response sizes bounded, exact HTTPS host checks, private-address rejection, and no retry loop. A 401/403/429 or robots denial returns `blocked_access` and stops. A successfully fetched and parsed sample is the only path to `live_sample_verified`; unsupported response/mapping shapes report `unsupported_payload`. This preflight is not the collector, and it never writes `enabled: true`. Do not use it to test portal access until permitted public transport has actually been supplied; live acceptance remains T29's responsibility.
+
+`config/provider-feed.example.json` is a placeholder contract, not a claim that OLX offers a partner feed or that an account-scoped API exposes marketplace-wide listings. Before use, obtain documented rights for access, storage, display, retention and reuse; identify exact hosts, stable IDs, pagination, source observation timestamps and explicit removal semantics. Missing rows do not mean delisted. Map supplier fields to the existing `RawListing` contract; unknown fees/commission remain null. Put credentials in `OLX_FEED_TOKEN` (or an ignored local environment file), never in a URL or tracked JSON. An operator-saved HTML snapshot remains the separate one-off `scripts/import_html.py` path and does not establish automated transport.
+
+The generated checklist in the preflight report is the T29 handoff: confirm authorization/capability, supply the exact bounded profile, run an authorized sample, independently review parsed evidence, and keep OLX disabled until then.
