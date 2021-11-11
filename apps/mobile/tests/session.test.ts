@@ -229,8 +229,22 @@ describe("session resilience", () => {
   });
   it("does not refresh web without locks", async () => {
     f.platform.OS = "web"; const fetch = vi.fn(); vi.stubGlobal("fetch", fetch); vi.stubGlobal("navigator", {});
-    const client = await load(); const states: string[] = []; client.subscribeSession(s => states.push(s));
+    const client = await load(); await client.setToken("known-access");
+    const states: string[] = []; client.subscribeSession(s => states.push(s));
     await expect(client.restoreToken()).rejects.toMatchObject({ kind: "invalid" }); expect(fetch).not.toHaveBeenCalled(); expect(states.at(-1)).toBe("reauth");
+  });
+  it("keeps a fresh anonymous web visit and its in-flight public request signed out", async () => {
+    f.platform.OS = "web";
+    vi.stubGlobal("navigator", { locks: { request: (_name: string, run: () => Promise<unknown>) => run() } });
+    let release!: (value: Response) => void;
+    const pending = new Promise<Response>(resolve => { release = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/refresh") ? response({}, 401) : pending));
+    const client = await load();
+    const listingRequest = client.request("/v1/listings");
+    await expect(client.restoreToken()).resolves.toBe(null);
+    release(response({ items: [] }));
+    await expect(listingRequest).resolves.toEqual({ items: [] });
+    expect(client.getSessionState()).toBe("signed-out");
   });
   it("preserves storage on read failure and requires sign in after rotated token write failure", async () => {
     f.store.set("realtoruch_refresh", "original"); f.failRead = true;
