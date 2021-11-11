@@ -1,6 +1,7 @@
 """Local/PostgreSQL collector coordination and durable health history."""
 
 from datetime import timedelta
+from threading import Event, Thread
 
 from sqlalchemy import or_, select, update
 
@@ -36,6 +37,24 @@ def claim(factory, config):
         return lease_id, None
 
 
+class LeaseLost(RuntimeError):
+    """The lease expired, changed owners, or could not be verified."""
+
+
+def guard(session, source, lease_id):
+    # The update takes the provider row lock until the observation commits. A
+    # concurrent claim therefore cannot pass this fence during ingestion.
+    changed = session.execute(
+        update(SourcePollState).where(
+            SourcePollState.source == source,
+            SourcePollState.lease_id == lease_id,
+            SourcePollState.lease_until > now(),
+        ).values(lease_until=SourcePollState.lease_until)
+    ).rowcount
+    if not changed:
+        raise LeaseLost("Collection lease was lost")
+
+
 def heartbeat(factory, source, lease_id):
     with factory.begin() as session:
         updated = session.execute(
@@ -43,26 +62,80 @@ def heartbeat(factory, source, lease_id):
             .where(
                 SourcePollState.source == source,
                 SourcePollState.lease_id == lease_id,
+                SourcePollState.lease_until > now(),
             )
             .values(lease_until=now() + timedelta(minutes=30))
         ).rowcount
         if not updated:
-            raise RuntimeError("Collection lease was lost")
+            raise LeaseLost("Collection lease was lost")
+
+
+class LeaseHeartbeat:
+    """One bounded periodic scheduler per provider run; injectable for tests."""
+
+    interval = 60
+
+    def __init__(self, factory, source, lease_id, *, event=None, thread_factory=Thread):
+        self.factory, self.source, self.lease_id = factory, source, lease_id
+        self.stop_event = event or Event()
+        self.lost = Event()
+        self.thread = thread_factory(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self.stop_event.wait(self.interval):
+            try:
+                heartbeat(self.factory, self.source, self.lease_id)
+            except Exception:
+                # A database failure is indistinguishable from lost ownership.
+                self.lost.set()
+                return
+
+    def start(self):
+        self.thread.start()
+
+    def check(self):
+        if self.lost.is_set():
+            raise LeaseLost("Collection lease could not be renewed")
+        try:
+            with self.factory.begin() as session:
+                guard(session, self.source, self.lease_id)
+        except Exception as exc:
+            self.lost.set()
+            raise LeaseLost("Collection lease could not be verified") from exc
+
+    def close(self):
+        self.stop_event.set()
+        self.thread.join()
 
 
 def finish(factory, source, lease_id, report):
     with factory.begin() as session:
-        run = session.get(CollectionRun, lease_id)
-        run.finished_at, run.status, run.report = now(), report["status"], report
+        # Conditional UPDATE is both the ownership test and health mutation.
+        # It takes the same row lock as claims and ingestion fences.
         state = session.get(SourcePollState, source)
-        if state.lease_id != lease_id:
-            return
-        state.lease_id, state.lease_until = None, None
+        values = {"lease_id": None, "lease_until": None}
         if report["errors"]:
-            state.failures += 1
-            state.retry_after = now() + timedelta(minutes=min(360, 15 * 2 ** min(state.failures - 1, 5)))
+            # Lock first with a conditional no-op so the read cannot race takeover.
+            locked = session.execute(update(SourcePollState).where(
+                SourcePollState.source == source, SourcePollState.lease_id == lease_id,
+                SourcePollState.lease_until > now(),
+            ).values(lease_until=SourcePollState.lease_until)).rowcount
+            if locked:
+                session.refresh(state)
+                failures = state.failures + 1
+                values.update(failures=failures, retry_after=now() + timedelta(
+                    minutes=min(360, 15 * 2 ** min(failures - 1, 5))))
         else:
-            state.failures, state.retry_after, state.last_success_at = 0, None, now()
+            values.update(failures=0, retry_after=None, last_success_at=now())
+        owned = session.execute(update(SourcePollState).where(
+            SourcePollState.source == source, SourcePollState.lease_id == lease_id,
+            SourcePollState.lease_until > now(),
+        ).values(**values)).rowcount
+        run = session.get(CollectionRun, lease_id)
+        if run:
+            final_report = report if owned else {**report, "status": "interrupted", "reason": "lease_lost"}
+            run.finished_at, run.status, run.report = now(), final_report["status"], final_report
+        return bool(owned)
 
 
 def public_health(session, source, *, city=""):
