@@ -16,7 +16,7 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 | --- | --- | --- | --- | --- |
 | T01 | VERIFIED | gpt-6.1-terra | high | None |
 | T02 | PLANNED | gpt-6.1-sol | medium | T01 |
-| T03 | IN_REVIEW | gpt-6.1-terra | high | T01 |
+| T03 | VERIFIED | gpt-6.1-terra | high | T01 |
 | T04 | PLANNED | gpt-6.1-sol | high | T03 |
 | T05 | VERIFIED | gpt-6.1-sol | medium | None |
 | T06 | IN_REVIEW | gpt-6-luna | medium | T05 |
@@ -52,4 +52,4 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 
 T05 is accepted and integrated as `c4d6062`: 88 targeted tests independently repeated by the parent, plus the worker’s 169-pass offline regression (5 optional service skips). Live provider access remains unverified. T06 starts from this reviewed dependency.
 
-T01 is accepted at `a74ca26`, including SQL packaging and clean-install/cleanup fixes: the parent independently repeated 9 real-service tests with zero skips. T09 is accepted after notification-sequence and fixture-validation review; its synthetic corpus remains frozen and surfaces 20 ambiguous automatic merges for T10. T03 and T06 await integration review; T08 and T13 are running. See per-task handoffs and `execution.json` for exact state.
+T01 is accepted at `a74ca26`, including SQL packaging and clean-install/cleanup fixes: the parent independently repeated 9 real-service tests with zero skips. T09 is accepted after notification-sequence and fixture-validation review; its synthetic corpus remains frozen and surfaces 20 ambiguous automatic merges for T10. T03 is accepted at `ef7788d` after 9 targeted and 11 real-service tests, with durable robots pacing assigned to T04. T06 is receiving network-boundary review corrections; T08 and T13 are running. See per-task handoffs and `execution.json` for exact state.

@@ -36,16 +36,19 @@
     },
     {
       "id": "T03",
-      "status": "IN_REVIEW",
+      "status": "VERIFIED",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [
         "T01"
       ],
       "worker_commit": "3f47d193c922f3068508e64c9587f6c8b5c2897f",
-      "integrated_commit": null,
-      "review": "Reviewing lease fencing, heartbeat and provider pacing evidence.",
-      "evidence": []
+      "integrated_commit": "ef7788d",
+      "review": "Parent concurrency review and independent 9 targeted plus 11 real-service tests passed with zero skips. Durable robots-derived delay across provider runs is assigned as a T04 extension.",
+      "evidence": [
+        "docs/verification/T03-handoff.md",
+        ".local/verification/T01/integrated-t03-review/report.json"
+      ]
     },
     {
       "id": "T04",
@@ -84,7 +87,7 @@
       ],
       "worker_commit": "cf55b548936d7b2b74060c957f2f6550c9147c2b",
       "integrated_commit": null,
-      "review": "Offline source-preflight code awaiting independent network-boundary review.",
+      "review": "Changes requested: robots/challenge handling, detail policy, pacing and configuration diagnostics.",
       "evidence": []
     },
     {
@@ -122,7 +125,7 @@
       "reasoning_effort": "high",
       "depends": [],
       "worker_commit": "1ac33e9 + 7184752 + 37852d5 + 6034b11",
-      "integrated_commit": "15252ca plus integrator follow-up",
+      "integrated_commit": "15252ca + 1573cf5",
       "review": "Parent repeated 9 tests; corrected deterministic fault-injection ordering and checked frozen corpus hash. Synthetic baseline only: 20 ambiguous merges remain for T10.",
       "evidence": [
         "docs/verification/dedupe-baseline.md",
@@ -396,7 +399,7 @@
   ],
   "active_assignments": {
     "A": "Ready for T02 after accepted T01",
-    "B": "T03 awaiting integration review; T04 next",
+    "B": "T06 network-boundary review fixes; T04 dependency accepted",
     "C": "T08 versioned search index",
     "D": "T13 delivery fencing"
   }
