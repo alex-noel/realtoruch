@@ -169,7 +169,7 @@ jobs:
           python -m venv .venv
           .venv/bin/python -m pip --disable-pip-version-check install --no-deps -r backend/requirements-dev.lock
           .venv/bin/python -m pip check
-          npm exec --offline --prefix apps/mobile -- playwright install chromium
+          npm exec --offline --prefix apps/mobile -- playwright install --with-deps chromium
           make verify-web ARGS='--run-id ci-web'
       - name: Select sanitized web failure report
         if: failure()
