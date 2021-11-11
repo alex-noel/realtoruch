@@ -2,7 +2,7 @@
 
 ## Identity and outcome
 
-- Task/status: T08, IMPLEMENTED_LOCAL. Independent concurrency/data review and the specified benchmark profile remain open.
+- Task/status: T08, VERIFIED for local scope after independent concurrency/data review and the controlled reference-profile benchmark below.
 - Base: `a74ca26`. Result: the commit containing this handoff, created with `python3 scripts/commit.py`.
 - Actual work and verification: 2026-11-11, Europe/Warsaw (CET); all test timestamps below are actual UTC, independent of Git dates.
 - Search projection writes use SQL revisions, bounded bulk requests and strict external versions. Pending work remains pending if a newer canonical revision appears during an in-flight request.
@@ -26,10 +26,10 @@ The rebuild uses a PostgreSQL session advisory shared/exclusive gate: indexers h
 | AC01 | PASS | TC01: `test_versioned_interleaving_and_tombstone`, real ES 8.19.6, sends newer then older and equal revisions with conflicting active/price content; stored newer inactive/4,200 remains. |
 | AC02 | PASS | TC02: same real-service test pauses before bulk, commits a new revision, releases old work and confirms the event is still pending before the next pass. |
 | AC03 | PASS | TC03: `test_mixed_bulk_acknowledges_only_success_and_verified_conflict`, SQLite/fake per-item bulk: 201 and verified 409 acknowledged; 429 and 400 persisted pending. An oversized item is held as 413 without starving 100 later valid homes. |
-| AC04 | PASS (local interleaving; review required) | TC04: two actual PostgreSQL indexers, controlled barrier, inactive transition, later response first then earlier response; final ES document remains inactive and newer. Existing identity integration covers merge; source tombstone explicitly queued. No claim of production multi-indexer rollout. |
+| AC04 | PASS (local interleaving; parent review complete) | TC04: two actual PostgreSQL indexers, controlled barrier, inactive transition, later response first then earlier response; final ES document remains inactive and newer. Existing identity integration covers merge; source tombstone explicitly queued. No claim of production multi-indexer rollout. |
 | AC05 | PASS | TC05: `test_profile_change_reindexes_public_only` uses real ES; profile rename advances ES version and updates name; phone, phone hash, draft and email/password canaries absent. SQLite test also checks the allowlisted serializer. |
 | AC06 | PASS | TC06: real-service `test_rebuild_failure_retry_and_concurrent_writes` fails after half of a two-home candidate, confirms original alias, retries while committing a change, confirms gate drains it, deletes the replacement to simulate reset and rebuilds again. |
-| AC07 | NOT_RUN on required profile; LOCAL_PARTIAL | TC07: 100 changed homes converged within 0.325006 seconds maximum across five observed local runs, but Docker reported 6 CPUs and 15,955,206,144 bytes, not the declared four-core/8-GiB profile. Thus the required benchmark target is not accepted. |
+| AC07 | PASS on controlled container profile | TC07: parent test on clean `a30d1d5` converged 100 changed homes in 0.431287 seconds under disjoint CPU sets/quotas totalling four CPUs and memory limits totalling 8 GiB, including the containerized test driver. One test passed without skips. See [reference profile and limits](../performance/index-convergence.md). The earlier unrestricted measurement is not used for acceptance. |
 
 ## Verification
 
@@ -50,4 +50,4 @@ The integrator should review revision and cancellation lock ordering with T13, c
 
 ## Blockers and next action
 
-Run TC07 on an explicitly controlled four-core/8-GiB environment with the documented workload, polling and refresh settings; retain measured results even if above 30 seconds. Independent concurrency/data review is still required. No push or deployment has occurred.
+Parent concurrency/data review is complete. TC07 passed the explicit four-CPU/8-GiB container resource profile on 2026-11-11 at 22:38:55–22:39:21 UTC; the [benchmark report](../performance/index-convergence.md) defines the limits, images, workload and one-sample scope. T32 will retain current integrated functional regression evidence. No production multi-indexer rollout, availability claim, push or deployment has occurred.

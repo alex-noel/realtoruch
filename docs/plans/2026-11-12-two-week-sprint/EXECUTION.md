@@ -21,7 +21,7 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 | T05 | VERIFIED | gpt-6.1-sol | medium | None |
 | T06 | VERIFIED | gpt-6-luna | medium | T05 |
 | T07 | LIVE_SOAK_RUNNING | gpt-6.1-sol | high | T03, T04, T05 |
-| T08 | LOCAL_PARTIAL | gpt-6.1-terra | xhigh | T01 |
+| T08 | VERIFIED | gpt-6.1-terra | xhigh | T01 |
 | T09 | VERIFIED | gpt-6-luna | high | None |
 | T10 | LOCAL_PARTIAL | gpt-6.1-terra | xhigh | T08, T09 |
 | T11 | VERIFIED | gpt-6.1-terra | high | T10 |
@@ -34,7 +34,7 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 | T18 | VERIFIED | gpt-6.1-terra | high | T01, T14, T02 |
 | T19 | VERIFIED | gpt-6.1-sol | high | T03, T14 |
 | T20 | IN_PROGRESS | gpt-6.1-sol | high | T17, T19, T18 |
-| T21 | IN_PROGRESS | gpt-6.1-sol | high | T14 |
+| T21 | IN_REVIEW | gpt-6.1-sol | high | T14 |
 | T25 | IN_PROGRESS | gpt-6.1-terra | high | T08, T11, T12 |
 | T26 | VERIFIED | gpt-6.1-sol | medium | T03, T08, T13 |
 | T27 | VERIFIED | gpt-6.1-sol | high | T11, T15 |
@@ -71,3 +71,5 @@ T12 is accepted after public-contract review and 188 combined real-service passe
 T28 is integrated at `a2f53d5`; root verification passed 189 real-service tests without skips. Further review found missing retention-job write permissions on the shared indexer identity, so a real-role regression and narrow grants remain under review. T19 is integrated at `84dfdc1`, with 64 integrated frontend unit passes and a pending browser check. T25’s first five-minute 20-client window returned 4,405 successful responses but exceeded SQL/history latency targets; the matched optimization run and investigation continue. Worker B is implementing T21 in a separate checkout, and worker D is verifying T27 recovery. Heavy checks are coordinated to avoid contaminating the measured capacity windows.
 
 T19 is accepted at `7c8894b`: the broad browser run passed 14 cases and exposed a missing expansion attribute in two narrow-screen cases; the correction passed both focused cases. T28 is accepted at `eceb19d` after an actual-role retention regression verified its narrow maintenance grants. T27 is integrated at `ac23172` after ownership, recovery and erasure review; its combined worker profile passed 190 real-service tests without skips. T20 and T21 are active. T25 now uses equally analyzed fresh catalogs: baseline search targets pass, while history remains over target; the matched aggregate optimization is being measured. Final integration will repeat the complete profiles on the combined candidate.
+
+T08’s remaining reference gate passed on clean `a30d1d5`: all test work ran inside a measured four-CPU/eight-GiB container budget, and 100 changed homes converged in 0.431287 seconds. T21 is integrated at that commit with 118 combined frontend unit passes; worker D is correcting reproduced cold-link/session and slow-link/navigation races before final acceptance. T20’s timed browser budget passes; its final accessibility regression continues. T25 history remains above target and is receiving measured SQL-plan improvements.
