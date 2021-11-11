@@ -300,7 +300,7 @@
     },
     {
       "id": "T19",
-      "status": "IN_REVIEW",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
@@ -308,15 +308,17 @@
         "T14"
       ],
       "worker_commit": "9e332b8",
-      "integrated_commit": "84dfdc1",
-      "review": "Parent reviewed normalized search generations, account fencing and composed deadlines; 64 integrated frontend unit tests and typecheck passed. Root removed redundant inbox timeout wrapper. Browser check waits for T25 measurement window.",
+      "integrated_commit": "84dfdc1 + 7c8894b",
+      "review": "Parent reviewed normalized request generations, account fencing and shared deadlines; 64 integrated frontend unit tests and typecheck passed. Browser run passed 14 cases and exposed two missing aria-expanded attributes; the focused correction passed both narrow-screen cases. Final combined browser suite is reserved to T32.",
       "evidence": [
-        "docs/verification/T19-handoff.md"
+        "docs/verification/T19-handoff.md",
+        ".local/verification/T01/integrated-t19-final/report.json",
+        ".local/verification/T18/integrated-t19-320b/summary.json"
       ]
     },
     {
       "id": "T20",
-      "status": "PLANNED",
+      "status": "IN_PROGRESS",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
@@ -326,7 +328,7 @@
       ],
       "worker_commit": null,
       "integrated_commit": null,
-      "review": null,
+      "review": "Worker C implementing responsive accessibility, keyboard polygon controls and measured web budgets on reviewed base 7c8894b. Performance runs are coordinated with T25.",
       "evidence": []
     },
     {
@@ -339,7 +341,7 @@
       ],
       "worker_commit": null,
       "integrated_commit": null,
-      "review": "Worker B implementing typed native/web link dispatch in a separate worktree on reviewed base a2f53d5 while the T19 browser run awaits the measurement window.",
+      "review": "Worker B implementing strict native/web link parsing, session-aware navigation and token lifecycle in an isolated worktree. Unit/type checks pass; root lifecycle review and final browser/native exports remain pending.",
       "evidence": []
     },
     {
@@ -354,7 +356,7 @@
       ],
       "worker_commit": null,
       "integrated_commit": null,
-      "review": "Worker A measuring representative disposable catalogs and candidate-query amplification on reviewed base 3bec9db; numeric acceptance is pending.",
+      "review": "Matched fresh analyzed catalogs are being measured under the same 20-client workload. Baseline search targets pass but history p95 fails at 1797.5 ms; candidate batching and PostgreSQL aggregate changes are under measurement and review. No numeric gate waived.",
       "evidence": []
     },
     {
@@ -378,21 +380,24 @@
     },
     {
       "id": "T27",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
         "T11",
         "T15"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": "Worker D implementing isolated SQLite/PostgreSQL recovery, ownership manifests and restored account-erasure assertions on reviewed base994b928. SQLite drill passed; PostgreSQL execution pending coordinated test window.",
-      "evidence": []
+      "worker_commit": "66a6546 + 2acb1df",
+      "integrated_commit": "ac23172",
+      "review": "Parent independently reviewed ownership manifests, fault preflights, restored account erasure, queue drains and explicit recovery limits. Worker standalone SQLite/PostgreSQL drills and 190 real-service tests passed with zero skips. Final root profile follows T25/T20/T21 integration.",
+      "evidence": [
+        "docs/verification/T27-handoff.md",
+        ".local/worktrees/t27/.local/verification/T01/t27-service-regression/report.json"
+      ]
     },
     {
       "id": "T28",
-      "status": "IN_REVIEW",
+      "status": "VERIFIED",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [
@@ -403,11 +408,12 @@
         "T26"
       ],
       "worker_commit": "998b8e0 + 4877fba",
-      "integrated_commit": "a2f53d5",
-      "review": "Independent combined real-service profile passed189/0/0. Parent subsequently found the shared indexer/retention role lacks maintenance writes; narrower grant correction and actual retention regression are prepared, awaiting PostgreSQL execution.",
+      "integrated_commit": "a2f53d5 + eceb19d",
+      "review": "Parent real-service profile passed 189 tests without skips; subsequent retention-role review corrected missing narrow writes. Independent actual-role PostgreSQL retention regression passed and denied unrelated writes/private reads. Configuration validation is local only; no cloud resources or metrics scraper were deployed.",
       "evidence": [
         "docs/verification/T28-handoff.md",
-        ".local/verification/T01/integrated-t28-final/report.json"
+        ".local/verification/T01/integrated-t28-final/report.json",
+        ".local/verification/T28/retention-role-review/"
       ]
     },
     {
@@ -449,10 +455,10 @@
     }
   ],
   "active_assignments": {
-    "A": "T25 matched 20-client capacity measurements and query optimization",
-    "B": "T21 link implementation; T19 root browser verification pending",
-    "C": "Queued T20 once T19 browser verification and a worker slot clear",
-    "D": "T27 recovery fixtures and safe restore verification"
+    "A": "T25 matched capacity measurements and query optimization",
+    "B": "T21 link lifecycle and scoped browser/native verification",
+    "C": "T20 accessibility and measured web performance",
+    "D": "T27 accepted; slot rotated to C"
   },
   "live_soak": {
     "session_id": 50850,
