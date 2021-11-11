@@ -34,7 +34,18 @@ PROPERTY_FIELDS = (
 )
 
 
-def recompute_listing(session, listing, *, new_property=False):
+def lock_identity(session, *, shared=False):
+    """Serialize canonical writers before they acquire advert or listing locks.
+
+    A transaction may ingest several cities/homes in arbitrary order, so a
+    single transaction-scoped lock avoids inversions across those batches.
+    """
+    if session.bind.dialect.name == "postgresql":
+        suffix = "_shared" if shared else ""
+        session.execute(text(f"SELECT pg_advisory_xact_lock{suffix}(761994032)"))
+
+
+def recompute_listing(session, listing, *, new_property=False, identity_correction=False):
     tracked = (*PROPERTY_FIELDS, "status", "risk_flags", "risk_score")
     before = {field: getattr(listing, field) for field in tracked}
     sources = session.scalars(select(SourceListing).where(SourceListing.listing_id == listing.id)).all()
@@ -51,7 +62,7 @@ def recompute_listing(session, listing, *, new_property=False):
     )
     if listing.hidden:
         listing.status = "inactive"
-    if before["status"] == "active" and listing.status != "active":
+    if not identity_correction and before["status"] == "active" and listing.status != "active":
         cancel_notifications(session, listing_id=listing.id)
     listing.last_seen = max(s.observed_at for s in sources)
     flags = []
@@ -107,7 +118,8 @@ def recompute_listing(session, listing, *, new_property=False):
     canonical_changed = new_property or any(before[field] != getattr(listing, field) for field in tracked)
     if canonical_changed:
         listing.updated_at = now()
-        session.add(AlertEvent(listing_id=listing.id))
+        if not identity_correction:
+            session.add(AlertEvent(listing_id=listing.id))
     # Sources, contact adverts and freshness also contribute to the public DTO.
     from .indexing import queue_listing
     queue_listing(session, listing.id)
@@ -115,6 +127,7 @@ def recompute_listing(session, listing, *, new_property=False):
 
 def ingest(session, raw: RawListing):
     """Caller owns transaction. Receipt, canonical update, history and outbox commit atomically."""
+    lock_identity(session)
     data = normalize(raw)
     if session.bind.dialect.name == "postgresql":
         # Serialize canonical decisions within a city, including concurrent Dataflow workers.
@@ -209,7 +222,7 @@ def ingest(session, raw: RawListing):
                     select(SourceListing.listing_id).where(SourceListing.phone_hash == phone)
                 ).all()
             )
-    for listing_id in affected:
+    for listing_id in sorted(affected):
         recompute_listing(
             session, session.get(Listing, listing_id), new_property=new_property and listing_id == listing.id
         )

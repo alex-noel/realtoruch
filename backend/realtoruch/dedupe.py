@@ -46,6 +46,8 @@ def matching_property(candidate, data, sources):
     address = address_key(data["address"])
     candidate_address = address_key(candidate.address)
     same_address = bool(re.search(r"\d", address)) and candidate_address == address
+    # A building number by itself is not an apartment identity.
+    same_unit = same_address and bool(re.search(r"\d+[a-z]?/\d+[a-z]?$", address))
     distance = distance_m(candidate, data)
     same_phone = bool(data.get("phone_hash")) and any(s.phone_hash == data["phone_hash"] for s in sources)
     images = {image_key(image) for source in sources for image in source.data.get("images", [])}
@@ -64,22 +66,17 @@ def matching_property(candidate, data, sources):
         )
     ):
         return "Shared Morizon–Gratka listing identity, street, area and rooms"
-    # A repost may omit the building number. Require two independent corroborating
-    # signals plus close coordinates; one shared contact never merges properties.
-    if (
-        address
-        and candidate_address == address
-        and same_phone
-        and same_image
-        and any(s.source == data["source"] for s in sources)
-        and distance is not None
-        and distance <= 50
-    ):
-        return "Same street, contact, photo, area, rooms and nearby location"
-    if not same_address or (distance is not None and distance > 100):
+    # Missing floors are uncertainty, not corroboration. Require both contact
+    # and photo with the same known floor and nearby coordinates for reposts
+    # without a unit number. Even this remains heuristic, not proof of identity.
+    if (address and candidate_address == address and candidate.floor is not None
+        and data["floor"] is not None and same_phone and same_image
+        and distance is not None and distance <= 50):
+        return "Same address, known floor, contact, photo and nearby location"
+    if not same_unit or (distance is not None and distance > 100):
         return None
     if same_phone or same_image:
-        return "Same building address, area, rooms and " + (
+        return "Same unit address, area, rooms and " + (
             "contact fingerprint" if same_phone else "image URL"
         )
     return None

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 from sqlalchemy import case, func, or_, select, text, update
 
 from .db import get_session
-from .ingest import ingest, recompute_listing
+from .ingest import ingest, lock_identity, recompute_listing
 from .models import Advert, AdvertiserProfile, Conversation, Listing, Message, ModerationAction, Report, now
 from .normalization import clean_text
 from .query import serialize_many
@@ -93,6 +93,7 @@ def advert_data(advert):
 
 
 def owner_advert(session, advert_id, user_id):
+    lock_identity(session)
     row = session.scalar(
         select(Advert).where(Advert.id == advert_id, Advert.user_id == user_id).with_for_update()
     )
@@ -142,6 +143,7 @@ def my_profile(user_id=Depends(require_user), session=Depends(get_session)):
 
 @router.put("/v1/me/advertiser")
 def save_profile(body: ProfileBody, claims=Depends(require_claims), session=Depends(get_session)):
+    lock_identity(session)
     profile = session.get(AdvertiserProfile, claims["sub"])
     if (
         profile
@@ -539,6 +541,7 @@ class ReviewBody(BaseModel):
 def review(
     report_id: str, body: ReviewBody, moderator=Depends(require_moderator), session=Depends(get_session)
 ):
+    lock_identity(session)
     report = session.scalar(select(Report).where(Report.id == report_id).with_for_update())
     if not report or report.status != "pending":
         raise HTTPException(409, "Report is no longer pending")
