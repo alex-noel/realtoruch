@@ -18,7 +18,15 @@ import httpx
 from bs4 import BeautifulSoup
 from protego import Protego
 
-from .portals import ListingUnavailable, NotRental, canonical_url, discover, parse_detail
+from .portals import (
+    ListingUnavailable,
+    NotRental,
+    ParseCode,
+    ParseError,
+    canonical_url,
+    discover,
+    parse_detail,
+)
 from .schemas import RawListing
 from .settings import get_settings
 
@@ -126,15 +134,16 @@ class Connector:
             return response.status_code, bytes(content)
 
     def note_error(self, exc, stage, url=""):
-        self.report["errors"].append(
-            {
-                "kind": type(exc).__name__,
-                "stage": stage,
-                "http_status": getattr(exc, "status_code", None)
-                or getattr(getattr(exc, "response", None), "status_code", None),
-                "url_hash": hashlib.sha256(url.encode()).hexdigest()[:16],
-            }
-        )
+        error = {
+            "kind": type(exc).__name__,
+            "stage": stage,
+            "http_status": getattr(exc, "status_code", None)
+            or getattr(getattr(exc, "response", None), "status_code", None),
+            "url_hash": hashlib.sha256(url.encode()).hexdigest()[:16],
+        }
+        if isinstance(exc, ParseError):
+            error["code"] = exc.code.value
+        self.report["errors"].append(error)
 
     def is_due(self, previous):
         if not previous or self.config.get("force_rechecks"):
@@ -169,12 +178,24 @@ class Connector:
                 status, body = self.fetch(url, page=True)
                 if status in (404, 410):
                     raise ListingUnavailable("Confirmed HTTP disappearance")
+                if status != 200:
+                    raise SourceAccessError("Detail unavailable", status)
                 record = parse_detail(
                     self.config["name"], body.decode("utf-8"), url, city=self.config.get("city", "")
                 )
-            except ListingUnavailable:
+            except ListingUnavailable as exc:
                 if not previous:
                     self.report["skipped"] += 1
+                    return None
+                if exc.external_id is not None and exc.external_id != previous["external_id"]:
+                    self.note_error(
+                        ParseError(
+                            "Removal identity differs from the stored listing",
+                            code=ParseCode.IDENTITY_MISMATCH,
+                        ),
+                        "detail",
+                        url,
+                    )
                     return None
                 record = RawListing.model_validate(
                     {
@@ -187,8 +208,11 @@ class Connector:
                     }
                 )
                 self.report["inactive"] += 1
-            except NotRental:
+            except NotRental as exc:
                 self.report["skipped"] += 1
+                reasons = self.report.setdefault("skip_reasons", {})
+                reason = exc.code.value
+                reasons[reason] = reasons.get(reason, 0) + 1
                 return None
             except (SourceAccessError, httpx.HTTPStatusError) as exc:
                 self.note_error(exc, "detail", url)
