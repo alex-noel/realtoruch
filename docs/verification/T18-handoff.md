@@ -3,7 +3,7 @@
 ## Identity and outcome
 
 - Task: T18
-- Status: IMPLEMENTED_LOCAL. The isolated local cases passed; integrated T15/T16/T17 producer/UI revisions and hosted CI have not yet been tested together.
+- Status: VERIFIED locally, including the integrated T12/T14/T15/T16/T17 implementation. Hosted CI remains unverified.
 - Base revision: `49d4bcf`. Session fixes `3fbab65` and `64b949a` were ported as `26d3124` and `7721dea` using `scripts/commit.py`; the integrator owns their original commits.
 - T18 implementation commits: `95bb97f`, `ddbf681` and `ce6087f`, created using `python3 scripts/commit.py`. This report is a separate handoff commit.
 - Actual work and test date: 11 November 2026, Europe/Warsaw (CET); reports preserve UTC timestamps independently of Git metadata.
@@ -50,3 +50,7 @@ Fixture counts: one silent qualifying baseline and one lifecycle home per viewpo
 See `docs/testing.md` for setup and exact local commands. The controlled duplicate must fail rather than retry or pass. `test_sanitize.py` proves synthetic negative canaries are rejected without an archive; the filter excludes raw network/response content but is scoped to this synthetic suite and is not a general-purpose trace sanitizer. Unscreened logs, mail, databases and error contexts remain ignored private run data. The CI uploader receives only selected aggregate report fields, synthetic screenshots and screened traces; token-bearing traces are omitted and counted. A crash or SIGKILL can bypass process cleanup; inspect only the run's owned process group and ignored directory, never prune unrelated resources.
 
 Remaining review: integrate T15/T16 and T17, rerun the complete web profile and verify owner inbox/read behavior with the final cursor implementation. T17's updated `Open conversation: <title>` accessible name is accepted by the test's prefix locator. The tested session fixes need normal integration review. CI hosted execution and required-check configuration are unverified. Rollback is a reviewed revert of the T18 commits, leaving user data untouched; run resources are disposable. No push or deployment was performed.
+
+## Integrator verification
+
+The integration review above is complete. `make verify-web ARGS='--run-id integrated-t17-t18'` passed **12 tests, 0 failed, 0 skipped**, actual UTC 2026-11-11 21:51:41–21:53:05, with Node 24.6.0 and `PLAYWRIGHT_BROWSERS_PATH=/Users/alexnoel/Library/Caches/ms-playwright`. Evidence is `.local/verification/T01/integrated-t17-t18/report.json` in the root checkout. This was `3bec9db` plus the staged T17 changes, including the final inbox cursor/read implementation; the report correctly records a dirty worktree. This closes the integrated producer rerun in AC03 and AC06 without changing the artifact and hosted-CI limitations. Both trace-screening tests passed again. Unit discovery now explicitly excludes the browser specs through `vitest.config.mjs`; all 33 frontend unit tests passed on 2026-11-11 after that integration correction.

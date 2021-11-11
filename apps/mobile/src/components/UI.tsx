@@ -1,6 +1,8 @@
-import React, { ReactNode } from "react";
+import React, { ComponentRef, ReactNode, RefObject } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -10,6 +12,7 @@ import {
 import Check from "lucide-react-native/icons/check";
 import X from "lucide-react-native/icons/x";
 import { c, s } from "../theme";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export function Button({
   children,
@@ -122,66 +125,94 @@ export function Panel({
   children,
   onClose,
   wide = false,
+  inboxViewport,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  inboxViewport?: {
+    ref: RefObject<ComponentRef<typeof ScrollView> | null>;
+    onChange: () => void;
+  };
 }) {
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+  const panel = (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: "#102620AA",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 18,
+      }}
+    >
       <View
         style={{
-          flex: 1,
-          backgroundColor: "#102620AA",
-          justifyContent: "center",
-          alignItems: "center",
-          padding: 18,
+          width: "100%",
+          maxWidth: wide ? 1000 : 560,
+          maxHeight: "94%",
+          backgroundColor: c.bg,
         }}
+        accessibilityViewIsModal
       >
         <View
-          style={{
-            width: "100%",
-            maxWidth: wide ? 1000 : 560,
-            maxHeight: "94%",
-            backgroundColor: c.bg,
-          }}
-          accessibilityViewIsModal
+          style={[
+            s.row,
+            {
+              padding: 22,
+              justifyContent: "space-between",
+              borderBottomWidth: 1,
+              borderColor: c.line,
+            },
+          ]}
         >
-          <View
-            style={[
-              s.row,
-              {
-                padding: 22,
-                justifyContent: "space-between",
-                borderBottomWidth: 1,
-                borderColor: c.line,
-              },
-            ]}
+          <Text
+            accessibilityRole="header"
+            style={[s.title, { fontSize: 21, flex: 1 }]}
           >
-            <Text
-              accessibilityRole="header"
-              style={[s.title, { fontSize: 21, flex: 1 }]}
-            >
-              {title}
-            </Text>
-            <Pressable
-              onPress={onClose}
-              accessibilityRole="button"
-              accessibilityLabel="Close dialog"
-              style={{ padding: 10 }}
-            >
-              <X color={c.ink} size={22} />
-            </Pressable>
-          </View>
-          <ScrollView
-            contentContainerStyle={{ padding: 24, gap: 22 }}
-            keyboardShouldPersistTaps="handled"
+            {title}
+          </Text>
+          <Pressable
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close dialog"
+            style={{ padding: 10 }}
           >
-            {children}
-          </ScrollView>
+            <X color={c.ink} size={22} />
+          </Pressable>
         </View>
+        <ScrollView
+          // React Native Web forwards the host ref when mounting the scroll
+          // node. Recreate it when entering/leaving the inbox viewport.
+          key={inboxViewport ? "inbox" : "panel"}
+          ref={inboxViewport?.ref}
+          testID={inboxViewport ? "messages-scroll" : undefined}
+          onScroll={inboxViewport?.onChange}
+          onLayout={inboxViewport?.onChange}
+          onContentSizeChange={inboxViewport?.onChange}
+          scrollEventThrottle={inboxViewport ? 32 : undefined}
+          contentContainerStyle={{ padding: 24, gap: 22 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {children}
+        </ScrollView>
       </View>
+    </View>
+  );
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      {inboxViewport && Platform.OS !== "web" ? (
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#102620AA" }}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1 }}
+          >
+            {panel}
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      ) : (
+        panel
+      )}
     </Modal>
   );
 }

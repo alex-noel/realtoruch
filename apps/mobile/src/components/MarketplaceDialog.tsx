@@ -1,18 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AppState, Linking, Text, View } from "react-native";
-import {
-  market,
-  Advert,
-  Conversation,
-  Draft,
-  Profile,
-  Report,
-  Thread,
-} from "../marketplaceApi";
+import { Linking, ScrollView, Text, View } from "react-native";
+import { market, Advert, Draft, Profile, Report } from "../marketplaceApi";
 import { c, s } from "../theme";
 import { Listing } from "../types";
 import { Button, Chip, Field, Panel, money } from "./UI";
 import PropertyMap from "./PropertyMap";
+import { MessagesPanel } from "./MessagesPanel";
+import { InboxModel } from "./messagesState";
 
 type Mode = "adverts" | "messages" | "review";
 type Contact = NonNullable<Listing["contact_adverts"]>[number];
@@ -52,6 +46,22 @@ export default function MarketplaceDialog({
   const [moderator, setModerator] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [inbox] = useState(
+    () =>
+      new InboxModel(
+        market,
+        contact
+          ? { kind: "advert", id: contact.id, title: contact.name }
+          : null,
+      ),
+  );
+  const messagesScroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const onMessagesScroll = useRef<(() => void) | null>(null);
+  const stopMessages = useRef<(() => void) | null>(null);
+  const changeMode = (next: Mode) => {
+    if (mode === "messages" && next !== mode) stopMessages.current?.();
+    setMode(next);
+  };
   useEffect(() => {
     let active = true;
     market
@@ -78,23 +88,38 @@ export default function MarketplaceDialog({
     }
   }
   return (
-    <Panel title="Your rental desk." wide onClose={onClose}>
+    <Panel
+      title="Your rental desk."
+      wide
+      onClose={() => {
+        stopMessages.current?.();
+        onClose();
+      }}
+      inboxViewport={
+        mode === "messages"
+          ? {
+              ref: messagesScroll,
+              onChange: () => onMessagesScroll.current?.(),
+            }
+          : undefined
+      }
+    >
       <View style={[s.row, { flexWrap: "wrap", gap: 8 }]}>
         <Chip
           label="My adverts"
           selected={mode === "adverts"}
-          onPress={() => setMode("adverts")}
+          onPress={() => changeMode("adverts")}
         />
         <Chip
           label="Messages"
           selected={mode === "messages"}
-          onPress={() => setMode("messages")}
+          onPress={() => changeMode("messages")}
         />
         {moderator && (
           <Chip
             label="Review reports"
             selected={mode === "review"}
-            onPress={() => setMode("review")}
+            onPress={() => changeMode("review")}
           />
         )}
       </View>
@@ -106,11 +131,13 @@ export default function MarketplaceDialog({
       {mode === "adverts" ? (
         <AdvertDesk run={run} busy={busy} onOpenHome={onOpenHome} />
       ) : mode === "messages" ? (
-        <Messages
+        <MessagesPanel
+          model={inbox}
           contact={contact}
-          run={run}
-          busy={busy}
           onOpenHome={onOpenHome}
+          scroll={messagesScroll}
+          onViewportChange={onMessagesScroll}
+          stop={stopMessages}
         />
       ) : (
         <ReviewDesk run={run} busy={busy} />
@@ -459,236 +486,6 @@ function AdvertEditor({
       <Button outline disabled={busy} onPress={onCancel}>
         Back to adverts
       </Button>
-    </>
-  );
-}
-function Messages({
-  contact,
-  run,
-  busy,
-  onOpenHome,
-}: Work & { contact?: Contact; onOpenHome: (id: string) => void }) {
-  const [list, setList] = useState<Conversation[]>([]);
-  const [thread, setThread] = useState<Thread | null>(null);
-  const [body, setBody] = useState("");
-  const [recipient, setRecipient] = useState(contact);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const delivery = useRef<{ body: string; target: string; id: string } | null>(
-    null,
-  );
-  const selected = useRef<string | null>(null);
-  async function reload() {
-    setList((await market.conversations()).items);
-  }
-  useEffect(() => {
-    run(reload);
-  }, []);
-  useEffect(() => {
-    let active = true;
-    if (recipient)
-      run(async () => {
-        const p = await market.advertiser(recipient.profile_id);
-        if (active) setProfile(p.profile);
-      });
-    return () => {
-      active = false;
-    };
-  }, [recipient?.profile_id]);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (
-        AppState.currentState !== "active" ||
-        (typeof document !== "undefined" &&
-          document.visibilityState !== "visible")
-      )
-        return;
-      market
-        .conversations()
-        .then((r) => setList(r.items))
-        .catch(() => {});
-      const id = selected.current;
-      if (id)
-        market
-          .thread(id)
-          .then((r) => {
-            if (selected.current !== id) return;
-            setThread((current) => {
-              if (!current || current.id !== r.id) return r;
-              const freshIds = new Set(r.items.map((item) => item.id));
-              // Preserve explicitly loaded history when the polling windows
-              // overlap. After a long offline gap, restart from the newest page.
-              if (!current.items.some((item) => freshIds.has(item.id)))
-                return r;
-              const items = new Map(
-                current.items.map((item) => [item.id, item]),
-              );
-              r.items.forEach((item) => items.set(item.id, item));
-              return {
-                ...r,
-                next_cursor: current.next_cursor,
-                items: [...items.values()].sort(
-                  (a, b) =>
-                    a.created_at.localeCompare(b.created_at) ||
-                    a.id.localeCompare(b.id),
-                ),
-              };
-            });
-          })
-          .catch(() => {});
-    }, 15000);
-    return () => clearInterval(timer);
-  }, []);
-  async function open(id: string) {
-    selected.current = id;
-    const r = await market.thread(id);
-    if (selected.current !== id) return;
-    setThread(r);
-    setRecipient(undefined);
-    setBody("");
-    await market.read(id);
-    await reload();
-  }
-  async function send() {
-    const target = thread?.id || recipient?.id;
-    if (!target) return;
-    if (delivery.current?.body !== body || delivery.current.target !== target)
-      delivery.current = {
-        body,
-        target,
-        id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      };
-    const key = delivery.current.id;
-    let id = thread?.id;
-    if (id) await market.reply(id, body, key);
-    else if (recipient) id = (await market.start(recipient.id, body, key)).id;
-    delivery.current = null;
-    if (id) await open(id);
-  }
-  return (
-    <>
-      {!thread && !recipient && (
-        <Text style={s.muted}>
-          Messages about homes advertised directly on Realtoruch appear here.
-          For imported adverts, contact the advertiser through the original
-          source.
-        </Text>
-      )}
-      {recipient && (
-        <View style={{ gap: 8 }}>
-          <Text style={[s.title, { fontSize: 21 }]}>
-            Write to {recipient.name}
-          </Text>
-          <Text style={s.muted}>
-            {profile?.description || recipient.kind} · Advertiser type is
-            self-declared.
-          </Text>
-        </View>
-      )}
-      {thread && (
-        <>
-          <Button
-            outline
-            onPress={() => {
-              selected.current = null;
-              setThread(null);
-            }}
-          >
-            All conversations
-          </Button>
-          {thread.next_cursor && (
-            <Button
-              outline
-              disabled={busy}
-              onPress={() =>
-                run(async () => {
-                  const older = await market.thread(
-                    thread.id,
-                    thread.next_cursor!,
-                  );
-                  setThread((current) =>
-                    current?.id === older.id
-                      ? { ...older, items: [...older.items, ...current.items] }
-                      : current,
-                  );
-                })
-              }
-            >
-              Load older messages
-            </Button>
-          )}
-          {thread.items.map((message) => (
-            <View
-              key={message.id}
-              style={[
-                s.card,
-                {
-                  padding: 16,
-                  backgroundColor: message.mine ? c.pale : "white",
-                  gap: 6,
-                },
-              ]}
-            >
-              <Text style={s.label}>
-                {message.mine ? "YOU" : "REPLY"} ·{" "}
-                {new Date(message.created_at).toLocaleString()}
-              </Text>
-              <Text style={s.text}>{message.body}</Text>
-            </View>
-          ))}
-          {thread.blocked && (
-            <Text style={s.muted}>This conversation is blocked.</Text>
-          )}
-          {(!thread.blocked || thread.can_unblock) && (
-            <Button
-              outline
-              disabled={busy}
-              onPress={() =>
-                run(async () => {
-                  await market.block(thread.id, !thread.blocked);
-                  await open(thread.id);
-                })
-              }
-            >
-              {thread.blocked ? "Unblock conversation" : "Block conversation"}
-            </Button>
-          )}
-        </>
-      )}
-      {(recipient || (thread && !thread.blocked)) && (
-        <>
-          <Field
-            label="YOUR MESSAGE"
-            multiline
-            value={body}
-            onChange={setBody}
-          />
-          <Button
-            disabled={busy || !body.trim() || body.length > 4000}
-            onPress={() => run(send)}
-          >
-            Send message
-          </Button>
-        </>
-      )}
-      {!thread &&
-        list.map((item) => (
-          <View key={item.id} style={[s.card, { padding: 16, gap: 12 }]}>
-            <Text style={s.text}>
-              {item.title}
-              {item.unread_count ? ` · ${item.unread_count} unread` : ""}
-            </Text>
-            <Button
-              outline
-              disabled={busy}
-              onPress={() => run(() => open(item.id))}
-            >
-              Open conversation
-            </Button>
-            <Button outline onPress={() => onOpenHome(item.listing_id)}>
-              View home
-            </Button>
-          </View>
-        ))}
     </>
   );
 }
