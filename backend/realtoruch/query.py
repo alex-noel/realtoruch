@@ -1,7 +1,6 @@
 from collections import defaultdict
-from statistics import median
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Float, Integer, case, cast, func, or_, select
 
 from .models import Listing, Observation, SourceListing, now
 from .schemas import SearchFilters
@@ -163,48 +162,83 @@ def search_db(session, filters):
 
 
 def market_history(session, city="", district="", region="", months=12):
-    """Monthly last observed asking rent per property, never one vote per portal."""
-    query = select(Observation, Listing).join(Listing, Observation.listing_id == Listing.id)
-    if city:
-        query = query.where(Listing.city == city)
-    if district:
-        query = query.where(Listing.district == district)
-    if region:
-        query = query.where(Listing.region == region)
-    from datetime import timedelta
+    """Observed monthly rents, bounded by UTC calendar months and query time."""
+    from datetime import datetime
 
-    cutoff = now() - timedelta(days=months * 31)
-    query = query.where(Observation.observed_at >= cutoff).order_by(Observation.observed_at)
-    # A source's removal must not remove a property still active on another source.
-    month_sources = defaultdict(dict)
-    for observation, listing in session.execute(query):
-        month_sources[observation.observed_at.strftime("%Y-%m")][observation.source_listing_id] = (
-            observation,
-            listing,
-        )
-    points = []
-    for month, records in sorted(month_sources.items()):
-        by_property = defaultdict(list)
-        for observation, listing in records.values():
-            if observation.status == "active":
-                by_property[listing.id].append((observation, listing))
-        homes = [max(values, key=lambda pair: pair[0].observed_at) for values in by_property.values()]
-        if not homes:
-            continue
-        rents = [obs.rent_pln for obs, _ in homes]
-        points.append(
-            {
-                "month": month,
-                "median_rent_pln": median(rents),
-                "median_per_m2": round(median(obs.rent_pln / listing.area_m2 for obs, listing in homes), 2),
-                "sample_size": len(homes),
-                "is_demo": any(listing.is_demo for _, listing in homes),
-            }
-        )
+    end = now()
+    absolute_month = end.year * 12 + end.month - 1 - (months - 1)
+    start = datetime(absolute_month // 12, absolute_month % 12 + 1, 1)
+    month = (func.to_char(Observation.observed_at, "YYYY-MM")
+             if session.bind.dialect.name == "postgresql"
+             else func.strftime("%Y-%m", Observation.observed_at))
+    source_rank = func.row_number().over(
+        partition_by=(month, Observation.source_listing_id),
+        order_by=(Observation.observed_at.desc(), Observation.id.desc()),
+    )
+    observations = select(
+        month.label("month"), Observation.listing_id.label("home_id"),
+        Observation.source_listing_id.label("source_id"), Observation.id.label("observation_id"),
+        Observation.observed_at.label("observed_at"), Observation.status.label("status"),
+        Observation.rent_pln.label("rent"), Listing.area_m2.label("area"),
+        Listing.is_demo.label("demo"), source_rank.label("source_rank"),
+    ).join(Listing, Observation.listing_id == Listing.id).where(
+        Observation.observed_at >= start, Observation.observed_at <= end,
+    )
+    for value, column in ((city, Listing.city), (district, Listing.district), (region, Listing.region)):
+        if value:
+            observations = observations.where(column == value)
+    sources = observations.subquery()
+    home_rank = func.row_number().over(
+        partition_by=(sources.c.month, sources.c.home_id),
+        order_by=(sources.c.observed_at.desc(), sources.c.source_id.desc(), sources.c.observation_id.desc()),
+    )
+    active = select(sources, home_rank.label("home_rank")).where(
+        sources.c.source_rank == 1, sources.c.status == "active"
+    ).subquery()
+    homes = select(active).where(active.c.home_rank == 1).subquery()
+    per_m2 = cast(homes.c.rent, Float) / homes.c.area
+    ranked = select(
+        homes.c.month, homes.c.rent, per_m2.label("per_m2"), homes.c.demo,
+        func.count().over(partition_by=homes.c.month).label("n"),
+        func.row_number().over(partition_by=homes.c.month, order_by=(homes.c.rent, homes.c.home_id)).label("rent_rank"),
+        func.row_number().over(partition_by=homes.c.month, order_by=(per_m2, homes.c.home_id)).label("area_rank"),
+    ).subquery()
+    def middle(rank):
+        return (rank * 2 >= ranked.c.n) & (rank * 2 <= ranked.c.n + 2)
+    rows = session.execute(select(
+        ranked.c.month,
+        func.avg(case((middle(ranked.c.rent_rank), cast(ranked.c.rent, Float)))).label("rent"),
+        func.avg(case((middle(ranked.c.area_rank), ranked.c.per_m2))).label("per_m2"),
+        func.max(ranked.c.n).label("n"),
+        func.max(cast(ranked.c.demo, Integer)).label("demo"),
+    ).group_by(ranked.c.month).order_by(ranked.c.month)).all()
     return {
-        "points": points,
-        "methodology": "Median advertised base rent (PLN), excluding fees. One latest observed active price per canonical property per month; months without observations are not interpolated. This is an observed sample, not signed lease prices or a census. Small samples are shown explicitly.",
-        "city": city,
-        "district": district,
-        "region": region,
+        "points": [{"month": row.month, "median_rent_pln": row.rent,
+                    "median_per_m2": round(row.per_m2, 2), "sample_size": row.n,
+                    "is_demo": bool(row.demo)} for row in rows],
+        "methodology": "Median advertised base rent (PLN), excluding fees. Current UTC calendar month and preceding months through the query time; latest observation per source/month, then latest active source per canonical property/month. Per-m² uses current canonical area. Months without observations are not interpolated. This is an observed sample, not signed lease prices or a census. Small samples are shown explicitly.",
+        "city": city, "district": district, "region": region,
     }
+
+
+def market_summary(session, city=""):
+    """Summarize active homes without materializing the catalog in Python."""
+    filtered = select(Listing.id, Listing.rent_pln, Listing.district, Listing.is_demo,
+                      Listing.advertiser_type).where(Listing.status == "active")
+    if city:
+        filtered = filtered.where(Listing.city == city)
+    homes = filtered.subquery()
+    ranked = select(homes, func.row_number().over(order_by=(homes.c.rent_pln, homes.c.id)).label("r"),
+                    func.count().over().label("n")).subquery()
+    count, private, demo, rent = session.execute(select(
+        func.count(), func.coalesce(func.sum(case((ranked.c.advertiser_type == "private", 1), else_=0)), 0),
+        func.coalesce(func.max(cast(ranked.c.is_demo, Integer)), 0),
+        func.avg(case(((ranked.c.r * 2 >= ranked.c.n) & (ranked.c.r * 2 <= ranked.c.n + 2), cast(ranked.c.rent_pln, Float)))),
+    )).one()
+    source_count = session.scalar(select(func.count()).select_from(SourceListing).join(
+        homes, SourceListing.listing_id == homes.c.id).where(SourceListing.status == "active"))
+    districts = session.scalars(select(homes.c.district).where(homes.c.district != "").distinct().order_by(homes.c.district)).all()
+    cities = session.scalars(select(Listing.city).distinct().order_by(Listing.city)).all()
+    return {"homes": count, "source_listings": source_count, "duplicates_removed": source_count - count,
+            "private_homes": private, "median_rent_pln": rent, "demo": bool(demo),
+            "districts": districts, "cities": cities}
