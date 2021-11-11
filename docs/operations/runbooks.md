@@ -30,7 +30,7 @@ All names have the `realtoruch_` prefix. All series are gauges sampled from dura
 | `collection_lease_expired` | 0/1 | `provider` | A persisted lease token has an expiry in the past. It can be reclaimed by the normal fenced scheduler. |
 | `collection_runs_24h` | Attempts | `provider`, `state` | Runs started in the past 24 hours by stored state. An abandoned run can still be recorded as running; check the separate lease signal. |
 
-Allowed queues: REST `search_outbox`, `rental_email` (confirmation and rental notification), `push` (including receipt reconciliation); auth `auth_mail` (verification/reset), `account_erasure`. Queue states are `ready`, `leased`, `deferred`, `failed`, `cancelled`. A terminal row is never ready; an active lease takes precedence over scheduling. An expired delivery lease is claimable if its current due time has arrived. A worker can still cancel a queue-eligible row after validating current listing/account state. Search outbox uses creation time as its due time and reports held 400/413 rows as `failed`. Auth mail is deferred while disabled. Erasure age is current overdue age; retries change the next due time, so inspect retry/error depth too.
+Allowed queues: REST `search_outbox`, `rental_email` (confirmation and rental notification), `push` (including receipt reconciliation); auth `auth_mail` (verification/reset), `account_erasure`. Queue states are `ready`, `leased`, `deferred`, `failed`, `cancelled`. A terminal row is never ready; an active lease takes precedence over scheduling. An expired delivery lease is claimable if its current due time has arrived. A worker can still cancel a queue-eligible row after validating current listing/account state. Search outbox has no scheduling deadline: all pending rows except held 400/413 items are ready, even if clock skew gives them a future creation timestamp. Creation time controls ordering and age; negative ages clamp to zero. Held 400/413 rows report as `failed`. Auth mail is deferred while disabled. Erasure age is current overdue age; retries change the next due time, so inspect retry/error depth too.
 
 Provider labels are `gratka`, `morizon`, `olx`, `otodom`. New provider names require review before adding a series. Collection run states are `running`, `succeeded`, `partial`, `failed`, `interrupted`, `other`. Worker logs use `other` for unrecognized sources and include counts for 403/429, but omit URL/hash, city, tokens, listing/job/account IDs, transport errors and reports. SQL collection metrics describe the local SQL scheduler; the cloud collector path does not populate this lease history.
 
@@ -83,7 +83,7 @@ SELECT CASE WHEN o.last_index_status IN (400,413) THEN 'held' ELSE 'eligible' EN
        max(s.revision) AS highest_waiting_revision
 FROM outbox AS o
 JOIN search_revisions AS s ON s.listing_id = o.listing_id
-WHERE o.delivered_at IS NULL AND o.created_at <= timezone('UTC', now())
+WHERE o.delivered_at IS NULL
 GROUP BY 1 ORDER BY 1;
 ```
 
