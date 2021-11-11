@@ -84,6 +84,7 @@ def test_runtime_role_grants(monkeypatch, record):
                             assert conn.execute("SELECT status, claim_token, lease_until, confirmation_token FROM email_deliveries WHERE id='email'").fetchone() == ("cancelled", None, None, None)
                             assert conn.execute("SELECT status, claim_token, lease_until FROM push_deliveries WHERE id='push'").fetchone() == ("cancelled", None, None)
                             _assert_retention_permissions(engine, conn, roles["indexer"], record, monkeypatch)
+                            _assert_api_merge_alert_permissions(engine, conn, roles["api"], record)
                         finally:
                             engine.dispose()
                         assert conn.execute("SELECT status, claim_token, lease_until, confirmation_token FROM email_deliveries WHERE id='email'").fetchone() == ("cancelled", None, None, None)
@@ -99,17 +100,23 @@ def test_runtime_role_grants(monkeypatch, record):
                                     ("indexer", "SELECT confirmation_token FROM email_deliveries", False),
                                     ("indexer", "SELECT user_id FROM email_deliveries", False),
                                     ("indexer", "SELECT title FROM notifications", False),
+                                    ("indexer", "INSERT INTO notifications (id) SELECT 'denied' WHERE false", False),
+                                    ("indexer", "INSERT INTO push_deliveries (id) SELECT 'denied' WHERE false", False),
                                     ("indexer", "UPDATE source_listings SET url=url WHERE false", False),
                                     ("indexer", "DELETE FROM listings WHERE false", False),
                                     ("dataflow", "SELECT confirmation_token FROM email_deliveries", False),
                                     ("dataflow", "SELECT user_id FROM email_deliveries", False),
                                     ("dataflow", "SELECT subscription_id FROM push_deliveries", False),
                                     ("dataflow", "SELECT title FROM notifications", False),
+                                    ("dataflow", "INSERT INTO notifications (id) SELECT 'denied' WHERE false", False),
+                                    ("dataflow", "INSERT INTO push_deliveries (id) SELECT 'denied' WHERE false", False),
                                     ("dataflow", "DELETE FROM listings WHERE false", False),
                                     ("alerts", "SELECT * FROM account_closures", False),
                                     ("indexer", "SELECT * FROM account_closures", False),
                                     ("dataflow", "SELECT * FROM account_closures", False),
-                                    ("auth", "SELECT * FROM listings", False)],
+                                    ("auth", "SELECT * FROM listings", False),
+                                    ("auth", "INSERT INTO notifications (id) SELECT 'denied' WHERE false", False),
+                                    ("auth", "INSERT INTO push_deliveries (id) SELECT 'denied' WHERE false", False)],
                         "auth": [("api", "SELECT * FROM users", False), ("auth", "SELECT * FROM users", True)],
                     }
                     for role, statement, allowed in statements[logical]:
@@ -171,3 +178,49 @@ def _assert_retention_permissions(engine, conn, role, record, monkeypatch):
         assert session.get(SearchRevision, listing_id).revision == 1
         assert len(session.scalars(select(Outbox).where(Outbox.listing_id == listing_id)).all()) == 1
         assert len(session.scalars(select(AlertEvent).where(AlertEvent.listing_id == listing_id)).all()) == 1
+
+
+def _assert_api_merge_alert_permissions(engine, conn, role, record):
+    """A merge must deliver genuine pre-correction work with API-role privileges."""
+    from realtoruch.alerts import process_alerts
+    from realtoruch.identity_review import MergeBody, merge
+    from realtoruch.ingest import ingest
+    from realtoruch.models import EmailSubscription, Favorite, PushSubscription, now
+
+    with Session(engine) as session:
+        session.execute(text('RESET ROLE'))
+        first = record.model_copy(update={'external_id': 'role-merge-target', 'address': 'Target 1/1',
+                                          'rent_pln': 4500})
+        second = record.model_copy(update={'source': 'gratka', 'external_id': 'role-merge-source',
+                                           'address': 'Other 2/1', 'rent_pln': 4200,
+                                           'observed_at': first.observed_at + timedelta(minutes=2)})
+        target = ingest(session, first)['listing_id']
+        source = ingest(session, second)['listing_id']
+        assert target != source
+        process_alerts(session)
+        session.add(Favorite(user_id='role-user', listing_id=target, price_floor=4500))
+        session.add(EmailSubscription(user_id='role-user', email='synthetic@example.invalid',
+                                      enabled=True, verified_at=now(), unsubscribe_token='role-token'))
+        session.add(PushSubscription(id='role-push', user_id='role-user', kind='web', data={}, active=True))
+        session.flush()
+        ingest(session, first.model_copy(update={'rent_pln': 4300,
+               'observed_at': first.observed_at + timedelta(minutes=1)}))
+        session.commit()
+
+    # SET ROLE remains in effect for the actual route implementation, including
+    # its commit; reset before returning the pooled connection to the owner.
+    with engine.connect() as connection:
+        connection.execute(text('SET ROLE "' + role + '"'))
+        connection.commit()
+        try:
+            with Session(connection) as session:
+                result = merge(source, MergeBody(target_id=target, reason='Reviewed duplicate synthetic homes.'),
+                               'role-moderator', session)
+                assert result['listing_id'] == target
+        finally:
+            connection.rollback()
+            connection.execute(text('RESET ROLE'))
+            connection.commit()
+    assert conn.execute("SELECT kind, previous_rent_pln, rent_pln FROM notifications WHERE user_id='role-user'").fetchall() == [('price_drop', 4500, 4300)]
+    assert conn.execute("SELECT count(*) FROM email_deliveries WHERE user_id='role-user'").fetchone()[0] == 1
+    assert conn.execute("SELECT count(*) FROM push_deliveries WHERE subscription_id='role-push'").fetchone()[0] == 1

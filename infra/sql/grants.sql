@@ -22,7 +22,8 @@ GRANT SELECT ON adverts, advertiser_profiles TO :"indexer_user";
 GRANT SELECT, DELETE ON collection_runs TO :"indexer_user";
 GRANT SELECT, INSERT, UPDATE, DELETE ON favorites, saved_searches, reports TO :"api_user";
 GRANT SELECT, INSERT, UPDATE, DELETE ON seen_prices, search_matches, push_subscriptions TO :"api_user";
-GRANT SELECT, UPDATE, DELETE ON notifications, push_deliveries TO :"api_user";
+-- Identity merges evaluate genuine pending alerts within the API transaction.
+GRANT SELECT, INSERT, UPDATE, DELETE ON notifications, push_deliveries TO :"api_user";
 GRANT SELECT, INSERT, UPDATE, DELETE ON email_subscriptions, email_deliveries TO :"api_user";
 GRANT SELECT ON listings, source_listings, saved_searches, seen_prices TO :"alerts_user";
 GRANT SELECT, UPDATE ON favorites, push_subscriptions TO :"alerts_user";
