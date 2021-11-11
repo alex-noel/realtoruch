@@ -1,11 +1,13 @@
 """Owner/agency publishing and private conversations for first-party adverts."""
 
-from datetime import timedelta
-from typing import Literal
+import base64
+from datetime import datetime, timedelta
+from typing import Annotated, Literal
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
-from sqlalchemy import case, func, or_, select, text, update
+from sqlalchemy import case, func, or_, select, text, tuple_, update
 
 from .db import get_session
 from .ingest import ingest, lock_identity, recompute_listing
@@ -290,18 +292,46 @@ class MessageBody(BaseModel):
         return value
 
 
-def conversation_for(session, conversation_id, user_id):
-    row = session.scalar(
-        select(Conversation)
-        .where(
-            Conversation.id == conversation_id,
-            or_(Conversation.renter_id == user_id, Conversation.owner_id == user_id),
-        )
-        .with_for_update()
+def _begin_conversation_write(session):
+    # SQLite ignores FOR UPDATE. Reserve its writer before reading the thread
+    # (or before checking whether a start needs to create the thread).
+    if session.bind.dialect.name == "sqlite":
+        connection = session.connection()
+        if not connection.connection.driver_connection.in_transaction:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+
+
+def conversation_for(session, conversation_id, user_id, *, write=False):
+    query = select(Conversation).where(
+        Conversation.id == conversation_id,
+        or_(Conversation.renter_id == user_id, Conversation.owner_id == user_id),
     )
+    if write:
+        _begin_conversation_write(session)
+        query = query.with_for_update()
+    row = session.scalar(query)
     if not row:
         raise HTTPException(404, "Conversation not found")
     return row
+
+
+def _latest_message(conversation_id):
+    return (
+        select(Message.created_at, Message.id)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(1)
+    )
+
+
+def _message_boundary(session, conversation_id, message_id):
+    boundary = session.execute(
+        select(Message.created_at, Message.id)
+        .where(Message.conversation_id == conversation_id, Message.id == message_id)
+    ).one_or_none()
+    if boundary is None:
+        raise HTTPException(422, "Invalid message cursor")
+    return boundary
 
 
 def send_message(session, conversation, user_id, body):
@@ -313,6 +343,8 @@ def send_message(session, conversation, user_id, body):
         )
     )
     if existing:
+        if existing.body != body.body:
+            raise HTTPException(409, "Client message ID already used with different text")
         return existing
     if conversation.blocked_by:
         raise HTTPException(403, "This conversation is blocked")
@@ -330,11 +362,26 @@ def send_message(session, conversation, user_id, body):
         >= 20
     ):
         raise HTTPException(429, "Please wait before sending more messages")
+    # With the thread locked, assign an arrival order even if the wall clock
+    # ties or goes backward. UUIDs alone cannot order arrivals within a tie.
+    latest = session.execute(_latest_message(conversation.id)).first()
+    prior_stamps = (
+        conversation.updated_at,
+        conversation.owner_read_at,
+        conversation.renter_read_at,
+        latest.created_at if latest else None,
+    )
+    previous = max(stamp for stamp in prior_stamps if stamp is not None)
+    created_at = max(now(), previous + timedelta(microseconds=1))
     row = Message(
-        conversation_id=conversation.id, sender_id=user_id, client_id=body.client_id, body=body.body
+        conversation_id=conversation.id,
+        sender_id=user_id,
+        client_id=body.client_id,
+        body=body.body,
+        created_at=created_at,
     )
     session.add(row)
-    conversation.updated_at = now()
+    conversation.updated_at = created_at
     session.flush()
     return row
 
@@ -353,12 +400,11 @@ def start_conversation(
     advert_id: str, body: MessageBody, claims=Depends(require_claims), session=Depends(get_session)
 ):
     verified(claims)
+    lock_identity(session, shared=True)
+    _begin_conversation_write(session)
     advert = session.scalar(select(Advert).where(Advert.id == advert_id).with_for_update())
-    if (
-        not advert
-        or advert.state != "published"
-        or session.get(Listing, advert.listing_id).status != "active"
-    ):
+    home = session.get(Listing, advert.listing_id) if advert and advert.listing_id else None
+    if not advert or advert.state != "published" or not home or home.status != "active":
         raise HTTPException(404, "Advert is not available")
     if advert.user_id == claims["sub"]:
         raise HTTPException(422, "This is your own advert")
@@ -376,10 +422,47 @@ def start_conversation(
     return {"id": row.id, "message": message_data(message, claims["sub"])}
 
 
+PageLimit = Annotated[int, Query(ge=1, le=50)]
+MessageCursor = Annotated[str | None, Query(min_length=1, max_length=36)]
+
+
+def _encode_inbox_cursor(stamp, conversation_id):
+    data = f"v1|{stamp.isoformat(timespec='microseconds')}Z|{conversation_id}"
+    return base64.urlsafe_b64encode(data.encode("ascii")).decode("ascii").rstrip("=")
+
+
+def _decode_inbox_cursor(cursor):
+    try:
+        payload = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+        version, stamp, conversation_id = payload.decode("ascii").split("|")
+        updated_at = datetime.fromisoformat(stamp.removesuffix("Z"))
+        if (
+            version == "v1"
+            and updated_at.tzinfo is None
+            and str(UUID(conversation_id)) == conversation_id
+            and _encode_inbox_cursor(updated_at, conversation_id) == cursor
+        ):
+            return updated_at, conversation_id
+    except ValueError:
+        pass
+    raise HTTPException(422, "Invalid conversation cursor")
+
+
+def _after_read(stamp, message_id, read_at, read_id):
+    # For legacy timestamp-only state, the tuple comparison is unknown at an
+    # equal timestamp, so those messages remain read.
+    return or_(read_at.is_(None), tuple_(stamp, message_id) > tuple_(read_at, read_id))
+
+
 @router.get("/v1/me/conversations")
-def conversations(user_id=Depends(require_user), session=Depends(get_session)):
-    rows = session.execute(
-        select(Conversation, Advert)
+def conversations(
+    cursor: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+    limit: PageLimit = 50,
+    user_id=Depends(require_user),
+    session=Depends(get_session),
+):
+    query = (
+        select(Conversation, Advert.draft["title"].as_string(), Advert.listing_id)
         .join(Advert, Advert.id == Conversation.advert_id)
         .where(
             or_(
@@ -387,63 +470,68 @@ def conversations(user_id=Depends(require_user), session=Depends(get_session)):
                 Conversation.owner_id == user_id,
             )
         )
-        .order_by(Conversation.updated_at.desc())
-        .limit(100)
+    )
+    if cursor is not None:
+        query = query.where(tuple_(Conversation.updated_at, Conversation.id) < _decode_inbox_cursor(cursor))
+    rows = session.execute(
+        query.order_by(Conversation.updated_at.desc(), Conversation.id.desc()).limit(limit + 1)
     ).all()
+    more = len(rows) > limit
+    rows = rows[:limit]
+    if not rows:
+        return {"items": [], "next_cursor": None}
     read_at = case(
         (Conversation.owner_id == user_id, Conversation.owner_read_at),
         else_=Conversation.renter_read_at,
+    )
+    read_id = case(
+        (Conversation.owner_id == user_id, Conversation.owner_read_message_id),
+        else_=Conversation.renter_read_message_id,
     )
     unread = dict(
         session.execute(
             select(Message.conversation_id, func.count())
             .join(Conversation, Conversation.id == Message.conversation_id)
             .where(
-                Conversation.id.in_([row.id for row, _ in rows]),
+                Conversation.id.in_([row.id for row, _, _ in rows]),
                 Message.sender_id != user_id,
-                or_(read_at.is_(None), Message.created_at > read_at),
+                _after_read(Message.created_at, Message.id, read_at, read_id),
             )
             .group_by(Message.conversation_id)
         ).all()
     )
-    items = []
-    for row, advert in rows:
-        items.append(
-            {
-                "id": row.id,
-                "title": advert.draft["title"],
-                "listing_id": advert.listing_id,
-                "unread_count": unread.get(row.id, 0),
-                "blocked": bool(row.blocked_by),
-                "can_unblock": row.blocked_by == user_id,
-                "updated_at": row.updated_at.isoformat() + "Z",
-            }
-        )
-    return {"items": items}
+    items = [
+        {
+            "id": row.id,
+            "title": title,
+            "listing_id": listing_id,
+            "unread_count": unread.get(row.id, 0),
+            "blocked": bool(row.blocked_by),
+            "can_unblock": row.blocked_by == user_id,
+            "updated_at": row.updated_at.isoformat() + "Z",
+        }
+        for row, title, listing_id in rows
+    ]
+    last = rows[-1][0]
+    return {"items": items, "next_cursor": _encode_inbox_cursor(last.updated_at, last.id) if more else None}
 
 
 @router.get("/v1/me/conversations/{conversation_id}")
 def conversation_detail(
     conversation_id: str,
-    before: str | None = Query(None, max_length=60),
+    before: MessageCursor = None,
+    limit: PageLimit = 50,
     user_id=Depends(require_user),
     session=Depends(get_session),
 ):
     row = conversation_for(session, conversation_id, user_id)
-    cursor = session.get(Message, before) if before else None
-    if before and (not cursor or cursor.conversation_id != conversation_id):
-        raise HTTPException(422, "Invalid message cursor")
     query = select(Message).where(Message.conversation_id == conversation_id)
-    if cursor:
-        query = query.where(
-            or_(
-                Message.created_at < cursor.created_at,
-                (Message.created_at == cursor.created_at) & (Message.id < cursor.id),
-            )
-        )
-    messages = session.scalars(query.order_by(Message.created_at.desc(), Message.id.desc()).limit(51)).all()
-    more = len(messages) > 50
-    messages = messages[:50]
+    if before is not None:
+        cursor = _message_boundary(session, row.id, before)
+        query = query.where(tuple_(Message.created_at, Message.id) < (cursor.created_at, cursor.id))
+    messages = session.scalars(query.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit + 1)).all()
+    more = len(messages) > limit
+    messages = messages[:limit]
     return {
         "id": row.id,
         "items": [message_data(m, user_id) for m in reversed(messages)],
@@ -453,13 +541,40 @@ def conversation_detail(
     }
 
 
+class ReadMessageBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    last_message_id: str = Field(min_length=1, max_length=36)
+
+
+async def _read_message_body(request: Request, body: ReadMessageBody | None = None):
+    # FastAPI represents both an absent body and explicit JSON null as None.
+    if body is None and await request.body():
+        raise HTTPException(422, "Invalid message cursor")
+    return body
+
+
 @router.put("/v1/me/conversations/{conversation_id}/read")
-def read_conversation(conversation_id: str, user_id=Depends(require_user), session=Depends(get_session)):
-    row = conversation_for(session, conversation_id, user_id)
-    if row.owner_id == user_id:
-        row.owner_read_at = now()
+def read_conversation(
+    conversation_id: str,
+    body: Annotated[ReadMessageBody | None, Depends(_read_message_body)],
+    user_id=Depends(require_user),
+    session=Depends(get_session),
+):
+    row = conversation_for(session, conversation_id, user_id, write=True)
+    if body is None:
+        boundary = session.execute(_latest_message(row.id)).first()
     else:
-        row.renter_read_at = now()
+        boundary = _message_boundary(session, row.id, body.last_message_id)
+    if row.owner_id == user_id:
+        read_at, read_id = Conversation.owner_read_at, Conversation.owner_read_message_id
+    else:
+        read_at, read_id = Conversation.renter_read_at, Conversation.renter_read_message_id
+    if boundary is not None:
+        session.execute(
+            update(Conversation)
+            .where(Conversation.id == row.id, _after_read(boundary.created_at, boundary.id, read_at, read_id))
+            .values({read_at: boundary.created_at, read_id: boundary.id})
+        )
     session.commit()
     return {"read": True}
 
@@ -469,7 +584,7 @@ def reply(
     conversation_id: str, body: MessageBody, claims=Depends(require_claims), session=Depends(get_session)
 ):
     verified(claims)
-    row = conversation_for(session, conversation_id, claims["sub"])
+    row = conversation_for(session, conversation_id, claims["sub"], write=True)
     message = send_message(session, row, claims["sub"], body)
     session.commit()
     return message_data(message, claims["sub"])
@@ -483,7 +598,7 @@ class BlockBody(BaseModel):
 def block_conversation(
     conversation_id: str, body: BlockBody, user_id=Depends(require_user), session=Depends(get_session)
 ):
-    row = conversation_for(session, conversation_id, user_id)
+    row = conversation_for(session, conversation_id, user_id, write=True)
     if not body.blocked and row.blocked_by and row.blocked_by != user_id:
         raise HTTPException(403, "Only the person who blocked this conversation can unblock it")
     if body.blocked and not row.blocked_by:

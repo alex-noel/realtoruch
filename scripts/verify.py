@@ -113,7 +113,8 @@ def main():
                 raise RuntimeError('Services did not become ready within 120 seconds')
         xml = dest / 'results.xml'
         suites = ['backend/tests/test_service_integration.py', 'backend/tests/test_delivery_races.py',
-                  'backend/tests/test_market_history.py', 'backend/tests/test_metrics.py'] if args.profile == 'services' else ['backend/tests']
+                  'backend/tests/test_market_history.py', 'backend/tests/test_metrics.py',
+                  'backend/tests/test_message_cursors.py'] if args.profile == 'services' else ['backend/tests']
         selection = ['-k', 'not test_t26_helm and not test_t26_sqlite'] if args.profile == 'services' else []
         result = command([sys.executable, '-m', 'pytest', *suites, *selection, '--junitxml', str(xml)], check=False)
         if xml.exists():
