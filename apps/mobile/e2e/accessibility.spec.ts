@@ -593,6 +593,13 @@ test("T20-TC04 exposes listing states, labels and sufficient contrast in monochr
   await page.addStyleTag({
     content: "#root, .app-dialog { filter: grayscale(1); }",
   });
+  await expect(button(page, "Discover homes")).toHaveAttribute("aria-current", "page");
+  const listMode = button(page, "List view");
+  const mapMode = button(page, "Map view");
+  await expect(mapMode).toHaveAttribute("aria-pressed", String(info.project.name === "desktop"));
+  await listMode.click();
+  await expect(listMode).toHaveAttribute("aria-pressed", "true");
+  await expect(mapMode).toHaveAttribute("aria-pressed", "false");
   const direct = page.getByText("DIRECT OFFER", { exact: true }).first();
   const agency = page.getByText("AGENCY", { exact: true }).first();
   const commission = page.getByText("Commission not stated", { exact: true });
@@ -629,6 +636,8 @@ test("T20-TC04 exposes listing states, labels and sufficient contrast in monochr
     compared.getByText("Compared", { exact: true }),
   );
   await button(page, "Saved homes").click();
+  await expect(button(page, "Saved homes")).toHaveAttribute("aria-current", "page");
+  await expect(button(page, "Discover homes")).not.toHaveAttribute("aria-current", "page");
   const delisted = page.getByText("DELISTED", { exact: true });
   await expect(delisted).toBeVisible();
   measurements.delisted = await textContrast(delisted);

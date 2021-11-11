@@ -498,6 +498,9 @@ function RentalApp() {
         accessibilityRole="button"
         accessibilityLabel={title}
         accessibilityState={{ selected: tab === id }}
+        {...(Platform.OS === "web"
+          ? { "aria-current": tab === id ? "page" : undefined }
+          : {})}
         onPress={() => setTab(id)}
         style={[
           s.row,
@@ -1213,6 +1216,13 @@ function RentalApp() {
                               view === mode ||
                               (mode === "list" && !desktop && view === "split"),
                           }}
+                          {...(Platform.OS === "web"
+                            ? {
+                                "aria-pressed":
+                                  view === mode ||
+                                  (mode === "list" && !desktop && view === "split"),
+                              }
+                            : {})}
                           style={{
                             padding: 10,
                             backgroundColor:
