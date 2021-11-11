@@ -175,6 +175,22 @@ function validationMessage(data: unknown): string {
   }
   return "Request could not be completed. Please check your details.";
 }
+function linkValidationMessage(path: string, status: number, data: unknown) {
+  if (status !== 400 && status !== 401 && status !== 403) return null;
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  if (path === "/v1/auth/verify-email" || path === "/v1/auth/reset-password") {
+    return detail === "This link has already been used"
+      ? "This link has already been used."
+      : "This link is invalid or has expired.";
+  }
+  if (path === "/v1/notifications/email/confirm") {
+    return "This confirmation link expired or was already used.";
+  }
+  if (path === "/v1/notifications/email/unsubscribe") {
+    return "This unsubscribe link is unavailable.";
+  }
+  return null;
+}
 export async function request<T>(path: string, options: RequestInit = {}, authService = false, retry = true, retried = false, lockHeld = false): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
@@ -196,7 +212,8 @@ export async function request<T>(path: string, options: RequestInit = {}, authSe
       let data: unknown; try { data = await response.json(); } catch { data = null; }
       checkIntent(intent);
       if (kind === "invalid" && usedToken && (retry || retried) && path !== "/v1/auth/refresh") await invalidate(intent);
-      throw new SessionError(kind, kind === "invalid" ? ((path.endsWith("/login") || path.endsWith("/account")) ? validationMessage(data) : "Session expired or revoked. Sign in again.") : kind === "transient" ? "Cannot reach the service. Try again." : validationMessage(data), response.status);
+      const linkMessage = linkValidationMessage(path, response.status, data);
+      throw new SessionError(kind, linkMessage ?? (kind === "invalid" ? ((path.endsWith("/login") || path.endsWith("/account")) ? validationMessage(data) : "Session expired or revoked. Sign in again.") : kind === "transient" ? "Cannot reach the service. Try again." : validationMessage(data)), response.status);
     }
     const data = await response.json(); checkIntent(intent); return data;
   } catch (error) {
