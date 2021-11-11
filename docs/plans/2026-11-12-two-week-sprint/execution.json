@@ -23,16 +23,19 @@
     },
     {
       "id": "T02",
-      "status": "PLANNED",
+      "status": "LOCAL_PARTIAL",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "medium",
       "depends": [
         "T01"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "b7230d7 + db34817 + 7b63e8c",
+      "integrated_commit": "fbbd6d9",
+      "review": "Accepted as dependency: actionlint, fatal Ruff, Compose and independent offline242/service82 passed. Hosted CI G07 remains not run because no push is authorized.",
+      "evidence": [
+        "docs/verification/T02-handoff.md",
+        ".local/verification/T01/integrated-t02-services/report.json"
+      ]
     },
     {
       "id": "T03",
@@ -52,16 +55,19 @@
     },
     {
       "id": "T04",
-      "status": "PLANNED",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
         "T03"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "326a77b + fe4ab6f",
+      "integrated_commit": "1049292",
+      "review": "Parent added T10 identity gate before city/source locks;95real-service passes,142combinedcollector/portal/identity passes. Cloud remains unconditional; HTTP/Bigtable tests use fakes.",
+      "evidence": [
+        "docs/verification/T04-handoff.md",
+        ".local/verification/T01/integrated-t04-review/report.json"
+      ]
     },
     {
       "id": "T05",
@@ -79,16 +85,18 @@
     },
     {
       "id": "T06",
-      "status": "IN_REVIEW",
+      "status": "VERIFIED",
       "model": "gpt-6-luna",
       "reasoning_effort": "medium",
       "depends": [
         "T05"
       ],
-      "worker_commit": "cf55b548936d7b2b74060c957f2f6550c9147c2b",
-      "integrated_commit": null,
-      "review": "Changes requested: robots/challenge handling, detail policy, pacing and configuration diagnostics.",
-      "evidence": []
+      "worker_commit": "cf55b54 + fe15cbd",
+      "integrated_commit": "9d8c816",
+      "review": "Parent network-boundary review; 29 independent targeted tests, 0 skips. Mock evidence only; automatic OLX remains disabled.",
+      "evidence": [
+        "docs/verification/T06-handoff.md"
+      ]
     },
     {
       "id": "T07",
@@ -107,16 +115,19 @@
     },
     {
       "id": "T08",
-      "status": "IN_PROGRESS",
+      "status": "LOCAL_PARTIAL",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "xhigh",
       "depends": [
         "T01"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "e68353eb496b321c6b9c7df2957559aa90881ade",
+      "integrated_commit": "e257706",
+      "review": "Implementation accepted as dependency after concurrency review, 14 targeted and 14 real-service tests. Four-core/8-GiB AC07 benchmark profile remains NOT_RUN; local measurements are not substituted.",
+      "evidence": [
+        "docs/verification/T08-handoff.md",
+        ".local/verification/T01/integrated-t08-review/report.json"
+      ]
     },
     {
       "id": "T09",
@@ -134,30 +145,38 @@
     },
     {
       "id": "T10",
-      "status": "PLANNED",
+      "status": "LOCAL_PARTIAL",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "xhigh",
       "depends": [
         "T08",
         "T09"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "2c3688c + d6765de",
+      "integrated_commit": "87cfd34 + b56f0f8 + e7eeb88",
+      "review": "Independent19targeted and90real-service passes. Combined portal regression tightened fallback to requirebuilding evidence;142targeted and14journey passes. Existing frozen metrics document earlier matcher; final immutable-corpus check reserved toT32, noholdout tuning.",
+      "evidence": [
+        "docs/verification/T10-handoff.md",
+        "docs/verification/dedupe-after.md",
+        ".local/verification/T01/integrated-t10-review/report.json"
+      ]
     },
     {
       "id": "T11",
-      "status": "PLANNED",
+      "status": "VERIFIED",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [
         "T10"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "3bdf337 + 63b7489",
+      "integrated_commit": "79fc5b7",
+      "review": "Parent SQL/methodology review and101real-service passes including both-engine historyfixtures. Worker100k-observation benchmark metlocal latency/memory targets. No index/migration justified.",
+      "evidence": [
+        "docs/verification/T11-handoff.md",
+        "docs/performance/history-baseline.md",
+        ".local/verification/T01/integrated-t11-review/report.json"
+      ]
     },
     {
       "id": "T12",
@@ -175,33 +194,38 @@
     },
     {
       "id": "T13",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "xhigh",
       "depends": [
         "T01"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "5d744ee + fde53fb",
+      "integrated_commit": "4e6f00b",
+      "review": "Parent reviewed delivery/related-state lock order and cancellation writers; combined service profile82passed0skipped, plus41 targeted regressionpasses.",
+      "evidence": [
+        "docs/verification/T13-handoff.md",
+        ".local/verification/T01/integrated-t13-review/report.json"
+      ]
     },
     {
       "id": "T14",
-      "status": "PLANNED",
+      "status": "LOCAL_PARTIAL",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [
         "T01"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "03a324c + c03550f",
+      "integrated_commit": "edf5e59",
+      "review": "Parent reproduced and corrected stale-session races;18independentunit and7account tests,TS passed. Vitest4.1.12 replaced vulnerable initialnewrunner. Real browser multi-tab/UI acceptance belongs toT18.",
+      "evidence": [
+        "docs/verification/T14-handoff.md"
+      ]
     },
     {
       "id": "T15",
-      "status": "PLANNED",
+      "status": "IN_PROGRESS",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "xhigh",
       "depends": [
@@ -216,13 +240,13 @@
     },
     {
       "id": "T16",
-      "status": "PLANNED",
+      "status": "IN_REVIEW",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
         "T10"
       ],
-      "worker_commit": null,
+      "worker_commit": "00e5615",
       "integrated_commit": null,
       "review": null,
       "evidence": []
@@ -243,7 +267,7 @@
     },
     {
       "id": "T18",
-      "status": "PLANNED",
+      "status": "IN_PROGRESS",
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [
@@ -315,7 +339,7 @@
     },
     {
       "id": "T26",
-      "status": "PLANNED",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "medium",
       "depends": [
@@ -323,10 +347,13 @@
         "T08",
         "T13"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "cdcc56e + fa86da8",
+      "integrated_commit": "3d8d410",
+      "review": "Parent privacy/operations review;105real-service passes,6SQLite/Helm passes and12APIregression passes. No cloud claim. T28 must wire private scraper authentication and readiness probes.",
+      "evidence": [
+        "docs/verification/T26-handoff.md",
+        ".local/verification/T01/integrated-t26-review/report.json"
+      ]
     },
     {
       "id": "T27",
@@ -398,9 +425,9 @@
     }
   ],
   "active_assignments": {
-    "A": "Ready for T02 after accepted T01",
-    "B": "T06 network-boundary review fixes; T04 dependency accepted",
-    "C": "T08 versioned search index",
-    "D": "T13 delivery fencing"
+    "A": "T18 real local browser journeys",
+    "B": "T16 message cursors in parent review; next fetching soak harness",
+    "C": "T11 accepted; T12 ready for a concurrency slot",
+    "D": "T15 transactional closure and scoped data export"
   }
 }
