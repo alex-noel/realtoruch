@@ -13,9 +13,9 @@
       "model": "gpt-6.1-terra",
       "reasoning_effort": "high",
       "depends": [],
-      "worker_commit": null,
+      "worker_commit": "6eaa5f482b10f83434f9b5130f462dc37d80ec51",
       "integrated_commit": null,
-      "review": null,
+      "review": "Pending acceptance: worker D closes packaged SQL resource and clean-install/cleanup evidence gaps before dependencies start.",
       "evidence": []
     },
     {
@@ -59,18 +59,21 @@
     },
     {
       "id": "T05",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "medium",
       "depends": [],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": null,
-      "evidence": []
+      "worker_commit": "9eb824173a312ca23a2dec6b2751164de338c671",
+      "integrated_commit": "c4d6062",
+      "review": "Parent inspected parser/connector diff and independently repeated 88 targeted passing tests; live portal behavior not claimed.",
+      "evidence": [
+        "docs/verification/T05-handoff.md",
+        ".local/worktrees/t05/.local/integrator-t05.xml"
+      ]
     },
     {
       "id": "T06",
-      "status": "PLANNED",
+      "status": "IN_PROGRESS",
       "model": "gpt-6-luna",
       "reasoning_effort": "medium",
       "depends": [
@@ -384,5 +387,11 @@
       "review": null,
       "evidence": []
     }
-  ]
+  ],
+  "active_assignments": {
+    "A": "T01 implementation handed off; waiting for acceptance",
+    "B": "T06 offline source preflight",
+    "C": "T09 evaluator review corrections",
+    "D": "T01 packaging and clean-install acceptance fixes"
+  }
 }

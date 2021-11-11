@@ -18,8 +18,8 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 | T02 | PLANNED | gpt-6.1-sol | medium | T01 |
 | T03 | PLANNED | gpt-6.1-terra | high | T01 |
 | T04 | PLANNED | gpt-6.1-sol | high | T03 |
-| T05 | IN_PROGRESS | gpt-6.1-sol | medium | None |
-| T06 | PLANNED | gpt-6-luna | medium | T05 |
+| T05 | VERIFIED | gpt-6.1-sol | medium | None |
+| T06 | IN_PROGRESS | gpt-6-luna | medium | T05 |
 | T07 | PLANNED | gpt-6.1-sol | high | T03, T04, T05 |
 | T08 | PLANNED | gpt-6.1-terra | xhigh | T01 |
 | T09 | IN_PROGRESS | gpt-6-luna | high | None |
@@ -50,4 +50,6 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 
 ## Evidence
 
-No task is accepted yet. See per-task handoffs under `docs/verification/` and the machine-readable `execution.json` as work lands.
+T05 is accepted and integrated as `c4d6062`: 88 targeted tests independently repeated by the parent, plus the worker’s 169-pass offline regression (5 optional service skips). Live provider access remains unverified. T06 starts from this reviewed dependency.
+
+T01 is implemented at `6eaa5f4` but not accepted yet: D is fixing SQL asset packaging and proving clean installation/cleanup. T09 is undergoing requested notification-sequence and fixture-validation corrections. See per-task handoffs and `execution.json` for exact state.
