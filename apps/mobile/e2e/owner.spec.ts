@@ -76,10 +76,13 @@ test('owner publishes, edits, messages a renter and withdraws', async ({ page, c
     await visitor.getByLabel('YOUR MESSAGE').fill('Hello, is this synthetic home still available?');
     await visitor.getByRole('button', { name: 'Send message' }).click();
     await expect(visitor.getByText('Hello, is this synthetic home still available?')).toBeVisible();
+    await page.bringToFront();
     await page.getByRole('button', { name: 'Messages', exact: true }).click();
     await expect(page.getByText(/1 unread/)).toBeVisible();
+    const readResponse = page.waitForResponse(response => response.url().includes('/v1/me/conversations/') && response.url().endsWith('/read') && response.request().method() === 'PUT');
     await page.getByRole('button', { name: /^Open conversation/ }).click();
-    await expect(page.getByText('Hello, is this synthetic home still available?')).toBeVisible();
+    await expect(page.getByText('Hello, is this synthetic home still available?')).toBeInViewport();
+    expect((await readResponse).status()).toBe(200);
     await page.getByLabel('YOUR MESSAGE').fill('Yes, this is a local test reply.');
     await page.getByRole('button', { name: 'Send message' }).click();
     await expect(page.getByText('Yes, this is a local test reply.')).toBeVisible();
