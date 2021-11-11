@@ -19,6 +19,17 @@ def test_valid_dataset_and_malformed_rows_report_pair_id():
     missing = dict(rows[0], rationale='')
     with pytest.raises(ValueError, match='T09-001: missing rationale'):
         validate_dataset([missing])
+    raw_phone = json.loads(json.dumps(rows[0]))
+    raw_phone['sources'][0]['data']['contact']={'phone':'+48123123123'}
+    with pytest.raises(ValueError, match='T09-001: forbidden raw personal field at pair.sources'):
+        validate_dataset([raw_phone])
+    raw_email = json.loads(json.dumps(rows[0]))
+    raw_email['candidate']['metadata']={'nested':{'email_address':'private@example.test'}}
+    with pytest.raises(ValueError, match='T09-001: forbidden raw personal field at pair.candidate'):
+        validate_dataset([raw_email])
+    invalid_provenance = dict(rows[0], provenance=' ')
+    with pytest.raises(ValueError, match='T09-001: missing or invalid provenance'):
+        validate_dataset([invalid_provenance])
 
 
 def test_required_hard_negative_and_ambiguous_scenario_labels_are_explicit():
@@ -50,12 +61,38 @@ def test_fixed_family_split_does_not_leak_near_identical_variants():
         validate_dataset(changed)
 
 
-def test_sequence_path_reports_repost_canonical_and_alert_suppression():
+def test_sequence_path_reports_exact_user_notifications_and_identity():
     from scripts.evaluate_dedupe import sequence_evaluation
     result = sequence_evaluation()
     assert result['canonical_count_correct'] is True
-    assert result['identity_outcomes'] == {'repost_same_canonical': True, 'distinct_unit_separate': True}
-    assert result['alert_suppressed_for_repost'] is True
+    assert result['repost_same_canonical'] is True
+    assert result['distinct_units_separate'] is True
+    assert result['actual_logical_notifications'] == result['expected_logical_notifications'] == 3
+    assert result['notification_kinds'] == {'new_match': 3}
+    assert result['notifications_correct'] is True
+    assert sequence_evaluation() == result
+    assert result['extra_notifications'] == result['lost_notifications'] == 0
+
+def test_sequence_exposes_forced_false_merges_and_lost_notifications():
+    from scripts.evaluate_dedupe import sequence_evaluation
+    result = sequence_evaluation(lambda *_: 'injected forced merge')
+    assert result['canonical_count'] == 1 and result['expected_canonical_count'] == 3
+    assert result['false_merge_count'] == 3
+    assert result['distinct_units_separate'] is False
+    assert result['actual_logical_notifications'] == 1
+    assert result['lost_notifications'] == 2
+    assert result['notifications_correct'] is False
+
+def test_sequence_exposes_reject_all_duplicate_canonicals_and_extra_notifications():
+    from scripts.evaluate_dedupe import sequence_evaluation
+    result = sequence_evaluation(lambda *_: None)
+    assert result['canonical_count'] == 5 and result['expected_canonical_count'] == 3
+    assert result['false_merge_count'] == 0
+    assert result['duplicate_canonical_count'] == 2
+    assert result['repost_same_canonical'] is False
+    assert result['actual_logical_notifications'] == 5
+    assert result['extra_notifications'] == 2
+    assert result['notifications_correct'] is False
 
 
 def test_reject_all_matcher_has_zero_recall_and_undefined_precision():

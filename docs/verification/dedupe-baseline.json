@@ -1,34 +1,219 @@
 {
-  "code_git_sha": "2d9a22db7277b16e694dc29bf4e3d72e5df3ac1b",
+  "code_git_sha": "7184752495b4f9257812550958f6d542bc309c10",
   "dataset_pair_count": 220,
   "dataset_path": "backend/tests/fixtures/dedupe/pairs.jsonl",
   "dataset_sha256": "511c5f6c7ef1e4a16bffb706ddd94e30a18e8c13423ea37eea0bd541da40940c",
   "evaluated_pair_count": 220,
-  "evaluator_sha256": "19e3181741e5e6c89b380e29b51fa20aa57caba116c650875d72b7aae0b40c71",
-  "generated_at_utc": "2026-11-11T20:04:22.609655+00:00",
-  "ingestion_sequence": {
-    "alert_event_count": 2,
-    "alert_suppressed_for_repost": true,
-    "canonical_count": 2,
-    "canonical_count_correct": true,
-    "expected_alert_event_count": 2,
-    "expected_canonical_count": 2,
-    "identity_outcomes": {
-      "distinct_unit_separate": true,
-      "repost_same_canonical": true
+  "evaluator_sha256": "ef3d597e005ada243e2630ab24a969c5b760631b93718392ab8a78ef1a27ae64",
+  "generated_at_utc": "2026-11-11T20:11:27.414041+00:00",
+  "ingestion_fault_injection": {
+    "forced_merge": {
+      "actual_logical_notifications": 1,
+      "canonical_count": 1,
+      "canonical_count_correct": false,
+      "distinct_units_separate": false,
+      "duplicate_canonical_count": 0,
+      "duplicate_canonical_homes": {},
+      "expected_canonical_count": 3,
+      "expected_logical_notifications": 3,
+      "extra_notifications": 0,
+      "false_merge_count": 3,
+      "false_merge_pairs": [
+        {
+          "shared_canonical_ids": [
+            "canonical-01"
+          ],
+          "truth_homes": [
+            "home-a",
+            "unit-b"
+          ]
+        },
+        {
+          "shared_canonical_ids": [
+            "canonical-01"
+          ],
+          "truth_homes": [
+            "home-a",
+            "unit-c"
+          ]
+        },
+        {
+          "shared_canonical_ids": [
+            "canonical-01"
+          ],
+          "truth_homes": [
+            "unit-b",
+            "unit-c"
+          ]
+        }
+      ],
+      "logical_notifications_by_truth_home": {
+        "home-a": 0,
+        "unit-b": 0,
+        "unit-c": 0
+      },
+      "lost_notifications": 2,
+      "matcher": "injected",
+      "notification_canonical_ids": [
+        "canonical-01"
+      ],
+      "notification_kinds": {
+        "new_match": 1
+      },
+      "notifications_correct": false,
+      "processed_alert_event_count": 3,
+      "repost_same_canonical": true,
+      "steps": [
+        {
+          "canonical_id": "canonical-01",
+          "source_id": "seq-home-a",
+          "truth_home": "home-a"
+        },
+        {
+          "canonical_id": "canonical-01",
+          "source_id": "seq-home-a-repost-1",
+          "truth_home": "home-a"
+        },
+        {
+          "canonical_id": "canonical-01",
+          "source_id": "seq-home-a-repost-2",
+          "truth_home": "home-a"
+        },
+        {
+          "canonical_id": "canonical-01",
+          "source_id": "seq-unit-b",
+          "truth_home": "unit-b"
+        },
+        {
+          "canonical_id": "canonical-01",
+          "source_id": "seq-unit-c",
+          "truth_home": "unit-c"
+        }
+      ]
     },
+    "production_behavior_changed": false,
+    "reject_all": {
+      "actual_logical_notifications": 5,
+      "canonical_count": 5,
+      "canonical_count_correct": false,
+      "distinct_units_separate": true,
+      "duplicate_canonical_count": 2,
+      "duplicate_canonical_homes": {
+        "home-a": [
+          "canonical-02",
+          "canonical-03",
+          "canonical-01"
+        ]
+      },
+      "expected_canonical_count": 3,
+      "expected_logical_notifications": 3,
+      "extra_notifications": 2,
+      "false_merge_count": 0,
+      "false_merge_pairs": [],
+      "logical_notifications_by_truth_home": {
+        "home-a": 3,
+        "unit-b": 1,
+        "unit-c": 1
+      },
+      "lost_notifications": 0,
+      "matcher": "injected",
+      "notification_canonical_ids": [
+        "canonical-01",
+        "canonical-02",
+        "canonical-03",
+        "canonical-04",
+        "canonical-05"
+      ],
+      "notification_kinds": {
+        "new_match": 5
+      },
+      "notifications_correct": false,
+      "processed_alert_event_count": 14,
+      "repost_same_canonical": false,
+      "steps": [
+        {
+          "canonical_id": "canonical-01",
+          "source_id": "seq-home-a",
+          "truth_home": "home-a"
+        },
+        {
+          "canonical_id": "canonical-02",
+          "source_id": "seq-home-a-repost-1",
+          "truth_home": "home-a"
+        },
+        {
+          "canonical_id": "canonical-03",
+          "source_id": "seq-home-a-repost-2",
+          "truth_home": "home-a"
+        },
+        {
+          "canonical_id": "canonical-04",
+          "source_id": "seq-unit-b",
+          "truth_home": "unit-b"
+        },
+        {
+          "canonical_id": "canonical-05",
+          "source_id": "seq-unit-c",
+          "truth_home": "unit-c"
+        }
+      ]
+    }
+  },
+  "ingestion_sequence": {
+    "actual_logical_notifications": 3,
+    "canonical_count": 3,
+    "canonical_count_correct": true,
+    "distinct_units_separate": true,
+    "duplicate_canonical_count": 0,
+    "duplicate_canonical_homes": {},
+    "expected_canonical_count": 3,
+    "expected_logical_notifications": 3,
+    "extra_notifications": 0,
+    "false_merge_count": 0,
+    "false_merge_pairs": [],
+    "logical_notifications_by_truth_home": {
+      "home-a": 1,
+      "unit-b": 1,
+      "unit-c": 1
+    },
+    "lost_notifications": 0,
+    "matcher": "production default",
+    "notification_canonical_ids": [
+      "canonical-01",
+      "canonical-02",
+      "canonical-03"
+    ],
+    "notification_kinds": {
+      "new_match": 3
+    },
+    "notifications_correct": true,
+    "processed_alert_event_count": 5,
+    "repost_same_canonical": true,
     "steps": [
       {
-        "name": "first source",
-        "status": "updated"
+        "canonical_id": "canonical-01",
+        "source_id": "seq-home-a",
+        "truth_home": "home-a"
       },
       {
-        "name": "same-home repost",
-        "status": "updated"
+        "canonical_id": "canonical-01",
+        "source_id": "seq-home-a-repost-1",
+        "truth_home": "home-a"
       },
       {
-        "name": "conflicting unit/floor",
-        "status": "updated"
+        "canonical_id": "canonical-01",
+        "source_id": "seq-home-a-repost-2",
+        "truth_home": "home-a"
+      },
+      {
+        "canonical_id": "canonical-02",
+        "source_id": "seq-unit-b",
+        "truth_home": "unit-b"
+      },
+      {
+        "canonical_id": "canonical-03",
+        "source_id": "seq-unit-c",
+        "truth_home": "unit-c"
       }
     ]
   },
@@ -333,9 +518,11 @@
       "recall": 1.0
     }
   },
+  "production_matching_git_sha": "ae893a6adba99617fe883bb9e81967566616124b",
+  "production_paths_sha256": "f1212025ff84175d858357afa8e54f89de173f3d9c471e1cc8ee10f171f73854",
   "real_market_accuracy_claimed": false,
   "report_version": 1,
-  "run_id": "T09-20261111T200422Z",
+  "run_id": "T09-20261111T201127Z",
   "synthetic_only": true,
   "validation": {
     "families": {
