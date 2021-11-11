@@ -168,7 +168,7 @@ def test_existing_matches_and_seen_prices_are_silent_across_searches(session, re
 
 def test_seen_repost_after_saving_search_has_no_new_alert(session, record, client, auth_client):
     headers = account(auth_client)
-    original = home(record, address="Przykładowa")  # Street only, two corroborating signals.
+    original = home(record, address="Przykładowa 12")  # Building plus floor, contact and photo.
     property_id = ingest(session, original)["listing_id"]
     client.put(f"/v1/me/seen/{property_id}", headers=headers)
     ingest(
@@ -184,6 +184,13 @@ def test_seen_repost_after_saving_search_has_no_new_alert(session, record, clien
     assert ingest(session, repost)["listing_id"] == property_id
     pump(session)
     assert client.get("/v1/me/notifications", headers=headers).json()["items"] == []
+
+
+def test_street_only_repost_remains_ambiguous(session, record):
+    original = home(record, address="Przykładowa")
+    first = ingest(session, original)["listing_id"]
+    repost = original.model_copy(update={"external_id": "new-id", "observed_at": original.observed_at + timedelta(hours=2)})
+    assert ingest(session, repost)["listing_id"] != first
 
 
 def test_unchanged_checks_are_daily_checkpoints_and_search_writes_coalesce(session, record):
