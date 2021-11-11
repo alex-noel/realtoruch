@@ -37,10 +37,15 @@ export type Advert = {
 export type Conversation = {
   id: string;
   title: string;
-  listing_id: string;
+  listing_id: string | null;
+  updated_at: string;
   unread_count: number;
   blocked: boolean;
   can_unblock: boolean;
+};
+export type ConversationPage = {
+  items: Conversation[];
+  next_cursor: string | null;
 };
 export type Message = {
   id: string;
@@ -65,12 +70,36 @@ const write = (method: string, data: unknown) => ({
   method,
   body: JSON.stringify(data),
 });
+// The shared request timeout is bypassed by a caller signal. Preserve the
+// request deadline for cancellable inbox calls until the shared client composes
+// its own signals.
+async function messageRequest<T>(
+  path: string,
+  signal?: AbortSignal,
+  options?: RequestInit,
+) {
+  if (!signal) return request<T>(path, options);
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  if (signal.aborted) cancel();
+  else signal.addEventListener("abort", cancel, { once: true });
+  const timer = setTimeout(cancel, 12000);
+  try {
+    return await request<T>(path, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", cancel);
+  }
+}
 export const market = {
   profile: () => request<{ profile: Profile | null }>("/v1/me/advertiser"),
   saveProfile: (profile: Omit<Profile, "id">) =>
     request<{ profile: Profile }>("/v1/me/advertiser", write("PUT", profile)),
-  advertiser: (id: string) =>
-    request<{ profile: Profile; items: Listing[] }>(`/v1/advertisers/${id}`),
+  advertiser: (id: string, signal?: AbortSignal) =>
+    messageRequest<{ profile: Profile; items: Listing[] }>(
+      `/v1/advertisers/${id}`,
+      signal,
+    ),
   adverts: () => request<{ items: Advert[] }>("/v1/me/adverts"),
   saveAdvert: (draft: Draft, existing?: Advert) =>
     existing
@@ -96,26 +125,45 @@ export const market = {
     ),
   publicAdvert: (id: string) =>
     request<{ listing_id: string }>(`/v1/adverts/${id}`),
-  conversations: () =>
-    request<{ items: Conversation[] }>("/v1/me/conversations"),
-  thread: (id: string, before?: string) =>
-    request<Thread>(
+  conversations: (cursor?: string, signal?: AbortSignal) =>
+    messageRequest<ConversationPage>(
+      `/v1/me/conversations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+      signal,
+    ),
+  thread: (id: string, before?: string, signal?: AbortSignal) =>
+    messageRequest<Thread>(
       `/v1/me/conversations/${id}${before ? `?before=${encodeURIComponent(before)}` : ""}`,
+      signal,
     ),
-  start: (advert: string, body: string, client_id: string) =>
-    request<{ id: string }>(
+  start: (
+    advert: string,
+    body: string,
+    client_id: string,
+    signal?: AbortSignal,
+  ) =>
+    messageRequest<{ id: string }>(
       `/v1/adverts/${advert}/conversations`,
+      signal,
       write("POST", { body, client_id }),
     ),
-  reply: (id: string, body: string, client_id: string) =>
-    request<Message>(
+  reply: (id: string, body: string, client_id: string, signal?: AbortSignal) =>
+    messageRequest<Message>(
       `/v1/me/conversations/${id}/messages`,
+      signal,
       write("POST", { body, client_id }),
     ),
-  read: (id: string) =>
-    request(`/v1/me/conversations/${id}/read`, { method: "PUT" }),
-  block: (id: string, blocked: boolean) =>
-    request(`/v1/me/conversations/${id}/block`, write("PUT", { blocked })),
+  read: (id: string, last_message_id: string, signal?: AbortSignal) =>
+    messageRequest<{ read: true }>(
+      `/v1/me/conversations/${id}/read`,
+      signal,
+      write("PUT", { last_message_id }),
+    ),
+  block: (id: string, blocked: boolean, signal?: AbortSignal) =>
+    messageRequest<{ blocked: boolean }>(
+      `/v1/me/conversations/${id}/block`,
+      signal,
+      write("PUT", { blocked }),
+    ),
   identity: (id: string) =>
     request<{
       sources: {
