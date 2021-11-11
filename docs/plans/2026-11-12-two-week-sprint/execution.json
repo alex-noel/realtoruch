@@ -300,17 +300,19 @@
     },
     {
       "id": "T19",
-      "status": "IN_PROGRESS",
+      "status": "IN_REVIEW",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
         "T03",
         "T14"
       ],
-      "worker_commit": null,
-      "integrated_commit": null,
-      "review": "Worker B implementing source freshness, cancellation, debounce and shared timeout composition on reviewed base 3bec9db.",
-      "evidence": []
+      "worker_commit": "9e332b8",
+      "integrated_commit": "84dfdc1",
+      "review": "Parent reviewed normalized search generations, account fencing and composed deadlines; 64 integrated frontend unit tests and typecheck passed. Root removed redundant inbox timeout wrapper. Browser check waits for T25 measurement window.",
+      "evidence": [
+        "docs/verification/T19-handoff.md"
+      ]
     },
     {
       "id": "T20",
@@ -329,7 +331,7 @@
     },
     {
       "id": "T21",
-      "status": "PLANNED",
+      "status": "IN_PROGRESS",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
@@ -337,7 +339,7 @@
       ],
       "worker_commit": null,
       "integrated_commit": null,
-      "review": null,
+      "review": "Worker B implementing typed native/web link dispatch in a separate worktree on reviewed base a2f53d5 while the T19 browser run awaits the measurement window.",
       "evidence": []
     },
     {
@@ -376,7 +378,7 @@
     },
     {
       "id": "T27",
-      "status": "PLANNED",
+      "status": "IN_PROGRESS",
       "model": "gpt-6.1-sol",
       "reasoning_effort": "high",
       "depends": [
@@ -385,7 +387,7 @@
       ],
       "worker_commit": null,
       "integrated_commit": null,
-      "review": null,
+      "review": "Worker D implementing isolated SQLite/PostgreSQL recovery, ownership manifests and restored account-erasure assertions on reviewed base994b928. SQLite drill passed; PostgreSQL execution pending coordinated test window.",
       "evidence": []
     },
     {
@@ -400,10 +402,13 @@
         "T15",
         "T26"
       ],
-      "worker_commit": "998b8e0",
-      "integrated_commit": null,
-      "review": "Initial worker profile passed 189 real-service tests. Parent requested narrower grants, real cancellation permission checks, metrics egress pairing and corrected runtime/cache documentation; revisions in progress.",
-      "evidence": []
+      "worker_commit": "998b8e0 + 4877fba",
+      "integrated_commit": "a2f53d5",
+      "review": "Independent combined real-service profile passed189/0/0. Parent subsequently found the shared indexer/retention role lacks maintenance writes; narrower grant correction and actual retention regression are prepared, awaiting PostgreSQL execution.",
+      "evidence": [
+        "docs/verification/T28-handoff.md",
+        ".local/verification/T01/integrated-t28-final/report.json"
+      ]
     },
     {
       "id": "T32",
@@ -444,10 +449,10 @@
     }
   ],
   "active_assignments": {
-    "A": "T25 catalog load and measured query optimization",
-    "B": "T19 search lifecycle and source freshness",
-    "C": "T28 deployment configuration review corrections",
-    "D": "T17 accepted; queued T27 restore verification"
+    "A": "T25 matched 20-client capacity measurements and query optimization",
+    "B": "T21 link implementation; T19 root browser verification pending",
+    "C": "Queued T20 once T19 browser verification and a worker slot clear",
+    "D": "T27 recovery fixtures and safe restore verification"
   },
   "live_soak": {
     "session_id": 50850,

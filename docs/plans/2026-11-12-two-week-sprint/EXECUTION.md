@@ -32,12 +32,12 @@ Cloud deployment, paid resources, external emails and pushes remain outside this
 | T16 | VERIFIED | gpt-6.1-sol | high | T10 |
 | T17 | VERIFIED | gpt-6.1-sol | high | T14, T16 |
 | T18 | VERIFIED | gpt-6.1-terra | high | T01, T14, T02 |
-| T19 | IN_PROGRESS | gpt-6.1-sol | high | T03, T14 |
+| T19 | IN_REVIEW | gpt-6.1-sol | high | T03, T14 |
 | T20 | PLANNED | gpt-6.1-sol | high | T17, T19, T18 |
-| T21 | PLANNED | gpt-6.1-sol | high | T14 |
+| T21 | IN_PROGRESS | gpt-6.1-sol | high | T14 |
 | T25 | IN_PROGRESS | gpt-6.1-terra | high | T08, T11, T12 |
 | T26 | VERIFIED | gpt-6.1-sol | medium | T03, T08, T13 |
-| T27 | PLANNED | gpt-6.1-sol | high | T11, T15 |
+| T27 | IN_PROGRESS | gpt-6.1-sol | high | T11, T15 |
 | T28 | IN_REVIEW | gpt-6.1-terra | high | T02, T08, T13, T15, T26 |
 | T32 | PLANNED | parent integrator | independent review | T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T25, T26, T27, T28 |
 
@@ -67,3 +67,5 @@ T15 is accepted at `ade29cb` after independent privacy/concurrency review and 15
 T07 is integrated at `dcd5768`; 141 combined local tests passed without skips. The live run uses the immutable `b3782cc` detached checkout, beginning 2026-11-11 21:27:38 UTC with a fixed target end of 2026-11-14 21:27:38 UTC. The first cycle obtained four observations from Otodom/Morizon, while Gratka discovery parsing failed. No live removal or long-duration reliability is claimed. T12, T17 and T18 are active; T19, T21, T27 and T28 are dependency-ready.
 
 T12 is accepted after public-contract review and 188 combined real-service passes. Parent T26 correction `b4ae272` aligns queue diagnostics with indexer eligibility even when creation timestamps are ahead. T17 is integrated at `2b69e8a`, and T18 at `3bec9db`: the complete root browser run passed 12 tests without skips, covering the integrated owner inbox and both account/session cases. All 33 frontend unit tests passed after separating unit and browser discovery. This closes T14’s remaining local browser gate. T25 and T19 are active, while T28 is receiving grant and network-boundary corrections. T07 remains time-gated, with one eligible completed cycle and no runner gaps through 2026-11-11 21:58:20 UTC.
+
+T28 is integrated at `a2f53d5`; root verification passed 189 real-service tests without skips. Further review found missing retention-job write permissions on the shared indexer identity, so a real-role regression and narrow grants remain under review. T19 is integrated at `84dfdc1`, with 64 integrated frontend unit passes and a pending browser check. T25’s first five-minute 20-client window returned 4,405 successful responses but exceeded SQL/history latency targets; the matched optimization run and investigation continue. Worker B is implementing T21 in a separate checkout, and worker D is verifying T27 recovery. Heavy checks are coordinated to avoid contaminating the measured capacity windows.
