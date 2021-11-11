@@ -5,12 +5,13 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 
 from .alerts import baseline_search, insert_once, notification_data, unread_count
-from .db import get_session, init_db
+from .db import Session, get_session, init_db
 from .delivery_claims import cancel_notifications
 from .ingest import ingest
+from .metrics import database_ready, rental_metrics, require_metrics_key
 from .models import (
     Favorite,
     Listing,
@@ -62,17 +63,13 @@ def health():
 
 
 @app.get("/readyz", tags=["Operations"])
-def ready(session=Depends(get_session)):
-    session.execute(text("SELECT 1"))
-    return {"status": "ready"}
+def ready():
+    return database_ready(Session, Listing, SourceListing)
 
 
-@app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
-def metrics(session=Depends(get_session)):
-    from .models import Outbox
-
-    pending = session.scalar(select(func.count()).select_from(Outbox).where(Outbox.delivered_at.is_(None)))
-    return f"# TYPE realtoruch_outbox_pending gauge\nrealtoruch_outbox_pending {pending}\n"
+@app.get("/metrics", response_class=PlainTextResponse, dependencies=[Depends(require_metrics_key)], include_in_schema=False)
+def metrics():
+    return rental_metrics(Session)
 
 
 @app.get("/v1/listings", tags=["Public"])

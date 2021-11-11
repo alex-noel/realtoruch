@@ -11,12 +11,14 @@ import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, delete, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from .db import make_engine
+from .metrics import auth_metrics, database_ready, require_metrics_key
 from .models import now, uid
 from .security import install_http, require_claims, require_user
 from .settings import get_settings
@@ -315,6 +317,16 @@ def queue_link(session, user, kind):
 @app.get("/healthz")
 def health():
     return {"status": "ok", "service": "auth"}
+
+
+@app.get("/readyz", include_in_schema=False)
+def ready():
+    return database_ready(AuthSession, User, LoginSession, RefreshToken, AccountToken, AuthJob)
+
+
+@app.get("/metrics", response_class=PlainTextResponse, dependencies=[Depends(require_metrics_key)], include_in_schema=False)
+def metrics():
+    return auth_metrics(AuthSession, AuthJob, mail_enabled=settings.email_delivery_mode != "disabled")
 
 
 @app.post("/v1/auth/register", status_code=201)
