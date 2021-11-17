@@ -301,13 +301,15 @@
     },
     {
       "id": "Q23",
-      "status": "IN_PROGRESS",
-      "assignee": "gpt-6-luna",
-      "branch": null,
-      "commit": null,
-      "evidence": [],
+      "status": "VERIFIED_LOCAL",
+      "assignee": "gpt-6.1-terra",
+      "branch": "codex/app-quality-2026-11",
+      "commit": "803ad02752fbf98457e6c59494b546c93998a0e7",
+      "evidence": [
+        "docs/verification/Q23-handoff.md"
+      ],
       "blocked_by": [],
-      "reasoning_effort": "medium",
+      "reasoning_effort": "high",
       "contributors": [
         {
           "model": "gpt-6-luna",
@@ -319,7 +321,8 @@
           "reasoning_effort": "high",
           "scope": "session compensation and revocation review"
         }
-      ]
+      ],
+      "review": "Integrated review, TypeScript, 273 integrated unit tests and production web export passed; provider/device delivery remains unverified."
     },
     {
       "id": "Q24",
@@ -539,14 +542,15 @@
     },
     {
       "id": "Q40",
-      "status": "IN_PROGRESS",
+      "status": "LOCAL_PARTIAL",
       "assignee": "parent",
       "branch": "codex/app-quality-2026-11",
       "commit": "fe530a84ca2c706b3663d0007112a42079cb06cc",
       "evidence": [
         "docs/verification/Q40-acceptance-audit.md",
         "docs/verification/Q40-dependency-review.md",
-        "docs/verification/Q40-media-merge-review.md"
+        "docs/verification/Q40-media-merge-review.md",
+        "docs/verification/Q40-quality-handoff.md"
       ],
       "blocked_by": [],
       "reasoning_effort": "high",
@@ -555,8 +559,10 @@
         "9fbc9e2ecce98235dd0bbefc5e506aff03f8146e",
         "a44e99248d125cabecf2e7c50c6cb79b6d587eb0",
         "b51d5905b551f072b466ae301cbb9318370c8f99",
-        "2483432edec46b83c5d07af2b4dceb06d7caecab"
-      ]
+        "2483432edec46b83c5d07af2b4dceb06d7caecab",
+        "1e15249fbd9c87b73e5e889e93eb28a77b39a794"
+      ],
+      "review": "Implementation integrated. Final type/unit/web checks passed. Existing 283-service pass retained at its exact revision. Full combined browser/native/performance reruns deferred after the user requested lower resource use and no database filling."
     }
   ],
   "execution_start_revision": "3872e35",
@@ -565,5 +571,7 @@
     "Q32-Q34": "Owner media implementation in active Plan Polish rental listings app chat; inspect reviewed output before duplicating implementation."
   },
   "actual_evidence_date": "2026-11-17",
-  "phase": "final_review_and_acceptance_pending"
+  "phase": "implementation_integrated_final_acceptance_partial",
+  "application_revision": "803ad02752fbf98457e6c59494b546c93998a0e7",
+  "resource_constraint": "Workers stopped. No more database population, collectors, service/browser fixture reruns or broad verification in this continuation."
 }

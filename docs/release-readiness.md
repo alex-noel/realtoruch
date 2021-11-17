@@ -1,8 +1,12 @@
 # Local release readiness — 17 November 2026
 
-**LOCAL_PARTIAL.** The current application candidate is `a7d550c16b359576e8ea3de2a5ff6d0f74d84efb` on `codex/core-sprint-2026-11`. Owner photo uploads now pass local backend, browser and native-adapter/export checks. The 72-hour collection gate, installed mobile and production operations remain open. This continuation is committed locally and has not been pushed or deployed.
+**LOCAL_PARTIAL.** The latest app-quality application is `803ad02752fbf98457e6c59494b546c93998a0e7`. All 40 implementations are integrated locally. Final TypeScript, 273 unit tests and the web export passed; full combined browser/native/performance acceptance remains partial. Workers and database-heavy verification were stopped at the user's request. [Current quality handoff](verification/Q40-quality-handoff.md) records exact evidence and limits. Nothing was pushed or deployed.
 
-## Current continuation
+## Historical photo continuation
+
+**LOCAL_PARTIAL.** The earlier photo candidate was `a7d550c16b359576e8ea3de2a5ff6d0f74d84efb` on `codex/core-sprint-2026-11`. Owner photo uploads now pass local backend, browser and native-adapter/export checks. The 72-hour collection gate, installed mobile and production operations remain open. This continuation is committed locally and has not been pushed or deployed.
+
+## Photo continuation checks
 
 | Check | Result and scope |
 | --- | --- |

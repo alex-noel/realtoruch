@@ -1,6 +1,6 @@
 # Feature status
 
-As of 17 November 2026, the candidate covers rental aggregation, discovery, first-party advertising and owner photo uploads. The latest additions passed local verification and have not been pushed or deployed. [Photo acceptance evidence](verification/T23-T24-handoff.md).
+As of 17 November 2026, the candidate also includes the 40-task UX/UI and completion implementation. TypeScript, 273 integrated unit tests and the web export passed; final combined acceptance remains partial. [Current quality handoff](verification/Q40-quality-handoff.md) · [Task tracker](plans/2026-11-17-app-quality/execution.json). The table below retains the earlier feature evidence and external gates; nothing new was pushed or deployed.
 
 | Area | Implemented and exercised | Remaining evidence or scope |
 | --- | --- | --- |

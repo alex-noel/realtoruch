@@ -85,4 +85,4 @@ Keep this plan focused on the present rental app. Full Polish translation, saved
 
 Real sender/inbox and push delivery, selected map-provider/domain credentials, installed iOS/Android checks, a real screen reader, corrected-parser live validation and a fresh eligible soak, permitted OLX access, and cloud deployment remain separate acceptance gates. Q40 records exact missing inputs and completed independent work. It does not execute those external operations or treat mocked tests as live evidence.
 
-Execution was authorized on 17 November 2026. Work proceeds on codex/app-quality-2026-11 in an isolated integration checkout. The integrator assigns dependency-ready packets and reviews every change. Push, deployment and external messaging remain excluded.
+Execution was authorized on 17 November 2026. Implementation is integrated on codex/app-quality-2026-11. Q01–Q38 have bounded local verification; Q39/Q40 final combined acceptance remains partial. See [the final handoff](../../verification/Q40-quality-handoff.md). Workers are stopped and no further database population or broad reruns are planned. Push, deployment and external messaging remain excluded.
