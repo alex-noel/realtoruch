@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { NotificationInbox as Inbox, RentalNotification } from "../types";
-import { disablePush, enablePush, pushEnabled } from "../pushClient";
+import { disablePush, enablePush, pushStatus, PushCapability } from "../pushClient";
 import { Button, money } from "./UI";
 import { c, s } from "../theme";
 import { request } from "../api";
@@ -27,31 +27,50 @@ export default function NotificationInbox({
   reading: string[];
   readFailed: string[];
 }) {
-  const [enabled, setEnabled] = useState(false),
+  const [deviceStatus, setDeviceStatus] = useState<PushCapability>({ state: "unknown", message: "Checking device alert settings…" }),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const deviceSequence = useRef(0);
+  const currentOwner = useRef(user); currentOwner.current = user;
   useEffect(() => {
     let active = true;
-    pushEnabled()
+    const sequence = ++deviceSequence.current;
+    setDeviceStatus({ state: "unknown", message: "Checking device alert settings…" });
+    setBusy(false);
+    setError("");
+    pushStatus(user || "")
       .then((value) => {
-        if (active) setEnabled(value);
+        if (active && sequence === deviceSequence.current) setDeviceStatus(value);
       })
       .catch(() => {});
     return () => {
       active = false;
+      deviceSequence.current++;
     };
   }, [user]);
   async function toggle() {
+    const sequence = ++deviceSequence.current;
+    const owner = user;
     setBusy(true);
     setError("");
     try {
-      if (enabled) await disablePush();
-      else await enablePush();
-      setEnabled(!enabled);
+      if (deviceStatus.state === "unknown") {
+        if (owner) {
+          const next = await pushStatus(owner);
+          if (sequence === deviceSequence.current && owner === currentOwner.current) setDeviceStatus(next);
+        }
+      } else {
+        if (deviceStatus.state === "subscribed" || deviceStatus.state === "cleanup-pending") await disablePush(owner || undefined);
+        else await enablePush(owner || "");
+        if (owner) {
+          const next = await pushStatus(owner);
+          if (sequence === deviceSequence.current && owner === currentOwner.current) setDeviceStatus(next);
+        }
+      }
     } catch (e) {
-      setError((e as Error).message);
+      if (sequence === deviceSequence.current && owner === currentOwner.current) setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (sequence === deviceSequence.current && owner === currentOwner.current) setBusy(false);
     }
   }
   return (
@@ -74,14 +93,26 @@ export default function NotificationInbox({
           <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>
             <Text style={s.text}>{inbox.unread_count} unread</Text>
             <EmailPreference key={user} user={user} />
-            <Button outline disabled={busy} onPress={toggle}>
+            {deviceStatus.state === "unknown" ? (
+              <Text accessibilityRole="status" style={s.muted}>{deviceStatus.message}</Text>
+            ) : null}
+            <Button outline disabled={busy || (deviceStatus.state === "unknown" && deviceStatus.message.startsWith("Checking")) || deviceStatus.state === "unavailable" || deviceStatus.state === "denied"} onPress={toggle}>
               {busy
                 ? "Please wait…"
-                : enabled
+                  : deviceStatus.state === "subscribed"
                   ? "Disable device alerts"
+                  : deviceStatus.state === "unknown"
+                    ? "Retry device alert settings"
+                  : deviceStatus.state === "cleanup-pending"
+                    ? "Retry device alert removal"
                   : "Enable device alerts"}
             </Button>
           </View>
+          {(deviceStatus.state === "unavailable" || deviceStatus.state === "denied") ? (
+            <Text style={s.muted}>{deviceStatus.message}</Text>
+          ) : null}
+          {deviceStatus.state === "available" && deviceStatus.message ? <Text style={s.muted}>{deviceStatus.message}</Text> : null}
+          {deviceStatus.state === "cleanup-pending" ? <Text style={s.muted}>{deviceStatus.message}</Text> : null}
           {error ? (
             <Text accessibilityRole="alert" style={{ color: c.warning }}>
               {error}

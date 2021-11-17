@@ -1917,7 +1917,7 @@ function RentalApp() {
           }}
           onClose={() => setDialog(null)}
           onSignOut={async () => {
-            const message = await signOutWithPush();
+            const message = await signOutWithPush(user || undefined);
             if (message) setToast(message);
           }}
           onDeleted={(message) => {

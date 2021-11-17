@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import { pushSubscriptionId } from "./pushDigest";
 import type {
   Filters,
   Listing,
@@ -33,6 +34,45 @@ export function getSessionState() { return sessionState; }
 export function getSessionRevision() { return generation; }
 export function captureSession() { const intent = generation; return () => intent === generation; }
 export function isCurrentAccessToken(token: string) { return accessToken === token; }
+type PushRegistration = { kind: "web"; endpoint: string; keys: unknown } | { kind: "expo"; token: string };
+// Retains the original bearer only in memory for this exact registration and its
+// possible compensation. It never refreshes, uses cookies, or mutates session state.
+export function capturePushRegistration(payload: PushRegistration) {
+  const failureMessage = "Device alert registration could not be confirmed.";
+  let bearer = accessToken, attempted = false;
+  const revision = generation;
+  if (!bearer) throw new SessionError("invalid", "Sign in again to enable device alerts.");
+  const body = JSON.stringify(payload);
+  const expectedId = pushSubscriptionId(payload.kind === "web" ? payload.endpoint : payload.token);
+  async function send(method: "POST" | "DELETE", id?: string) {
+    if (!bearer) throw new SessionError("superseded", "Device alert operation has ended.");
+    if (method === "POST") { checkIntent(revision); attempted = true; }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch(API_URL + "/v1/me/push-subscriptions" + (id ? "/" + id : ""), {
+        method, credentials: "omit", redirect: "error", signal: controller.signal,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
+        ...(method === "POST" ? { body } : {}),
+      });
+      if (method === "DELETE" && response.status === 404) return null;
+      if (!response.ok) throw new SessionError("http", failureMessage, response.status);
+      if (method === "DELETE") return null;
+      const result: unknown = await response.json();
+      const value = (result as { id?: unknown } | null)?.id;
+      if (value !== expectedId) throw new SessionError("http", failureMessage);
+      return { id: value };
+    } catch (error) {
+      if (error instanceof SessionError) throw error;
+      throw new SessionError("transient", failureMessage);
+    } finally { clearTimeout(timeout); }
+  }
+  return {
+    async register() { const result = await send("POST"); if (!result) throw new SessionError("http", failureMessage); return result; },
+    async revoke() { if (!attempted) throw new SessionError("http", failureMessage); await send("DELETE", expectedId); },
+    dispose() { bearer = null; attempted = false; },
+  };
+}
 export type RequestErrorCode = "unknown" | "validation" | "version_conflict" | "verification_required" |
   "rate_limited" | "search_limit" | "advert_limit" | "profile_required" | "profile_type_conflict" |
   "conversation_blocked" | "message_retry_conflict" | "appeal_pending" | "already_reviewed" | "moderation_hidden" | "export_reauth" | "export_password" | "export_too_large" | "export_data_invalid";
