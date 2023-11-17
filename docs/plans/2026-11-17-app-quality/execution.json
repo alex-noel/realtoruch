@@ -6,7 +6,7 @@
       "status": "VERIFIED_LOCAL",
       "assignee": "parent",
       "branch": "codex/app-quality-2026-11",
-      "commit": null,
+      "commit": "edd9a80",
       "evidence": [
         "docs/verification/Q01-handoff.md"
       ],
@@ -40,11 +40,13 @@
     },
     {
       "id": "Q04",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
+      "status": "VERIFIED_LOCAL",
+      "assignee": "parent",
+      "branch": "codex/app-quality-2026-11",
       "commit": null,
-      "evidence": [],
+      "evidence": [
+        "docs/verification/Q04-handoff.md"
+      ],
       "blocked_by": []
     },
     {

@@ -54,6 +54,40 @@ const homes: Listing[] = Array.from({ length: 100 }, (_, i) => {
   };
 });
 
+test("Q04 feedback stays inside details and outside comparison controls", async ({ page, context }, info) => {
+  await allowOwned(context);
+  await page.goto("/");
+  await register(page, `q04-${info.project.name}@example.test`);
+  await page.getByRole("button", { name: `Compare ${first}`, exact: true }).click();
+  await page.getByRole("button", { name: `Compare ${second}`, exact: true }).click();
+  let fail = true;
+  await page.route(`${api}/v1/me/favorites/t20-001`, route => fail
+    ? route.fulfill({ status: 503, json: { detail: "private upstream text" }, headers: { "Access-Control-Allow-Origin": web } })
+    : route.fallback());
+  await page.getByRole("button", { name: `View ${first}`, exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Save this home", exact: true }).click();
+  const error = dialog.getByRole("alert");
+  await expect(error).toBeVisible();
+  await expect(error).not.toContainText("private upstream text");
+  await page.waitForTimeout(4700);
+  await expect(error).toBeVisible();
+  await doubleText(page);
+  await reachable(dialog.getByRole("button", { name: "Dismiss message", exact: true }));
+  await dialog.getByRole("button", { name: "Dismiss message", exact: true }).click();
+  await expect(error).toHaveCount(0);
+  fail = false;
+  const save = dialog.getByRole("button", { name: "Save this home", exact: true });
+  await save.click();
+  await expect(dialog.getByRole("status")).toHaveText("A good find. Saved to your shortlist.");
+  await expect(dialog.getByRole("status")).toHaveCount(1);
+  await expect(dialog.getByRole("button", { name: "Remove from saved homes", exact: true })).toBeFocused();
+  await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await reachable(page.getByRole("button", { name: "Compare homes →", exact: true }));
+  await reachable(page.getByRole("button", { name: "Dismiss message", exact: true }));
+  await page.screenshot({ path: info.outputPath("q04-feedback.png") });
+});
+
 test("Q11 broken photos keep their frame and recover on source changes", async ({ page, context }, info) => {
   const blocked = await allowOwned(context);
   await page.route(`${web}/t20-image/001.png`, route => route.fulfill({ status: 404, body: "missing" }));

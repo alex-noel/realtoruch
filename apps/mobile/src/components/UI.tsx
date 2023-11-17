@@ -6,6 +6,9 @@ import React, {
   useLayoutEffect,
   useRef,
   useState,
+  createContext,
+  useContext,
+  useEffect,
 } from "react";
 import {
   KeyboardAvoidingView,
@@ -117,6 +120,21 @@ export function Chip({
       </Text>
     </Pressable>
   );
+}
+
+type FeedbackProps = { id?: number; message: string; kind: "success" | "error"; onDismiss: () => void; announce?: boolean; onAnnounced?: () => void };
+export const FeedbackContext = createContext<FeedbackProps | null>(null);
+export function Feedback({ message, kind, onDismiss, announce = true, onAnnounced }: FeedbackProps) {
+  // Keep the first announcement decision for this message's mounted instance.
+  // Moving it from a dialog to the page must not announce the same success twice.
+  const [shouldAnnounce] = useState(announce);
+  useEffect(() => { if (shouldAnnounce) onAnnounced?.(); }, [shouldAnnounce, onAnnounced]);
+  return <View style={[s.card, { padding: 12, gap: 8, borderLeftWidth: 4, borderLeftColor: kind === "error" ? c.danger : c.green }]}>
+    <Text accessibilityRole={shouldAnnounce ? (kind === "error" ? "alert" : "status") : undefined} accessibilityLiveRegion={shouldAnnounce ? (kind === "error" ? "assertive" : "polite") : "none"} style={s.text}>{message}</Text>
+    <View style={{ alignItems: "flex-start" }}>
+      <Button variant="quiet" label="Dismiss message" onPress={onDismiss}>Dismiss</Button>
+    </View>
+  </View>;
 }
 export function Field({
   label,
@@ -325,6 +343,7 @@ export function Panel({
   };
 }) {
   const titleId = useId();
+  const feedback = useContext(FeedbackContext);
   const web = Platform.OS === "web";
   const panel = (
     <View
@@ -386,6 +405,7 @@ export function Panel({
           contentContainerStyle={{ padding: web ? 18 : 24, gap: 22 }}
           keyboardShouldPersistTaps="handled"
         >
+          {feedback && <Feedback key={feedback.id} {...feedback} />}
           {children}
         </ScrollView>
       </View>

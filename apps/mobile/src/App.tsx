@@ -48,7 +48,7 @@ import {
   Listing,
 } from "./types";
 import { c, font, s } from "./theme";
-import { Button, Chip, Field, Panel, money } from "./components/UI";
+import { Button, Chip, Field, Panel, money, Feedback, FeedbackContext } from "./components/UI";
 import { ListingCard } from "./components/ListingCard";
 import PropertyMap from "./components/DeferredPropertyMap";
 import {
@@ -156,7 +156,12 @@ function RentalApp() {
     NonNullable<Listing["contact_adverts"]>[number] | undefined
   >();
   const [resetToken, setResetToken] = useState<string | null>(null);
-  const [toast, setToast] = useState("");
+  const feedbackSequence = useRef(0);
+  const announcedFeedback = useRef<number | null>(null);
+  const [feedback, setFeedback] = useState<{ id: number; message: string; kind: "success" | "error" } | null>(null);
+  const setToast = (message: string) => setFeedback(message ? { id: ++feedbackSequence.current, message, kind: "success" } : null);
+  const setErrorToast = (message: string) => setFeedback({ id: ++feedbackSequence.current, message, kind: "error" });
+  const feedbackProps = feedback ? { ...feedback, onDismiss: () => setFeedback(null), announce: announcedFeedback.current !== feedback.id, onAnnounced: () => { announcedFeedback.current = feedback.id; } } : null;
   const [searchName, setSearchName] = useState("My Kraków shortlist");
   const [reportReason, setReportReason] = useState("");
   const [formError, setFormError] = useState("");
@@ -247,10 +252,10 @@ function RentalApp() {
     return () => { active = false; };
   }, []);
   useEffect(() => {
-    if (!toast) return;
+    if (!feedback || feedback.kind === "error") return;
     const timer = setTimeout(() => setToast(""), 4500);
     return () => clearTimeout(timer);
-  }, [toast]);
+  }, [feedback]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -298,7 +303,7 @@ function RentalApp() {
           refreshAccount();
         })
         .catch((e) => {
-          if (!controller.signal.aborted && isCurrentAccount(generation, user)) setToast(e.message);
+          if (!controller.signal.aborted && isCurrentAccount(generation, user)) setErrorToast(e.message);
         });
       return () => controller.abort();
     }
@@ -458,7 +463,7 @@ function RentalApp() {
           : "A good find. Saved to your shortlist.",
       );
     } catch (e) {
-      if (isCurrentAccount(generation, user)) setToast((e as Error).message);
+      if (isCurrentAccount(generation, user)) setErrorToast((e as Error).message);
     } finally {
       if (isCurrentAccount(generation, user)) favoriteBusy.current.delete(home.id);
     }
@@ -479,7 +484,7 @@ function RentalApp() {
           await collections.refresh("favorites");
       } catch {
         if (isCurrentAccount(generation, email) && isCurrentAccessToken(token))
-          setToast("Signed in, but could not save this home. Please try again.");
+          setErrorToast("Signed in, but could not save this home. Please try again.");
       }
     }
   }
@@ -494,14 +499,14 @@ function RentalApp() {
         if (request === detailRequest.current) setDetail(value);
       })
       .catch((e) => {
-        if (request === detailRequest.current) setToast(e.message);
+        if (request === detailRequest.current) setErrorToast(e.message);
       });
   }
   function toggleCompare(home: Listing) {
     if (comparison.some((item) => item.id === home.id))
       setComparison((prev) => prev.filter((item) => item.id !== home.id));
     else if (comparison.length < 3) setComparison((prev) => [...prev, home]);
-    else setToast("Compare up to three homes at a time.");
+    else setErrorToast("Compare up to three homes at a time.");
   }
   function openDialog(value: typeof dialog) {
     setFormError("");
@@ -621,6 +626,7 @@ function RentalApp() {
     ));
 
   return (
+    <FeedbackContext.Provider value={feedbackProps}>
     <View style={{ flex: 1, backgroundColor: c.bg, flexDirection: "row" }}>
       <StatusBar style="dark" />
       {(sessionState === "offline" || sessionState === "reauth" || sessionState === "logout-retry" || sessionState === "storage-cleanup") && (
@@ -844,7 +850,7 @@ function RentalApp() {
                     if (isCurrentAccount(generation, user)) openHome(home);
                   })
                   .catch((e) => {
-                    if (isCurrentAccount(generation, user)) setToast(e.message);
+                    if (isCurrentAccount(generation, user)) setErrorToast(e.message);
                   });
               }}
               onRead={async (id) => {
@@ -853,7 +859,7 @@ function RentalApp() {
                   await api.readNotification(id);
                   if (isCurrentAccount(generation, user)) await refreshAccount();
                 } catch (e) {
-                  if (isCurrentAccount(generation, user)) setToast((e as Error).message);
+                  if (isCurrentAccount(generation, user)) setErrorToast((e as Error).message);
                 }
               }}
               onMore={async () => {
@@ -872,7 +878,7 @@ function RentalApp() {
                     ],
                   }));
                 } catch (e) {
-                  if (isCurrentAccount(generation, user)) setToast((e as Error).message);
+                  if (isCurrentAccount(generation, user)) setErrorToast((e as Error).message);
                 }
               }}
             />}
@@ -930,7 +936,7 @@ function RentalApp() {
                             await api.deleteSearch(search.id);
                             await refreshAccount();
                           } catch (e) {
-                            setToast((e as Error).message);
+                            setErrorToast((e as Error).message);
                           }
                         }}
                       >
@@ -1592,24 +1598,7 @@ function RentalApp() {
             </View>
           </View>
         )}
-        {!!toast && (
-          <Pressable
-            accessibilityRole="alert"
-            onPress={() => setToast("")}
-            style={{
-              position: "absolute",
-              bottom: comparison.length ? 83 : 24,
-              left: 22,
-              right: 22,
-              backgroundColor: "#17382D",
-              padding: 16,
-              borderWidth: 1,
-              borderColor: "#668276",
-            }}
-          >
-            <Text style={{ color: "white", fontSize: 13 }}>{toast}</Text>
-          </Pressable>
-        )}
+        {feedbackProps && !detail && !dialog && !resetToken && <ScrollView style={{ maxHeight: "40%", flexGrow: 0, flexBasis: "auto", flexShrink: 0 }} keyboardShouldPersistTaps="handled"><Feedback key={feedbackProps.id} {...feedbackProps} /></ScrollView>}
       </View>
       {detail && !dialog && (
         <DetailDialog
@@ -1657,7 +1646,7 @@ function RentalApp() {
                   if (stillCurrent()) openHome(home, false);
                 })
                 .catch((e) => {
-                  if (stillCurrent()) setToast(e.message);
+                  if (stillCurrent()) setErrorToast(e.message);
                 });
             }}
           />
@@ -1844,6 +1833,7 @@ function RentalApp() {
         </Panel>
       )}
     </View>
+    </FeedbackContext.Provider>
   );
 }
 
