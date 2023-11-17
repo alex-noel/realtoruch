@@ -159,7 +159,11 @@ describe("owner picker adapters", () => {
       .mockResolvedValueOnce({ granted: true });
     native.launch.mockResolvedValueOnce({
       canceled: false,
-      assets: [asset("kitchen.png")],
+      assets: [
+        asset("kitchen.png", 128, "image/png", 32_768, 1),
+        asset("wide.png", 128, "image/png", 32_769, 0),
+        asset("tall.png", 128, "image/png", 1, 32_769),
+      ],
     });
     expect((await pickPhotos(3, signal)).errors.join()).toContain("denied");
     expect(native.launch).not.toHaveBeenCalled();
@@ -172,6 +176,11 @@ describe("owner picker adapters", () => {
         quality: 1,
       }),
     );
+    expect(picked.sources.map((source) => source.name)).toEqual(["kitchen.png"]);
+    expect(picked.errors).toEqual([
+      "wide.png: Choose an image with neither side longer than 32,768 pixels.",
+      "tall.png: Choose an image with neither side longer than 32,768 pixels.",
+    ]);
     expect(picked.sources[0].body).toBeInstanceOf(native.File);
     expect(picked.sources[0].preview().uri).toBe("file:///picker/kitchen.png");
     expect(photoFetch).toBe(native.fetch);

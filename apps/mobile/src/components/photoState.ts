@@ -53,7 +53,7 @@ function explain(error: unknown, restoring: boolean) {
     case 415:
       return "Choose a JPEG, PNG or WebP image.";
     case 422:
-      return "Choose a valid still image no larger than 20 megapixels.";
+      return "Choose a valid still image up to 20 megapixels and 32,768 pixels on each side.";
     default:
       return restoring
         ? "Could not check this photo. Try again."
