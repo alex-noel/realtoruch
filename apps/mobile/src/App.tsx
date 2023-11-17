@@ -82,6 +82,12 @@ const tabs = [
   { id: "searches", title: "Saved searches", icon: Bookmark },
   { id: "notifications", title: "Notifications", icon: Bell },
 ] as const;
+const SORT_OPTIONS = [
+  { value: "newest", label: "Newest first" },
+  { value: "price_asc", label: "Lowest rent" },
+  { value: "price_desc", label: "Highest rent" },
+  { value: "area_desc", label: "Largest first" },
+] as const;
 
 export default function App() {
   return (
@@ -108,6 +114,7 @@ function RentalApp() {
     sourceLoading, sourceFailed, summary, changeFilters, goToPage,
     retrySearch, retrySources, refresh,
   } = useListingSearch(DEFAULT_FILTERS);
+  const currentSort = SORT_OPTIONS.find(({ value }) => value === filters.sort) ?? SORT_OPTIONS[0];
   const homes = result?.data.items ?? [];
   const total = result?.data.total ?? 0;
   const pageSize = result?.data.page_size ?? 24;
@@ -120,6 +127,7 @@ function RentalApp() {
     | "account"
     | "marketplace"
     | "filters"
+    | "sort"
     | "about"
     | "compare"
     | "save-search"
@@ -1267,33 +1275,15 @@ function RentalApp() {
                   <View style={[s.row, { gap: 14, flexWrap: "wrap" }]}>
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel="Change sort order"
-                      onPress={() => {
-                        const choices = [
-                          "newest",
-                          "price_asc",
-                          "price_desc",
-                          "area_desc",
-                        ];
-                        changeFilters({
-                          ...filters,
-                          sort: choices[
-                            (choices.indexOf(filters.sort) + 1) % choices.length
-                          ],
-                        });
-                      }}
-                      style={[s.row, { gap: 5, minHeight: 40 }]}
+                      accessibilityLabel={`Change sort order, ${currentSort.label} selected`}
+                      accessibilityState={{ expanded: dialog === "sort" }}
+                      {...(Platform.OS === "web" ? { "aria-haspopup": "dialog" } : {})}
+                      onPress={() => openDialog("sort")}
+                      style={[s.row, { gap: 5, minHeight: 44 }]}
                     >
                       <ArrowDownUp size={12} color={c.muted} />
                       <Text style={[s.muted, { fontSize: 11 }]}>
-                        {
-                          {
-                            newest: "Newest first",
-                            price_asc: "Lowest rent",
-                            price_desc: "Highest rent",
-                            area_desc: "Largest first",
-                          }[filters.sort as "newest"]
-                        }
+                        {currentSort.label}
                       </Text>
                     </Pressable>
                     <View
@@ -1754,6 +1744,26 @@ function RentalApp() {
           onApply={changeFilters}
           onClose={() => setDialog(null)}
         />
+      )}
+      {dialog === "sort" && (
+        <Panel title="Sort homes" onClose={() => setDialog(null)}>
+          <View style={{ gap: 8, alignItems: "flex-start" }}>
+            {SORT_OPTIONS.map(({ value, label }) => (
+              <Chip
+                key={value}
+                label={label}
+                selected={value === currentSort.value}
+                onPress={() => {
+                  setDialog(null);
+                  if (value !== currentSort.value) changeFilters({ ...filters, sort: value });
+                }}
+              />
+            ))}
+          </View>
+          <View style={{ alignItems: "flex-start" }}>
+            <Button outline onPress={() => setDialog(null)}>Cancel</Button>
+          </View>
+        </Panel>
       )}
       {dialog === "compare" && (
         <CompareDialog homes={comparison} onClose={() => setDialog(null)} />
