@@ -42,6 +42,58 @@ test('search controls preserve rent, area, advertiser, polygon and commission bo
   expect(blocked).toEqual([]);
 });
 
+test('filter validation parses decimal commas and enforces rent-exclusive and area-inclusive bounds', async ({ page, context }, info) => {
+  const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
+  const blocked: string[] = [];
+  await context.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (url.protocol === 'data:' || (url.hostname === '127.0.0.1' && allowed.has(url.port))) return route.continue();
+    blocked.push(url.origin);
+    return route.abort('blockedbyclient');
+  });
+  execFileSync(process.env.E2E_PYTHON!, [join(__dirname, 'fixture.py'), 'boundaries', info.project.name]);
+  await page.goto('/', { waitUntil: 'commit' });
+  await page.getByRole('button', { name: 'More filters' }).click();
+
+  const minRent = page.getByLabel('MIN RENT · PLN');
+  const maxRent = page.getByLabel('RENT BELOW · PLN');
+  const minArea = page.getByLabel('MIN AREA · M²');
+  const maxArea = page.getByLabel('MAX AREA · M²');
+  await minRent.fill('2000');
+  await maxRent.fill('2000');
+  await minArea.fill('50,5');
+  await maxArea.fill('50.5');
+  await page.getByRole('button', { name: 'Show matching homes' }).click();
+
+  await expect(minRent).toHaveAttribute('aria-invalid', 'true');
+  await expect(maxRent).toHaveAttribute('aria-invalid', 'true');
+  await expect(minArea).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(maxArea).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByText('Minimum rent must be below the exclusive rent maximum.')).toBeVisible();
+  await expect(page.getByText('Rent maximum must be above minimum rent.')).toBeVisible();
+  await expect(minArea).toHaveValue('50,5');
+  await expect(maxArea).toHaveValue('50.5');
+
+  await maxRent.fill('2001');
+  await expect(minRent).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(maxRent).not.toHaveAttribute('aria-invalid', 'true');
+  const matchingRequest = page.waitForRequest(request => {
+    const url = new URL(request.url());
+    return url.pathname === '/v1/listings' &&
+      url.searchParams.get('min_area') === '50.5' &&
+      url.searchParams.get('max_area') === '50.5';
+  });
+  await page.getByRole('button', { name: 'Show matching homes' }).click();
+  const request = await matchingRequest;
+  const applied = new URL(request.url()).searchParams;
+  expect(applied.get('min_price')).toBe('2000');
+  expect(applied.get('max_price')).toBe('2001');
+  expect(applied.get('max_price_exclusive')).toBe('true');
+  expect(applied.get('min_area')).toBe('50.5');
+  expect(applied.get('max_area')).toBe('50.5');
+  expect(blocked).toEqual([]);
+});
+
 function pagedHomes(): Listing[] {
   const image = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   return Array.from({ length: 49 }, (_, index) => ({

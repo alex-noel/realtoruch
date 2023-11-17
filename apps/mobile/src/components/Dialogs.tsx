@@ -1,4 +1,4 @@
-import React, { useId, useState } from "react";
+import React, { useState } from "react";
 import {
   Linking,
   Pressable,
@@ -15,6 +15,25 @@ import { Filters, Listing } from "../types";
 import { c, s } from "../theme";
 import { ListingPhoto } from "./ListingCard";
 import { Button, Chip, Field, Panel, money } from "./UI";
+import { parseFilterNumber } from "../filterNumbers";
+
+const numericFilterKeys = [
+  "min_price",
+  "max_price",
+  "min_area",
+  "max_area",
+] as const;
+type NumericFilterKey = (typeof numericFilterKeys)[number];
+type NumericDraft = Record<NumericFilterKey, string>;
+type NumericErrors = Partial<
+  Record<NumericFilterKey, { message: string; reason: "input" | "range" }>
+>;
+const numericDraftFrom = (filters: Filters): NumericDraft => ({
+  min_price: filters.min_price == null ? "" : String(filters.min_price),
+  max_price: filters.max_price == null ? "" : String(filters.max_price),
+  min_area: filters.min_area == null ? "" : String(filters.min_area),
+  max_area: filters.max_area == null ? "" : String(filters.max_area),
+});
 
 export function AuthDialog({
   onClose,
@@ -149,21 +168,103 @@ export function FilterDialog({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(initial);
-  const [error, setError] = useState("");
-  const errorId = useId();
+  const [numericDraft, setNumericDraft] = useState(() =>
+    numericDraftFrom(initial),
+  );
+  const [fieldErrors, setFieldErrors] = useState<NumericErrors>({});
   const edit = (key: keyof Filters, value: unknown) =>
     setDraft((current) => ({ ...current, [key]: value }));
-  const numeric = (key: keyof Filters, value: string) =>
-    edit(key, value ? Number(value.replace(/[^0-9.]/g, "")) : undefined);
+  function editNumeric(key: NumericFilterKey, value: string) {
+    setNumericDraft((current) => ({ ...current, [key]: value }));
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next[key];
+      const peer: Record<NumericFilterKey, NumericFilterKey> = {
+        min_price: "max_price",
+        max_price: "min_price",
+        min_area: "max_area",
+        max_area: "min_area",
+      };
+      if (next[peer[key]]?.reason === "range") delete next[peer[key]];
+      return next;
+    });
+  }
   function apply() {
+    const minPrice = parseFilterNumber(numericDraft.min_price, true);
+    const maxPrice = parseFilterNumber(numericDraft.max_price, true);
+    const minArea = parseFilterNumber(numericDraft.min_area);
+    const maxArea = parseFilterNumber(numericDraft.max_area);
+    const errors: NumericErrors = {};
+    const invalidMessage = (
+      result: ReturnType<typeof parseFilterNumber>,
+      rent: boolean,
+    ) =>
+      result.valid
+        ? undefined
+        : result.reason === "integer"
+          ? "Enter rent as a whole number of PLN."
+          : rent
+            ? "Enter a non-negative whole number of PLN."
+            : "Enter a non-negative area; use a comma or dot for decimals.";
+    const results: Record<
+      NumericFilterKey,
+      ReturnType<typeof parseFilterNumber>
+    > = {
+      min_price: minPrice,
+      max_price: maxPrice,
+      min_area: minArea,
+      max_area: maxArea,
+    };
+    for (const key of numericFilterKeys) {
+      const message = invalidMessage(results[key], key.endsWith("price"));
+      if (message) errors[key] = { message, reason: "input" };
+    }
     if (
-      (draft.min_price ?? 0) > (draft.max_price ?? Infinity) ||
-      (draft.min_area ?? 0) > (draft.max_area ?? Infinity)
+      minPrice.valid &&
+      maxPrice.valid &&
+      minPrice.value !== undefined &&
+      maxPrice.value !== undefined &&
+      minPrice.value >= maxPrice.value
     ) {
-      setError("Minimum values must be lower than maximum values.");
+      errors.min_price = {
+        message: "Minimum rent must be below the exclusive rent maximum.",
+        reason: "range",
+      };
+      errors.max_price = {
+        message: "Rent maximum must be above minimum rent.",
+        reason: "range",
+      };
+    }
+    if (
+      minArea.valid &&
+      maxArea.valid &&
+      minArea.value !== undefined &&
+      maxArea.value !== undefined &&
+      minArea.value > maxArea.value
+    ) {
+      errors.min_area = {
+        message: "Minimum area cannot exceed maximum area.",
+        reason: "range",
+      };
+      errors.max_area = {
+        message: "Maximum area must be at least the minimum area.",
+        reason: "range",
+      };
+    }
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
       return;
     }
-    onApply({ ...draft, max_price_exclusive: true });
+    if (!minPrice.valid || !maxPrice.valid || !minArea.valid || !maxArea.valid)
+      return;
+    onApply({
+      ...draft,
+      min_price: minPrice.value,
+      max_price: maxPrice.value,
+      min_area: minArea.value,
+      max_area: maxArea.value,
+      max_price_exclusive: true,
+    });
     onClose();
   }
   return (
@@ -184,27 +285,19 @@ export function FilterDialog({
       <View style={[s.row, { gap: 16 }]}>
         <Field
           label="MIN RENT · PLN"
-          value={String(draft.min_price ?? "")}
-          onChange={(v) => numeric("min_price", v)}
+          value={numericDraft.min_price}
+          onChange={(v) => editNumeric("min_price", v)}
           numeric
           placeholder="Any"
-          errorId={
-            error && (draft.min_price ?? 0) > (draft.max_price ?? Infinity)
-              ? errorId
-              : undefined
-          }
+          error={fieldErrors.min_price?.message}
         />
         <Field
           label="RENT BELOW · PLN"
-          value={String(draft.max_price ?? "")}
-          onChange={(v) => numeric("max_price", v)}
+          value={numericDraft.max_price}
+          onChange={(v) => editNumeric("max_price", v)}
           numeric
           placeholder="Any"
-          errorId={
-            error && (draft.min_price ?? 0) > (draft.max_price ?? Infinity)
-              ? errorId
-              : undefined
-          }
+          error={fieldErrors.max_price?.message}
         />
       </View>
       <Text style={[s.muted, { fontSize: 11 }]}>
@@ -213,27 +306,19 @@ export function FilterDialog({
       <View style={[s.row, { gap: 16 }]}>
         <Field
           label="MIN AREA · M²"
-          value={String(draft.min_area ?? "")}
-          onChange={(v) => numeric("min_area", v)}
+          value={numericDraft.min_area}
+          onChange={(v) => editNumeric("min_area", v)}
           numeric
           placeholder="Any"
-          errorId={
-            error && (draft.min_area ?? 0) > (draft.max_area ?? Infinity)
-              ? errorId
-              : undefined
-          }
+          error={fieldErrors.min_area?.message}
         />
         <Field
           label="MAX AREA · M²"
-          value={String(draft.max_area ?? "")}
-          onChange={(v) => numeric("max_area", v)}
+          value={numericDraft.max_area}
+          onChange={(v) => editNumeric("max_area", v)}
           numeric
           placeholder="Any"
-          errorId={
-            error && (draft.min_area ?? 0) > (draft.max_area ?? Infinity)
-              ? errorId
-              : undefined
-          }
+          error={fieldErrors.max_area?.message}
         />
       </View>
       <View style={{ gap: 10 }}>
@@ -323,15 +408,6 @@ export function FilterDialog({
           onPress={() => edit("hide_suspicious", !draft.hide_suspicious)}
         />
       </View>
-      {!!error && (
-        <Text
-          nativeID={errorId}
-          accessibilityRole="alert"
-          style={{ color: "#A3422D" }}
-        >
-          {error}
-        </Text>
-      )}
       <Button onPress={apply}>Show matching homes</Button>
     </Panel>
   );
