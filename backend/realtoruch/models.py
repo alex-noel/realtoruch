@@ -4,6 +4,7 @@ from uuid import uuid4
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     BigInteger,
     DateTime,
     Float,
@@ -366,3 +367,16 @@ class AccountClosure(Base):
     """Opaque, durable guard against stale authorized requests."""
     __tablename__ = "account_closures"
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+
+
+class MediaAsset(Base):
+    __tablename__ = "media_assets"
+    __table_args__ = (UniqueConstraint("user_id", "idempotency_key"),
+                      CheckConstraint("state IN ('pending', 'ready', 'rejected', 'deleted')"))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    state: Mapped[str] = mapped_column(String(20), default="pending")
+    digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    description: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)

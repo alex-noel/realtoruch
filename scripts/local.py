@@ -79,6 +79,9 @@ def local_environment(*, live=False, journey=False):
         "EXPO_OFFLINE": "1",
         "EMAIL_DELIVERY_MODE": environment.get("EMAIL_DELIVERY_MODE", "file"),
         "EMAIL_PREVIEW_DIRECTORY": str(local / "mail"),
+        "MEDIA_STORAGE_BACKEND": "local",
+        "MEDIA_DIRECTORY": str(local / "media" / ("journey" if journey else "live" if live else "demo")),
+        "MEDIA_PUBLIC_BASE_URL": environment.get("MEDIA_PUBLIC_BASE_URL", "http://localhost:8000"),
         "PUBLIC_WEB_URL": environment.get("PUBLIC_WEB_URL", "http://localhost:8081"),
         "CONNECTORS_CONFIG": str(
             ROOT / "config" / ("sources.live.json" if live else "sources.json")

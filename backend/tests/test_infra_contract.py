@@ -90,7 +90,14 @@ def test_runtime_role_grants(monkeypatch, record):
                         assert conn.execute("SELECT status, claim_token, lease_until, confirmation_token FROM email_deliveries WHERE id='email'").fetchone() == ("cancelled", None, None, None)
                         assert conn.execute("SELECT status, claim_token, lease_until FROM push_deliveries WHERE id='push'").fetchone() == ("cancelled", None, None)
                     statements = {
-                        "rentals": [("api", "INSERT INTO account_closures (user_id) VALUES ('closed')", True),
+                        "rentals": [("api", "INSERT INTO media_assets (id,user_id,idempotency_key,state,description) VALUES ('media-grant','grant-owner','grant-key','pending','')", True),
+                                    ("api", "SELECT * FROM media_assets WHERE id='media-grant'", True),
+                                    ("api", "UPDATE media_assets SET state='ready' WHERE id='media-grant'", True),
+                                    ("api", "DELETE FROM media_assets WHERE id='media-grant'", True),
+                                    ("indexer", "SELECT * FROM media_assets", False),
+                                    ("alerts", "SELECT * FROM media_assets", False),
+                                    ("dataflow", "SELECT * FROM media_assets", False),
+                                    ("api", "INSERT INTO account_closures (user_id) VALUES ('closed')", True),
                                     ("api", "SELECT * FROM account_closures WHERE user_id='closed'", True),
                                     ("api", "UPDATE account_closures SET user_id='other' WHERE user_id='closed'", False),
                                     ("api", "DELETE FROM account_closures WHERE user_id='closed'", False),

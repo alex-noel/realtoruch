@@ -14,6 +14,9 @@ x-service: &service
     SEARCH_SERVICE_URL: http://search:8000
     AUTH_SERVICE_URL: http://auth:8000
     API_BASE_URL: http://api:8000
+    MEDIA_STORAGE_BACKEND: local
+    MEDIA_DIRECTORY: /var/lib/realtoruch/media
+    MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-http://localhost:8000}
     CONNECTORS_CONFIG: /config/sources.json
     JWT_SECRET: ${JWT_SECRET:-local-demo-jwt-key-change-before-deployment-32-chars}
     PHONE_HASH_KEY: ${PHONE_HASH_KEY:-local-demo-phone-key-change-before-deployment}
@@ -62,6 +65,13 @@ services:
   api:
     <<: *service
     ports: ["127.0.0.1:8000:8000"]
+    volumes: ["media:/var/lib/realtoruch/media"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+  media-cleanup:
+    <<: *service
+    command: ["python", "-m", "realtoruch.media", "--loop"]
+    volumes: ["media:/var/lib/realtoruch/media"]
     depends_on:
       migrate: { condition: service_completed_successfully }
   auth:
@@ -117,6 +127,7 @@ services:
 volumes:
   postgres:
   elasticsearch:
+  media:
 networks:
   private:
     driver: bridge

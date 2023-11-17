@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     elasticsearch_ca_file: str = ""
     search_service_url: str = ""
     api_base_url: str = "http://localhost:8000"
+    media_storage_backend: str = ""
+    media_gcs_bucket: str = ""
+    media_directory: str = ".local/media"
+    media_public_base_url: str = "http://localhost:8000"
     connectors_config: str = "../config/sources.json"
     request_limit_per_minute: int = 120
     auth_request_limit_per_minute: int = 30
@@ -54,11 +58,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def production_configuration(self):
+        if not self.media_storage_backend:
+            self.media_storage_backend = "disabled" if self.environment == "production" else "local"
+        if self.media_storage_backend not in ("disabled", "local", "gcs") or (self.media_storage_backend == "gcs" and not self.media_gcs_bucket):
+            raise ValueError("Media storage requires local or a named GCS bucket")
         if self.email_delivery_mode not in ("disabled", "file", "smtp"):
             raise ValueError("EMAIL_DELIVERY_MODE must be disabled, file or smtp")
         if self.smtp_security not in ("starttls", "ssl", "none"):
             raise ValueError("SMTP_SECURITY must be starttls, ssl or none")
         if self.environment == "production":
+            if self.service_role == "api" and self.media_storage_backend == "local":
+                raise ValueError("Production API media storage requires GCS")
+            if self.service_role == "api" and self.media_storage_backend == "gcs" and not self.media_public_base_url.startswith("https://"):
+                raise ValueError("Production media public URL must use HTTPS")
             if self.email_delivery_mode == "file" or (
                 self.email_delivery_mode == "smtp"
                 and (

@@ -51,15 +51,15 @@ def require_user(request: Request):
     return require_claims(request)["sub"]
 
 
-def install_http(app, *, auth=False):
+def install_http(app, *, auth=False, media_upload=False):
     from fastapi.middleware.cors import CORSMiddleware
 
     settings = get_settings()
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins.split(","),
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Account-Export-Token"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Account-Export-Token", "Idempotency-Key"],
         allow_credentials=auth,
     )
     windows = OrderedDict()
@@ -91,12 +91,14 @@ def install_http(app, *, auth=False):
             window.append(current)
             if len(windows) > 10000:
                 windows.popitem(last=False)
-        try:
-            length = int(request.headers.get("content-length", "0") or 0)
-        except ValueError:
-            return JSONResponse({"detail": "Invalid Content-Length"}, 400)
-        if length > 1_000_000:
-            return JSONResponse({"detail": "Request too large"}, 413)
+        is_media_upload = media_upload and request.method == "POST" and request.url.path == "/v1/me/media"
+        if not is_media_upload:
+            try:
+                length = int(request.headers.get("content-length", "0") or 0)
+            except ValueError:
+                return JSONResponse({"detail": "Invalid Content-Length"}, 400)
+            if length > 1_000_000:
+                return JSONResponse({"detail": "Request too large"}, 413)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"

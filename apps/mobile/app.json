@@ -13,6 +13,13 @@
       "output": "single",
       "name": "Realtoruch · A clearer way to rent"
     },
-    "plugins": ["expo-secure-store"]
+    "plugins": [
+      "expo-secure-store",
+      ["expo-image-picker", {
+        "photosPermission": "Allow Realtoruch to choose photos for your rental advert.",
+        "cameraPermission": false,
+        "microphonePermission": false
+      }]
+    ]
   }
 }

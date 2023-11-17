@@ -27,6 +27,7 @@ processes = []
 commands = [
     ([python, "-m", "realtoruch.worker", "alerts", "--loop"], ROOT),
     ([python, "-m", "realtoruch.auth_jobs", "--loop"], ROOT),
+    ([python, "-m", "realtoruch.media", "--loop"], ROOT),
     (
         [
             python,

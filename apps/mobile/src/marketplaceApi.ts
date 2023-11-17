@@ -1,5 +1,5 @@
-import { request } from "./api";
-import { Listing } from "./types";
+import { request, requestBlob } from "./api";
+import type { Listing, MediaAsset, MediaMime } from "./types";
 export type Profile = {
   id: string;
   name: string;
@@ -25,6 +25,7 @@ export type Draft = {
   property_type: "apartment" | "house" | "room";
   amenities: string[];
   images: string[];
+  media_ids?: string[];
 };
 export type Advert = {
   id: string;
@@ -77,6 +78,42 @@ function messageRequest<T>(
 ) {
   return request<T>(path, signal ? { ...options, signal } : options);
 }
+const mediaPath = (id: string) => `/v1/me/media/${encodeURIComponent(id)}`;
+const mediaKeyPath = (key: string) => `/v1/me/media/by-key/${encodeURIComponent(key)}`;
+export function makeOwnerMedia(
+  transport: NonNullable<Parameters<typeof requestBlob>[1]>["transport"],
+) {
+  return {
+  upload: (key: string, body: Blob, mime: MediaMime, signal: AbortSignal) =>
+    request<MediaAsset>("/v1/me/media", {
+      method: "POST",
+      headers: { "Content-Type": mime, "Idempotency-Key": key },
+      body,
+      signal,
+      transport,
+      timeoutMs: 60_000,
+      redirect: "error",
+    }),
+  status: (id: string, signal: AbortSignal) =>
+    request<MediaAsset>(mediaPath(id), { signal }),
+  statusByKey: (key: string, signal: AbortSignal) =>
+    request<MediaAsset>(mediaKeyPath(key), { signal }),
+  cancel: (key: string, signal: AbortSignal) =>
+    request<MediaAsset>(mediaKeyPath(key), { method: "DELETE", signal }),
+  remove: (id: string, signal: AbortSignal) =>
+    request<MediaAsset>(mediaPath(id), { method: "DELETE", signal }),
+  describe: (id: string, description: string, signal: AbortSignal) =>
+    request<MediaAsset>(mediaPath(id), { ...write("PATCH", { description }), signal }),
+  preview: (id: string, size: "display" | "thumbnail", signal: AbortSignal) =>
+    requestBlob(`${mediaPath(id)}/${size}`, {
+      signal,
+      transport,
+      redirect: "error",
+      cache: "no-store",
+    }),
+  };
+}
+
 export const market = {
   profile: () => request<{ profile: Profile | null }>("/v1/me/advertiser"),
   saveProfile: (profile: Omit<Profile, "id">) =>
@@ -86,14 +123,14 @@ export const market = {
       `/v1/advertisers/${id}`,
       signal,
     ),
-  adverts: () => request<{ items: Advert[] }>("/v1/me/adverts"),
-  saveAdvert: (draft: Draft, existing?: Advert) =>
+  adverts: (signal?: AbortSignal) => request<{ items: Advert[] }>("/v1/me/adverts", signal ? { signal } : undefined),
+  saveAdvert: (draft: Draft, existing?: Advert, signal?: AbortSignal) =>
     existing
       ? request<Advert>(
           `/v1/me/adverts/${existing.id}`,
-          write("PUT", { version: existing.version, advert: draft }),
+          { ...write("PUT", { version: existing.version, advert: draft }), signal },
         )
-      : request<Advert>("/v1/me/adverts", write("POST", draft)),
+      : request<Advert>("/v1/me/adverts", { ...write("POST", draft), signal }),
   publish: (advert: Advert) =>
     request<Advert>(
       `/v1/me/adverts/${advert.id}/publish`,
