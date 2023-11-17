@@ -162,11 +162,13 @@ export function FilterDialog({
   initial,
   districts,
   onApply,
+  onReset,
   onClose,
 }: {
   initial: Filters;
   districts: string[];
   onApply: (value: Filters) => void;
+  onReset: () => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(initial);
@@ -410,7 +412,12 @@ export function FilterDialog({
           onPress={() => edit("hide_suspicious", !draft.hide_suspicious)}
         />
       </View>
-      <Button onPress={apply}>Show matching homes</Button>
+      <View style={[s.row, { flexWrap: "wrap", gap: 8 }]}>
+        <Button outline onPress={onReset}>
+          Reset filters
+        </Button>
+        <Button onPress={apply}>Show matching homes</Button>
+      </View>
     </Panel>
   );
 }

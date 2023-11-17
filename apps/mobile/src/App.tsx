@@ -50,6 +50,11 @@ import {
 import { c, font, s } from "./theme";
 import { Button, Chip, Field, Panel, money, Feedback, FeedbackContext } from "./components/UI";
 import { ListingCard } from "./components/ListingCard";
+import {
+  removeFilterSummary,
+  resetFiltersForCity,
+  summarizeFilters,
+} from "./filterSummary";
 import PropertyMap from "./components/DeferredPropertyMap";
 import {
   AuthDialog,
@@ -435,6 +440,11 @@ function RentalApp() {
       polygon: cityChanged ? undefined : filters.polygon,
     }, debounce);
   }
+  function resetCurrentFilters() {
+    changeFilters(resetFiltersForCity(filters));
+    setCity(filters.city);
+    setQuery("");
+  }
   function isCurrentAccount(generation: number, email: string | null) {
     return generation === sessionGeneration.current && currentUser.current === email;
   }
@@ -576,16 +586,7 @@ function RentalApp() {
     }
   }
 
-  const activeFilterCount =
-    Number(!!filters.polygon) +
-    Number(!!filters.max_price) +
-    Number(!!filters.min_price) +
-    Number(!!filters.rooms) +
-    Number(!!filters.district) +
-    Number(!!filters.amenity) +
-    Number(!!filters.min_area) +
-    Number(!!filters.max_area) +
-    Number(filters.property_type !== "all");
+  const filterSummary = summarizeFilters(filters);
   const nav = (compact = false) =>
     tabs.map(({ id, title, icon: Icon }) => (
       <Pressable
@@ -914,6 +915,11 @@ function RentalApp() {
                       {search.filters.city} · {search.new_matches} unread
                       matches{search.filters.polygon ? " · Drawn area" : ""}
                     </Text>
+                    <Text style={s.muted}>
+                      Applied filters: {summarizeFilters(search.filters).items
+                        .map(({ label }) => label)
+                        .join(" · ") || "none"}
+                    </Text>
                     <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>
                       <Button
                         onPress={() => {
@@ -1154,10 +1160,7 @@ function RentalApp() {
                       >
                         <SlidersHorizontal size={13} color={c.green} />
                         <Text style={[s.text, { fontSize: 12 }]}>
-                          Filters
-                          {activeFilterCount > 0
-                            ? ` (${activeFilterCount})`
-                            : ""}
+                          Filters ({filterSummary.deviationCount})
                         </Text>
                       </Pressable>
                     </View>
@@ -1174,6 +1177,22 @@ function RentalApp() {
                         Save search
                       </Text>
                     </Pressable>
+                  </View>
+                  <View style={{ gap: 6 }}>
+                    <Text style={s.label}>APPLIED SEARCH CONSTRAINTS</Text>
+                    <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
+                      {filterSummary.items.map((item) => (
+                        <Chip
+                          key={item.key}
+                          label={`${item.label} ×`}
+                          selected
+                          onPress={() => {
+                            if (item.key === "q") setQuery("");
+                            changeFilters(removeFilterSummary(filters, item.key));
+                          }}
+                        />
+                      ))}
+                    </View>
                   </View>
                   <SourceStatus
                     key={filters.city}
@@ -1396,18 +1415,18 @@ function RentalApp() {
                           <Text style={s.muted}>
                             {tab === "saved"
                               ? "Tap the heart on a home to keep it here."
-                              : "No homes match these filters. Try a wider price range or another neighborhood."}
+                              : `No homes match these filters in ${filters.city}. Reset filters to browse apartments there. Apartment listings are the default property type.`}
                           </Text>
                           <Button
                             outline
                             onPress={() => {
-                              changeFilters(DEFAULT_FILTERS);
-                              setCity(DEFAULT_FILTERS.city);
-                              setQuery("");
+                              resetCurrentFilters();
                               setTab("discover");
                             }}
                           >
-                            Explore all homes
+                            {tab === "discover"
+                              ? "Reset filters"
+                              : `Browse apartments in ${filters.city}`}
                           </Button>
                         </View>
                       )}
@@ -1714,6 +1733,10 @@ function RentalApp() {
           initial={filters}
           districts={summary?.districts || []}
           onApply={changeFilters}
+          onReset={() => {
+            resetCurrentFilters();
+            setDialog(null);
+          }}
           onClose={() => setDialog(null)}
         />
       )}
