@@ -347,3 +347,55 @@ test.describe('explicit sort', () => {
     expect(blocked).toEqual([]);
   });
 });
+
+test('Q10 detail failures retry locally and late responses cannot replace a different home', async ({ page, context }) => {
+  const api = process.env.E2E_API_URL!;
+  const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
+  const homes = pagedHomes().slice(0, 2);
+  const contact = { id: 'synthetic-advert', name: 'Synthetic owner', advertiser_type: 'private' };
+  let mode: 'fail' | 'loaded' | 'missing' | 'hold' = 'fail';
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await context.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (url.protocol === 'data:') return route.continue();
+    if (url.hostname !== '127.0.0.1' || !allowed.has(url.port)) return route.abort();
+    const headers = { 'Access-Control-Allow-Origin': process.env.E2E_WEB_URL! };
+    if (url.origin === api && url.pathname === '/v1/listings') return route.fulfill({ json: { items: homes, total: 2, page: 1, page_size: 24, engine: 'sql' }, headers });
+    const home = homes.find(item => url.origin === api && url.pathname === `/v1/listings/${item.id}`);
+    if (home) {
+      if (home.id === homes[0].id) {
+        if (mode === 'fail') return route.fulfill({ status: 503, json: { detail: 'hidden upstream cause' }, headers });
+        if (mode === 'missing') return route.fulfill({ status: 404, json: { detail: 'missing' }, headers });
+        if (mode === 'hold') await held;
+      }
+      return route.fulfill({ json: { ...home, description: `${home.title} hydrated`, contact_adverts: [contact], history: [{ at: '2026-01-01T12:00:00Z', rent_pln: 4000, status: 'active' }] }, headers });
+    }
+    return route.continue();
+  });
+  await page.goto('/');
+  const open = (index: number) => page.getByRole('button', { name: `View ${homes[index].title}`, exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'A closer look' });
+  await open(0);
+  await expect(dialog.getByRole('alert')).toContainText('Could not load current details');
+  await expect(dialog.getByText(homes[0].title, { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Message Synthetic owner' })).toHaveCount(0);
+  await expect(dialog.getByText('Observed price changes')).toHaveCount(0);
+  mode = 'loaded';
+  await dialog.getByRole('button', { name: 'Retry details' }).click();
+  await expect(dialog.getByRole('button', { name: 'Message Synthetic owner' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close dialog' }).click();
+  mode = 'missing'; await open(0);
+  await expect(dialog.getByRole('alert')).toContainText('no longer available');
+  await expect(dialog.getByRole('button', { name: 'Message Synthetic owner' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close dialog' }).click();
+  mode = 'hold'; await open(0);
+  await expect(dialog.getByRole('status')).toContainText('Loading current details');
+  await dialog.getByRole('button', { name: 'Close dialog' }).click();
+  await open(1);
+  await expect(dialog.getByText(`${homes[1].title} hydrated`, { exact: true })).toBeVisible();
+  const oldResponse = page.waitForResponse(response => response.url() === `${api}/v1/listings/${homes[0].id}`);
+  release(); await oldResponse;
+  await expect(dialog.getByText(homes[1].title, { exact: true })).toBeVisible();
+  await expect(dialog.getByText(homes[0].title, { exact: true })).toHaveCount(0);
+});

@@ -346,6 +346,8 @@ export function DetailDialog({
   saved,
   onReport,
   onContact,
+  loadState = "loaded",
+  onRetry,
 }: {
   home: Listing;
   onClose: () => void;
@@ -353,10 +355,18 @@ export function DetailDialog({
   saved: boolean;
   onReport: () => void;
   onContact: (contact: NonNullable<Listing["contact_adverts"]>[number]) => void;
+  loadState?: "summary" | "loading" | "loaded" | "failed" | "unavailable";
+  onRetry?: () => void;
 }) {
   const narrow = useWindowDimensions().width < 700;
+  const detailsLoaded = loadState === "loaded";
   return (
     <Panel title="A closer look" wide onClose={onClose}>
+      {!detailsLoaded && <View style={[s.card, { padding: 14, gap: 8, alignItems: "flex-start" }]}>
+        {loadState === "loading" || loadState === "summary" ? <Text accessibilityRole="status" style={s.text}>Loading current details, contact options and observations…</Text>
+          : <Text accessibilityRole="alert" style={s.text}>{loadState === "unavailable" ? "This home's details are no longer available. The saved summary may be out of date; contact options are unavailable." : "Could not load current details. Showing the listing summary; contact options and observations have not been checked."}</Text>}
+        {onRetry && (loadState === "failed" || loadState === "unavailable") && <Button outline onPress={onRetry}>Retry details</Button>}
+      </View>}
       {home.status !== "active" ? (
         <Text style={[s.text, { color: c.warning }]}>
           {home.status === "inactive"
@@ -439,7 +449,7 @@ export function DetailDialog({
         </View>
       </View>
       <View style={{ gap: 12 }}>
-        {(home.contact_adverts || []).map((contact) => (
+        {(detailsLoaded && home.status === "active" ? home.contact_adverts || [] : []).map((contact) => (
           <Button key={contact.id} onPress={() => onContact(contact)}>
             Message {contact.name}
           </Button>
@@ -462,6 +472,8 @@ export function DetailDialog({
               <Pressable
                 accessibilityRole="link"
                 accessibilityLabel={`Visit ${source.name}`}
+                disabled={!detailsLoaded || home.status !== "active"}
+                accessibilityState={{ disabled: !detailsLoaded || home.status !== "active" }}
                 onPress={() => Linking.openURL(source.url)}
               >
                 <ArrowUpRight size={20} color={c.green} />
@@ -502,7 +514,7 @@ export function DetailDialog({
           </Text>
         )}
       </View>
-      {home.history && home.history.length > 0 && (
+      {detailsLoaded && home.history && home.history.length > 0 && (
         <View style={{ gap: 10 }}>
           <Text style={[s.title, { fontSize: 20 }]}>
             Observed price changes

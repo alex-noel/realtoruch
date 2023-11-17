@@ -135,6 +135,7 @@ function RentalApp() {
     | null
   >(null);
   const [detail, setDetail] = useState<Listing | null>(null);
+  const [detailState, setDetailState] = useState<"summary" | "loading" | "loaded" | "failed" | "unavailable">("summary");
   const [selected, setSelected] = useState<string | null>(null);
   const collections = useAccountCollections();
   const favorites = collections.state.favorites.data;
@@ -209,6 +210,7 @@ function RentalApp() {
         currentUser.current = null;
         setUser(null);
         collections.reset();
+        setFeedback(null);
         setSeenIds(new Set());
         setDialog(current =>
           current === "account" || current === "marketplace" || current === "save-search" || current === "report"
@@ -477,6 +479,7 @@ function RentalApp() {
     currentUser.current = email;
     setSeenIds(new Set());
     setUser(email);
+    if (detail) openHome(detail);
     if (home) {
       try {
         await api.favorite(home.id, true);
@@ -490,16 +493,22 @@ function RentalApp() {
   }
   function openHome(home: Listing, hydrate = true) {
     const request = ++detailRequest.current;
+    const generation = sessionGeneration.current, owner = currentUser.current;
+    const stillCurrent = () => request === detailRequest.current && isCurrentAccount(generation, owner);
     setSelected(home.id);
     setDetail(home);
+    setDetailState(hydrate ? "loading" : "loaded");
     if (!hydrate) return;
     api
       .detail(home.id)
       .then((value) => {
-        if (request === detailRequest.current) setDetail(value);
+        if (stillCurrent()) {
+          setDetail(value);
+          setDetailState("loaded");
+        }
       })
       .catch((e) => {
-        if (request === detailRequest.current) setErrorToast(e.message);
+        if (stillCurrent()) setDetailState(e instanceof SessionError && [403, 404, 410].includes(e.status ?? 0) ? "unavailable" : "failed");
       });
   }
   function toggleCompare(home: Listing) {
@@ -1603,6 +1612,8 @@ function RentalApp() {
       {detail && !dialog && (
         <DetailDialog
           home={detail}
+          loadState={detailState}
+          onRetry={() => openHome(detail)}
           onClose={() => {
             ++detailRequest.current;
             setDetail(null);
