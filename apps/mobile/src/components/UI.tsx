@@ -109,6 +109,12 @@ export function Field({
   numeric = false,
   multiline = false,
   errorId,
+  inputPurpose,
+  autoComplete,
+  helperText,
+  error,
+  onSubmitEditing,
+  submitBehavior,
 }: {
   label: string;
   value: string;
@@ -117,31 +123,109 @@ export function Field({
   secure?: boolean;
   numeric?: boolean;
   multiline?: boolean;
+  /** Purpose controls browser autofill and the matching native keyboard hint. */
+  inputPurpose?: "email" | "current-password" | "new-password";
+  autoComplete?: "email" | "current-password" | "new-password";
+  helperText?: string;
+  /** A present message marks this field invalid and is announced by its input. */
+  error?: string;
   errorId?: string;
+  onSubmitEditing?: () => void;
+  submitBehavior?: "submit" | "blurAndSubmit" | "newline";
 }) {
+  const labelId = useId();
+  const helperId = helperText ? `${labelId}-helper` : undefined;
+  const invalid = !!error || !!errorId;
+  const errorDescriptionId =
+    errorId ?? (error ? `${labelId}-error` : undefined);
+  const describedBy =
+    [errorDescriptionId, helperId].filter(Boolean).join(" ") || undefined;
+  const purpose = inputPurpose ?? autoComplete;
   return (
     <View style={{ gap: 8, flex: 1, minWidth: 0 }}>
-      <Text style={s.label}>{label}</Text>
+      <Text nativeID={labelId} style={s.label}>
+        {label}
+      </Text>
       <TextInput
         accessibilityLabel={label}
-        {...(Platform.OS === "web" && errorId
-          ? { "aria-invalid": true, "aria-describedby": errorId }
+        {...(Platform.OS === "web"
+          ? {
+              "aria-labelledby": labelId,
+              "aria-invalid": invalid || undefined,
+              "aria-describedby": describedBy,
+              autoComplete: purpose,
+            }
           : {})}
+        {...(Platform.OS !== "web" ? nativeFieldPurposeProps(purpose) : {})}
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor={c.muted}
-        secureTextEntry={secure}
-        keyboardType={numeric ? "numeric" : "default"}
+        secureTextEntry={
+          secure || purpose === "current-password" || purpose === "new-password"
+        }
+        keyboardType={
+          numeric
+            ? "numeric"
+            : purpose === "email"
+              ? "email-address"
+              : "default"
+        }
         multiline={multiline}
+        {...(Platform.OS === "web"
+          ? {
+              returnKeyType: multiline ? undefined : "done",
+              blurOnSubmit: !multiline,
+            }
+          : {
+              returnKeyType: multiline ? undefined : "done",
+              submitBehavior:
+                submitBehavior ?? (multiline ? "newline" : "submit"),
+            })}
+        onSubmitEditing={onSubmitEditing}
         autoCapitalize="none"
         style={[
           s.input,
           multiline && { minHeight: 100, textAlignVertical: "top" },
         ]}
       />
+      {helperText ? (
+        <Text nativeID={helperId} style={s.muted}>
+          {helperText}
+        </Text>
+      ) : null}
+      {error ? (
+        <Text
+          nativeID={errorId ?? `${labelId}-error`}
+          accessibilityLiveRegion="polite"
+          style={s.muted}
+        >
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
+}
+
+/** Native TextInput autofill and keyboard hints for supported field purposes. */
+export function nativeFieldPurposeProps(
+  purpose: "email" | "current-password" | "new-password" | undefined,
+) {
+  return {
+    autoComplete: purpose,
+    ...(purpose === "current-password" || purpose === "new-password"
+      ? { secureTextEntry: true }
+      : {}),
+    textContentType:
+      purpose === "email"
+        ? ("emailAddress" as const)
+        : purpose === "current-password"
+          ? ("password" as const)
+          : purpose === "new-password"
+            ? ("newPassword" as const)
+            : undefined,
+    ...(purpose === "email" ? { keyboardType: "email-address" as const } : {}),
+  };
 }
 
 // The web dialog enters the browser's top layer, making the rest of the page
