@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import type { Listing, SearchResult } from '../src/types';
 
 test('search controls preserve rent, area, advertiser, polygon and commission boundaries', async ({ page, context }, info) => {
   const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
@@ -38,5 +39,180 @@ test('search controls preserve rent, area, advertiser, polygon and commission bo
   await filtered;
   await expect(page.getByText(title('good'), { exact: true })).toBeVisible();
   await expect(page.getByText(title('unknown'), { exact: true })).toHaveCount(0);
+  expect(blocked).toEqual([]);
+});
+
+test('results pager keeps cards and pins on the same page and preserves browsing position', async ({ page, context }, info) => {
+  const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
+  const blocked: string[] = [];
+  const image = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  const homes: Listing[] = Array.from({ length: 49 }, (_, index) => ({
+    id: `q09-home-${index + 1}`,
+    title: `Q09 home ${index + 1}`,
+    description: 'Fictional apartment for the pagination check',
+    city: 'Kraków', district: 'Krowodrza', region: 'małopolskie', address: 'Fixture street',
+    lat: 50.0647 + (index % 24 === 0 ? 0 : (index % 2 ? .018 : -.018)),
+    lon: 19.945 + (index % 24 === 0 ? 0 : ((index % 6) - 2.5) * .01),
+    area_m2: 55, rooms: 2, floor: 2, rent_pln: 4000, fees_pln: 500, deposit_pln: 4000,
+    commission_pln: 0, total_monthly_pln: 4500, advertiser_type: 'private',
+    property_type: 'apartment', status: 'active', images: [image], amenities: [], is_demo: true,
+    first_seen: '2026-01-01T12:00:00Z', last_seen: '2026-01-01T12:00:00Z',
+    risk_score: 0, risk_flags: [], sources: [],
+  }));
+  const requests: URLSearchParams[] = [];
+  let releasePageTwo!: () => void;
+  const pageTwoPending = new Promise<void>(resolve => { releasePageTwo = resolve; });
+  let holdPageTwo = true;
+  let releaseFilter!: () => void;
+  const filterPending = new Promise<void>(resolve => { releaseFilter = resolve; });
+  let failFilter = true;
+  await context.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (url.protocol === 'data:') return route.continue();
+    if (url.hostname !== '127.0.0.1' || !allowed.has(url.port)) {
+      blocked.push(url.origin);
+      return route.abort('blockedbyclient');
+    }
+    if (url.origin === process.env.E2E_API_URL && url.pathname === '/v1/listings') {
+      requests.push(url.searchParams);
+      const number = Number(url.searchParams.get('page'));
+      const size = Number(url.searchParams.get('page_size'));
+      if (number === 2 && holdPageTwo) {
+        holdPageTwo = false;
+        await pageTwoPending;
+      }
+      if (url.searchParams.get('no_commission') === 'true' && failFilter) {
+        failFilter = false;
+        await filterPending;
+        return route.fulfill({ status: 503, json: { detail: 'Synthetic search failure' } });
+      }
+      const result: SearchResult = {
+        items: homes.slice((number - 1) * size, number * size),
+        total: homes.length, page: number, page_size: size, engine: 'fixture',
+      };
+      return route.fulfill({ json: result });
+    }
+    const home = homes.find(item => url.pathname === `/v1/listings/${item.id}`);
+    if (url.origin === process.env.E2E_API_URL && home) return route.fulfill({ json: home });
+    return route.continue();
+  });
+
+  await page.goto('/', { waitUntil: 'commit' });
+  const direct = page.getByRole('button', { name: 'Direct offers', exact: true });
+  await direct.click();
+  const mapView = page.getByRole('button', { name: 'Map view' });
+  const listView = page.getByRole('button', { name: 'List view' });
+  await mapView.click();
+  const split = info.project.name === 'desktop';
+  const map = page.getByRole('region', { name: 'Map of rental homes' });
+  const pins = map.getByRole('button', { name: /^Q09 home \d+, 4000 zł$/ });
+  const cards = page.getByRole('button', { name: /^View Q09 home \d+$/ });
+  const previous = page.getByRole('button', { name: 'Previous', exact: true });
+  const next = page.getByRole('button', { name: 'Next', exact: true });
+  const heading = page.getByRole('heading', { name: '49 homes in Kraków' });
+  const pageLabel = (number: number) => page.getByText(`Page ${number} of 3`, { exact: true });
+
+  async function checkPage(number: number, mode: 'map' | 'list' | 'split') {
+    await expect(pageLabel(number)).toBeVisible();
+    const expected = homes.slice((number - 1) * 24, number * 24);
+    if (mode === 'list') {
+      await expect(map).toHaveCount(0);
+    } else {
+      await expect(pins).toHaveCount(expected.length);
+      await expect.poll(() => pins.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-listing-id'))))
+        .toEqual(expected.map(home => home.id));
+    }
+    if (mode === 'map') {
+      await expect(cards).toHaveCount(0);
+    } else {
+      await expect.poll(() => cards.evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label'))))
+        .toEqual(expected.map(home => `View ${home.title}`));
+    }
+  }
+
+  async function closeDetailsAndCheckPosition(opener: ReturnType<typeof page.getByRole>) {
+    await opener.scrollIntoViewIfNeeded();
+    const scrollTop = () => heading.evaluate(node => {
+      let ancestor = node.parentElement;
+      while (ancestor && !['auto', 'scroll'].includes(getComputedStyle(ancestor).overflowY)) {
+        ancestor = ancestor.parentElement;
+      }
+      return ancestor?.scrollTop ?? window.scrollY;
+    });
+    const before = await scrollTop();
+    expect(before).toBeGreaterThan(0);
+    await opener.click();
+    const detail = page.getByRole('dialog', { name: 'A closer look' });
+    await expect(detail.getByText('Q09 home 25', { exact: true })).toBeVisible();
+    await detail.getByRole('button', { name: 'Close dialog' }).click();
+    await expect(detail).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    await expect.poll(scrollTop).toBeCloseTo(before, 0);
+    await expect(pageLabel(2)).toBeVisible();
+  }
+
+  const mapMode = split ? 'split' : 'map';
+  await checkPage(1, mapMode);
+  await expect(previous).toBeDisabled();
+  await next.click();
+  try {
+    await expect.poll(() => requests.at(-1)?.get('page')).toBe('2');
+    await expect(previous).toBeDisabled();
+    await expect(next).toBeDisabled();
+    await expect(pageLabel(1)).toBeVisible();
+    await expect(heading).toBeFocused();
+    await expect(heading).toBeInViewport();
+  } finally {
+    releasePageTwo();
+  }
+  await checkPage(2, mapMode);
+  if (!split) {
+    await page.screenshot({ path: info.outputPath('q09-map-page-two.png') });
+    await closeDetailsAndCheckPosition(map.getByRole('button', { name: 'Q09 home 25, 4000 zł', exact: true }));
+  }
+  await next.click();
+  await checkPage(3, mapMode);
+  await expect(next).toBeDisabled();
+  await previous.click();
+  await checkPage(2, mapMode);
+
+  const requestCount = requests.length;
+  await listView.click();
+  await checkPage(2, 'list');
+  await expect(direct).toHaveAttribute('aria-pressed', 'true');
+  expect(requests).toHaveLength(requestCount);
+  await closeDetailsAndCheckPosition(page.getByRole('button', { name: 'View Q09 home 25', exact: true }));
+  await previous.click();
+  await checkPage(1, 'list');
+  await expect(previous).toBeDisabled();
+  await next.click();
+  await checkPage(2, 'list');
+  await next.click();
+  await checkPage(3, 'list');
+  await expect(next).toBeDisabled();
+  await mapView.click();
+  await checkPage(3, mapMode);
+  await previous.click();
+  await checkPage(2, mapMode);
+  expect(requests.at(-1)?.get('advertiser')).toBe('private');
+  expect(requests.at(-1)?.get('city')).toBe('Kraków');
+
+  await page.getByRole('button', { name: 'No commission', exact: true }).click();
+  try {
+    await expect.poll(() => requests.at(-1)?.get('no_commission')).toBe('true');
+    expect(requests.at(-1)?.get('page')).toBe('1');
+    await expect(pageLabel(2)).toBeVisible();
+    await expect(previous).toBeDisabled();
+    await expect(next).toBeDisabled();
+  } finally {
+    releaseFilter();
+  }
+  await expect(page.getByRole('alert')).toHaveText(/Could not update homes/);
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeDisabled();
+  await page.getByRole('button', { name: 'Retry search' }).click();
+  await checkPage(1, mapMode);
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeEnabled();
   expect(blocked).toEqual([]);
 });

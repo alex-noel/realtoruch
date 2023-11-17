@@ -30,6 +30,7 @@ export default function PropertyMap(props: MapProps) {
         continue;
       const button = document.createElement("button");
       button.className = `price-marker ${home.id === latest.current.props.selected ? "selected" : ""}`;
+      button.dataset.listingId = home.id;
       button.textContent = `${new Intl.NumberFormat("pl-PL").format(home.rent_pln)} zł`;
       button.setAttribute("aria-label", `${home.title}, ${home.rent_pln} zł`);
       button.onclick = (event) => {
@@ -139,7 +140,13 @@ export default function PropertyMap(props: MapProps) {
       map.current = null;
     };
   }, []);
-  useEffect(renderMarkers, [homes, selected, draw.drawing]);
+  useEffect(renderMarkers, [homes, draw.drawing]);
+  useEffect(() => {
+    // Keep the opener in the DOM so the detail dialog can restore focus.
+    node.current?.querySelectorAll<HTMLButtonElement>(".price-marker").forEach((button) => {
+      button.classList.toggle("selected", button.dataset.listingId === selected);
+    });
+  }, [selected]);
   useEffect(renderShape, [polygon, draw.drawing, draw.points, props.pin]);
   useEffect(focusArea, [city, polygon]);
   return (

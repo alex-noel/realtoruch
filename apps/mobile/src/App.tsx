@@ -1,7 +1,9 @@
-import React, { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { type ComponentRef, Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   AppState,
+  findNodeHandle,
   Linking,
   Platform,
   Pressable,
@@ -109,6 +111,9 @@ function RentalApp() {
   const homes = result?.data.items ?? [];
   const total = result?.data.total ?? 0;
   const pageSize = result?.data.page_size ?? 24;
+  const resultsScroll = useRef<ComponentRef<typeof ScrollView>>(null);
+  const resultsHeading = useRef<ComponentRef<typeof Text>>(null);
+  const resultsOffset = useRef(0);
   const [view, setView] = useState<"split" | "list" | "map">("split");
   const [dialog, setDialog] = useState<
     | "auth"
@@ -548,6 +553,22 @@ function RentalApp() {
     tab === "discover" && view !== "list" && (desktop || view === "map");
   const showList = tab === "saved" || view !== "map";
   const visibleHomes = tab === "saved" ? favorites : homes;
+  const pagerDisabled = !currentPage || loading || failed;
+
+  function browsePage(nextPage: number) {
+    if (pagerDisabled || nextPage < 1 || nextPage > Math.ceil(total / pageSize)) return;
+    goToPage(nextPage);
+    if (Platform.OS === "web") {
+      const heading = resultsHeading.current as unknown as HTMLElement | null;
+      heading?.focus({ preventScroll: true });
+      heading?.scrollIntoView({ block: "start" });
+    } else {
+      resultsScroll.current?.scrollTo({ y: resultsOffset.current, animated: false });
+      const heading = findNodeHandle(resultsHeading.current);
+      if (typeof heading === "number") AccessibilityInfo.setAccessibilityFocus(heading);
+    }
+  }
+
   const activeFilterCount =
     Number(!!filters.polygon) +
     Number(!!filters.max_price) +
@@ -804,6 +825,7 @@ function RentalApp() {
           </View>
         )}
         <ScrollView
+          ref={resultsScroll}
           contentContainerStyle={{
             paddingHorizontal: mobile ? 18 : 36,
             paddingTop: mobile ? 26 : 34,
@@ -1213,6 +1235,7 @@ function RentalApp() {
                 </>
               )}
               <View
+                onLayout={({ nativeEvent }) => { resultsOffset.current = nativeEvent.layout.y; }}
                 style={[
                   s.row,
                   {
@@ -1224,6 +1247,9 @@ function RentalApp() {
               >
                 <View style={[s.row, { gap: 9 }]}>
                   <Text
+                    ref={resultsHeading}
+                    accessibilityRole="header"
+                    {...(Platform.OS === "web" ? { tabIndex: -1 } : {})}
                     aria-live="polite"
                     style={[s.text, { fontWeight: "600", fontSize: 16, flexShrink: 1 }]}
                   >
@@ -1329,6 +1355,32 @@ function RentalApp() {
                   {failed && <Button onPress={retrySearch}>Retry search</Button>}
                 </View>
               )}
+              {tab === "discover" && result && total > pageSize && (
+                <View
+                  style={[
+                    s.row,
+                    { justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
+                  ]}
+                >
+                  <Button
+                    outline
+                    disabled={pagerDisabled || page === 1}
+                    onPress={() => browsePage(page - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <Text aria-live="polite" style={s.muted}>
+                    Page {result.data.page} of {Math.ceil(total / pageSize)}
+                  </Text>
+                  <Button
+                    outline
+                    disabled={pagerDisabled || page * pageSize >= total}
+                    onPress={() => browsePage(page + 1)}
+                  >
+                    Next
+                  </Button>
+                </View>
+              )}
               {tab === "saved" && !user ? (
                 <View style={[s.card, { padding: 40, gap: 20 }]}>
                   <Heart size={32} color={c.green} />
@@ -1396,32 +1448,6 @@ function RentalApp() {
                           onCompare={() => toggleCompare(home)}
                         />
                       ))}
-                      {tab === "discover" && currentPage && total > pageSize && (
-                        <View
-                          style={[
-                            s.row,
-                            { justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
-                          ]}
-                        >
-                          <Button
-                            outline
-                            disabled={page === 1}
-                            onPress={() => goToPage(page - 1)}
-                          >
-                            Previous
-                          </Button>
-                          <Text style={s.muted}>
-                            Page {page} of {Math.ceil(total / pageSize)}
-                          </Text>
-                          <Button
-                            outline
-                            disabled={page * pageSize >= total}
-                            onPress={() => goToPage(page + 1)}
-                          >
-                            Next
-                          </Button>
-                        </View>
-                      )}
                     </View>
                   )}
                   {showMap && (
