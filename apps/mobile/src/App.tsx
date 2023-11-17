@@ -471,6 +471,7 @@ function RentalApp() {
   }
   async function signedIn(token: string, email: string) {
     if (!isCurrentAccessToken(token)) return;
+    const previousOwner = currentUser.current;
     const generation = ++sessionGeneration.current;
     const home = pendingFavorite.current;
     pendingFavorite.current = null;
@@ -478,7 +479,13 @@ function RentalApp() {
     currentUser.current = email;
     setSeenIds(new Set());
     setUser(email);
-    if (detail) openHome(detail);
+    if (previousOwner && previousOwner !== email) {
+      detailRequest.current++;
+      setDetail(null);
+      setSelected(null);
+      setComparison([]);
+      setContact(undefined);
+    } else if (detail) openHome(detail);
     if (home) {
       try {
         await api.favorite(home.id, true);
@@ -853,12 +860,14 @@ function RentalApp() {
               onSignIn={() => setDialog("auth")}
               onOpen={(item: RentalNotification) => {
                 const generation = sessionGeneration.current;
+                const request = ++detailRequest.current;
+                const stillCurrent = () => request === detailRequest.current && isCurrentAccount(generation, user);
                 return api.detail(item.listing_id)
                   .then((home) => {
-                    if (isCurrentAccount(generation, user)) openHome(home);
+                    if (stillCurrent()) openHome(home, false);
                   })
                   .catch((e) => {
-                    if (isCurrentAccount(generation, user)) setErrorToast(e.message);
+                    if (stillCurrent()) setErrorToast(e.message);
                   });
               }}
               onRead={collections.readNotification}

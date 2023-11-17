@@ -54,6 +54,27 @@ const homes: Listing[] = Array.from({ length: 100 }, (_, i) => {
   };
 });
 
+test("Q10 delayed notification cannot reopen a closed listing", async ({ page, context }, info) => {
+  await allowOwned(context);
+  await page.route(`${api}/v1/me/notifications*`, route => route.fulfill({ json: {
+    items: [{ id: "q10-notice", listing_id: homes[0].id, title: "Q10 notice", kind: "new_listing", created_at: timestamp, read_at: null, listing_status: "active" }],
+    unread_count: 1, page: 1, page_size: 30, has_more: false, next_cursor: null,
+  }, headers: { "Access-Control-Allow-Origin": web } }));
+  await page.goto("/"); await register(page, `q10-notice-${info.project.name}@example.test`);
+  await page.getByRole("button", { name: "Notifications", exact: true }).click();
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route(`${api}/v1/listings/${homes[0].id}`, async route => { await held; await route.fallback(); });
+  const requested = page.waitForRequest(`${api}/v1/listings/${homes[0].id}`);
+  await page.getByRole("button", { name: "View home", exact: true }).click(); await requested;
+  await page.getByRole("button", { name: "Discover homes", exact: true }).click();
+  await page.getByRole("button", { name: `View ${second}`, exact: true }).click();
+  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  const response = page.waitForResponse(`${api}/v1/listings/${homes[0].id}`);
+  release(); await response;
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
 test("Q04 feedback stays inside details and outside comparison controls", async ({ page, context }, info) => {
   await allowOwned(context);
   await page.goto("/");
