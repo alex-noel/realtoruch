@@ -8,6 +8,7 @@ import type { MediaMime } from "../types";
 export const MAX_PHOTOS = 30;
 export const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_PIXELS = 20_000_000;
+const MAX_SIDE = 32_768;
 
 export type PhotoPreview = { uri: string; dispose: () => void };
 export type PhotoSource = {
@@ -85,6 +86,8 @@ export async function choosePhotos(
       else if (body.size > MAX_BYTES)
         issue = "Choose an image no larger than 10 MiB.";
       else if (!(body.size > 0)) issue = "This file could not be read.";
+      else if (Math.max(asset.width, asset.height) > MAX_SIDE)
+        issue = "Choose an image with neither side longer than 32,768 pixels.";
       else if (asset.width * asset.height > MAX_PIXELS)
         issue = "Choose an image no larger than 20 megapixels.";
       else sources.push({ name, mime, body, preview });

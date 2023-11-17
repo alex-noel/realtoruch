@@ -453,7 +453,7 @@ test("owner uploads generated photos, saves only ready order, and resolves stale
     );
     await expect(home.locator("img")).toHaveAttribute(
       "alt",
-      "Rental apartment photo",
+      "Illustrative apartment interior",
     );
     expect(blocked).toEqual([]);
   } finally {
