@@ -109,6 +109,7 @@ export function Field({
   numeric = false,
   multiline = false,
   errorId,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -118,6 +119,7 @@ export function Field({
   numeric?: boolean;
   multiline?: boolean;
   errorId?: string;
+  disabled?: boolean;
 }) {
   return (
     <View style={{ gap: 8, flex: 1, minWidth: 0 }}>
@@ -128,6 +130,7 @@ export function Field({
           ? { "aria-invalid": true, "aria-describedby": errorId }
           : {})}
         value={value}
+        editable={!disabled}
         onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor={c.muted}

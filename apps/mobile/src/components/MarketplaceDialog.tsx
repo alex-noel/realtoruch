@@ -1,6 +1,7 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Linking, ScrollView, Text, View } from "react-native";
 import { market, Advert, Draft, Profile, Report } from "../marketplaceApi";
+import { captureSession, SessionError } from "../api";
 import { c, s } from "../theme";
 import { Listing } from "../types";
 import { Button, Chip, Field, Panel, money } from "./UI";
@@ -8,6 +9,10 @@ import PropertyMap from "./DeferredPropertyMap";
 import { readCoordinate } from "./coordinates";
 import { MessagesPanel } from "./MessagesPanel";
 import { InboxModel } from "./messagesState";
+import { PhotoUploader, ownerMedia } from "./PhotoUploader";
+import { PhotoQueue } from "./photoState";
+import { MAX_PHOTOS } from "./photoSelection";
+import { mergeAdvertEdits, photoLinks } from "./advertEdits";
 
 type Mode = "adverts" | "messages" | "review";
 type Contact = NonNullable<Listing["contact_adverts"]>[number];
@@ -185,18 +190,14 @@ function AdvertDesk({
     return (
       <AdvertEditor
         initial={editing === "new" ? undefined : editing}
-        busy={busy}
         onCancel={() => setEditing(null)}
-        onSave={(draft) =>
-          run(async () => {
-            await market.saveAdvert(
-              draft,
-              editing === "new" ? undefined : editing,
-            );
-            await reload();
-            setEditing(null);
-          })
-        }
+        onSaved={(saved, keepEditing) => {
+          setAdverts(current => [
+            { ...saved, hidden: saved.hidden ?? current.find(advert => advert.id === saved.id)?.hidden },
+            ...current.filter(advert => advert.id !== saved.id),
+          ]);
+          if (!keepEditing) setEditing(null);
+        }}
       />
     );
   return (
@@ -347,20 +348,36 @@ function AdvertDesk({
 }
 function AdvertEditor({
   initial,
-  busy,
   onCancel,
-  onSave,
+  onSaved,
 }: {
   initial?: Advert;
-  busy: boolean;
   onCancel: () => void;
-  onSave: (draft: Draft) => void;
+  onSaved: (saved: Advert, keepEditing: boolean) => void;
 }) {
-  const [draft, setDraft] = useState<Draft>(
-    () => initial?.advert || { ...emptyDraft },
-  );
+  const [base, setBase] = useState(initial);
+  const [draft, setDraft] = useState<Draft>(() => initial?.advert || { ...emptyDraft });
   const [latitude, setLatitude] = useState(initial ? String(draft.lat) : "");
   const [longitude, setLongitude] = useState(initial ? String(draft.lon) : "");
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [notice, setNotice] = useState("");
+  const [conflict, setConflict] = useState<{ latest?: Advert; loading: boolean } | null>(null);
+  const [isCurrent] = useState(captureSession);
+  const [queue] = useState(() => new PhotoQueue(ownerMedia, initial?.advert.media_ids, isCurrent));
+  const photos = useSyncExternalStore(queue.subscribe, queue.snapshot);
+  const controller = useRef<AbortController>(null);
+  const saveInFlight = useRef(false);
+  useEffect(() => {
+    const job = new AbortController();
+    controller.current = job;
+    queue.activate();
+    return () => {
+      job.abort();
+      queue.deactivate();
+    };
+  }, [queue]);
+
   const lat = readCoordinate(latitude, 90);
   const lon = readCoordinate(longitude, 180);
   const pinned = lat !== null && lon !== null;
@@ -369,17 +386,112 @@ function AdvertEditor({
   const locationErrorId = useId();
   const change = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
+  const external = photoLinks(draft.images);
+  const unresolved = photos.rows.some(row => row.phase !== "ready");
+  const unverified = queue.hasUnverifiedSaved();
+  const isPublished = base?.state === "published";
+
+  async function loadLatest(id: string, signal: AbortSignal) {
+    setConflict({ loading: true });
+    setFeedback("");
+    try {
+      const response = await market.adverts(signal);
+      if (signal.aborted || !isCurrent()) return;
+      const latest = response.items.find(advert => advert.id === id);
+      setConflict({ latest, loading: false });
+      if (!latest) setFeedback("The latest version is unavailable. Your edits are still here.");
+    } catch {
+      if (signal.aborted || !isCurrent()) return;
+      setConflict({ loading: false });
+      setFeedback("Could not load the latest version. Your edits are still here.");
+    }
+  }
+
+  function applyLatest(latest: Advert, merge: boolean) {
+    if (!base) return;
+    setDraft(merge ? mergeAdvertEdits(base.advert, draft, latest.advert) : latest.advert);
+    if (!merge || lat === base.advert.lat) setLatitude(String(latest.advert.lat));
+    if (!merge || lon === base.advert.lon) setLongitude(String(latest.advert.lon));
+    queue.applyLatest(latest.advert.media_ids ?? [], merge);
+    setBase(latest);
+    onSaved(latest, true);
+    setConflict(null);
+    setFeedback("");
+    setNotice(merge ? "Edits merged. Review the advert and photos before saving." : "Latest advert loaded.");
+  }
+
+  async function save() {
+    const signal = controller.current?.signal;
+    if (!signal || signal.aborted || !isCurrent() || !pinned || saveInFlight.current || conflict || queue.hasUnverifiedSaved()) return;
+    const photoSave = queue.prepareSave();
+    if ((isPublished && photoSave.unresolved) || external.length + queue.snapshot().rows.length > MAX_PHOTOS) return;
+    saveInFlight.current = true;
+    setSaving(true);
+    setFeedback("");
+    setNotice("");
+    try {
+      const saved = await market.saveAdvert({
+        ...draft, lat, lon, images: external,
+        amenities: draft.amenities.filter(Boolean), media_ids: photoSave.ids,
+      }, base, signal);
+      if (signal.aborted || !isCurrent()) return;
+      setBase(saved);
+      const done = await queue.finalizeSave(photoSave);
+      if (signal.aborted || !isCurrent()) return;
+      const keepEditing = photoSave.unresolved || !done.descriptionsSaved || !done.removalsSaved;
+      if (photoSave.unresolved) setNotice("Draft saved with ready photos. Retry or remove the other uploads before publishing. Save again if more photos become ready.");
+      if (!done.descriptionsSaved) setFeedback("The advert was saved, but some photo descriptions could not be saved. Save again to retry.");
+      if (!done.removalsSaved && done.descriptionsSaved) setNotice("The advert was saved. Retry any unconfirmed photo removals here.");
+      onSaved(saved, keepEditing);
+    } catch (error) {
+      if (signal.aborted || !isCurrent()) return;
+      if (base && error instanceof SessionError && error.status === 409) {
+        await loadLatest(base.id, signal);
+      } else {
+        setFeedback(error instanceof Error ? error.message : "Could not save your advert.");
+      }
+    } finally {
+      saveInFlight.current = false;
+      if (!signal.aborted && isCurrent()) setSaving(false);
+    }
+  }
   return (
     <>
       <Text style={[s.title, { fontSize: 23 }]}>
-        {initial ? "Edit rental" : "A new place to call home."}
+        {base ? "Edit rental" : "A new place to call home."}
       </Text>
+      {conflict && (
+        <View style={[s.card, { gap: 8, padding: 12 }]}>
+          <Text accessibilityRole="alert" style={{ color: c.warning }}>
+            This advert changed elsewhere. Review the latest version before saving.
+          </Text>
+          {conflict.loading ? <Text style={s.muted}>Loading latest advert…</Text> : conflict.latest ? (
+            <>
+              <Text style={s.muted}>
+                Merge keeps the latest values where you did not edit them, prefers your edits where
+                both versions changed, keeps new photos from both versions, and respects removals.
+                Review the result before saving.
+              </Text>
+              <Button outline onPress={() => applyLatest(conflict.latest!, true)}>Merge my edits with latest</Button>
+              <Button outline onPress={() => applyLatest(conflict.latest!, false)}>Reload latest and discard my edits</Button>
+            </>
+          ) : (
+            <Button outline onPress={() => {
+              if (base && controller.current) void loadLatest(base.id, controller.current.signal);
+            }}>Try loading latest again</Button>
+          )}
+        </View>
+      )}
+      {!!feedback && <Text accessibilityRole="alert" style={{ color: c.warning }}>{feedback}</Text>}
+      {!!notice && <Text aria-live="polite" style={s.muted}>{notice}</Text>}
       <Field
+        disabled={saving}
         label="TITLE"
         value={draft.title}
         onChange={(v) => change("title", v)}
       />
       <Field
+        disabled={saving}
         label="DESCRIPTION"
         multiline
         value={draft.description}
@@ -394,6 +506,7 @@ function AdvertEditor({
         ] as const
       ).map(([label, key]) => (
         <Field
+          disabled={saving}
           key={key}
           label={label}
           value={draft[key]}
@@ -402,6 +515,7 @@ function AdvertEditor({
       ))}
       <Text style={s.label}>ENTER COORDINATES OR PIN THE HOME ON THE MAP</Text>
       <Field
+        disabled={saving}
         label="Location latitude"
         value={latitude}
         onChange={setLatitude}
@@ -409,6 +523,7 @@ function AdvertEditor({
         errorId={invalidLat ? locationErrorId : undefined}
       />
       <Field
+        disabled={saving}
         label="Location longitude"
         value={longitude}
         onChange={setLongitude}
@@ -436,6 +551,7 @@ function AdvertEditor({
           onPolygonChange={() => {}}
           pin={pinned ? [lon, lat] : undefined}
           onPinChange={([lon, lat]) => {
+            if (saving) return;
             setLongitude(String(lon));
             setLatitude(String(lat));
           }}
@@ -447,7 +563,7 @@ function AdvertEditor({
             key={type}
             label={type}
             selected={draft.property_type === type}
-            onPress={() => change("property_type", type)}
+            onPress={() => { if (!saving) change("property_type", type); }}
           />
         ))}
       </View>
@@ -463,6 +579,7 @@ function AdvertEditor({
         ] as const
       ).map(([label, key]) => (
         <Field
+          disabled={saving}
           key={key}
           label={label}
           numeric
@@ -476,6 +593,7 @@ function AdvertEditor({
         />
       ))}
       <Field
+        disabled={saving}
         label="AMENITIES (COMMA SEPARATED)"
         value={draft.amenities.join(", ")}
         onChange={(v) =>
@@ -486,18 +604,29 @@ function AdvertEditor({
         }
       />
       <Field
+        disabled={saving}
         label="PHOTO LINKS (HTTPS; ONE PER LINE)"
         multiline
         value={draft.images.join("\n")}
         onChange={(v) => change("images", v.split("\n"))}
       />
+      <PhotoUploader queue={queue} photos={photos} externalCount={external.length} disabled={saving} />
+      {unverified ? (
+        <Text aria-live="polite" style={s.muted}>Check or remove unavailable saved photos before saving.</Text>
+      ) : unresolved ? (
+        <Text aria-live="polite" style={s.muted}>
+          Finish or remove unfinished uploads before publishing. Save draft keeps ready photos only;
+          leaving this editor discards unfinished uploads.
+        </Text>
+      ) : null}
       <Text style={s.muted}>
         Use photos you own or have permission to publish. Empty fees mean
         unknown; zero means no charge.
       </Text>
       <Button
         disabled={
-          busy ||
+          saving || !!conflict || unverified || (isPublished && unresolved) ||
+          external.length + photos.rows.length > MAX_PHOTOS ||
           !pinned ||
           draft.title.trim().length < 5 ||
           draft.description.trim().length < 20 ||
@@ -505,24 +634,11 @@ function AdvertEditor({
           !draft.area_m2 ||
           !draft.rooms
         }
-        onPress={() =>
-          pinned &&
-          onSave({
-            ...draft,
-            lat,
-            lon,
-            images: draft.images.map((v) => v.trim()).filter(Boolean),
-            amenities: draft.amenities.filter(Boolean),
-          })
-        }
+        onPress={() => void save()}
       >
-        {busy
-          ? "Saving…"
-          : initial?.state === "published"
-            ? "Save and update advert"
-            : "Save draft"}
+        {saving ? "Saving…" : isPublished ? "Save and update advert" : "Save draft"}
       </Button>
-      <Button outline disabled={busy} onPress={onCancel}>
+      <Button outline disabled={saving} onPress={onCancel}>
         Back to adverts
       </Button>
     </>
