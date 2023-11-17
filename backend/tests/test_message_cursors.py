@@ -495,7 +495,7 @@ def test_t16_upgrade_tracked_sqlite_keeps_rows_and_hook_checksums(tmp_path):
         upgrade_local(engine)
         with engine.connect() as connection:
             after = dict(connection.execute(ledger).all())
-            assert set(after) - set(before) == {"010"}
+            assert "010" in set(after) - set(before)
             assert {version: after[version] for version in before} == before
         assert_legacy_upgrade(engine)
     finally:

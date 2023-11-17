@@ -17,7 +17,7 @@ from realtoruch.delivery_claims import cancel_notifications
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_runtime_role_grants(monkeypatch, record):
+def test_runtime_role_grants(monkeypatch, record, tmp_path):
     url = os.environ.get("TEST_POSTGRES_URL")
     if not url:
         pytest.skip("requires disposable PostgreSQL")
@@ -85,6 +85,7 @@ def test_runtime_role_grants(monkeypatch, record):
                             assert conn.execute("SELECT status, claim_token, lease_until FROM push_deliveries WHERE id='push'").fetchone() == ("cancelled", None, None)
                             _assert_retention_permissions(engine, conn, roles["indexer"], record, monkeypatch)
                             _assert_api_merge_alert_permissions(engine, conn, roles["api"], record)
+                            _assert_api_media_lifecycle(engine, roles["api"], tmp_path, monkeypatch)
                         finally:
                             engine.dispose()
                         assert conn.execute("SELECT status, claim_token, lease_until, confirmation_token FROM email_deliveries WHERE id='email'").fetchone() == ("cancelled", None, None, None)
@@ -231,3 +232,58 @@ def _assert_api_merge_alert_permissions(engine, conn, role, record):
     assert conn.execute("SELECT kind, previous_rent_pln, rent_pln FROM notifications WHERE user_id='role-user'").fetchall() == [('price_drop', 4500, 4300)]
     assert conn.execute("SELECT count(*) FROM email_deliveries WHERE user_id='role-user'").fetchone()[0] == 1
     assert conn.execute("SELECT count(*) FROM push_deliveries WHERE subscription_id='role-push'").fetchone()[0] == 1
+
+
+def _assert_api_media_lifecycle(engine, role, tmp_path, monkeypatch):
+    """Exercise real request handlers and erasure while connected as the API role."""
+    import io
+    import time
+    import jwt
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    from realtoruch.api import app, erase_account_data
+    from realtoruch.db import get_session
+    from realtoruch.models import MediaAsset
+    from realtoruch.settings import get_settings
+
+    user = str(uuid4())
+    settings = get_settings()
+    monkeypatch.setattr(settings, "media_directory", str(tmp_path / "role-media"))
+    factory = sessionmaker(engine, expire_on_commit=False)
+    def role_session():
+        with factory() as session:
+            session.execute(text('SET ROLE "' + role + '"'))
+            yield session
+    app.dependency_overrides[get_session] = role_session
+    app.state.validate_claims = lambda claims: {**claims, "email_verified": True}
+    token = jwt.encode({"sub": user, "iss": settings.jwt_issuer, "aud": "realtoruch",
+                        "iat": int(time.time()), "exp": int(time.time()) + 120},
+                       settings.jwt_secret, algorithm="HS256")
+    try:
+        with TestClient(app, headers={"Authorization": "Bearer " + token}) as client:
+            profile = client.put("/v1/me/advertiser", json={"name": "Role owner", "kind": "private"})
+            assert profile.status_code == 200, profile.text
+            image = io.BytesIO()
+            Image.new("RGB", (40, 20), "red").save(image, "JPEG")
+            uploaded = client.post("/v1/me/media", content=image.getvalue(),
+                                   headers={"Idempotency-Key": "role-photo", "Content-Type": "image/jpeg"})
+            assert uploaded.status_code == 201, uploaded.text
+            asset_id = uploaded.json()["id"]
+            draft = {"title": "Role test apartment", "description": "A synthetic apartment description for role tests.",
+                     "city": "Kraków", "address": "Testowa 18", "lat": 50.05, "lon": 19.95,
+                     "area_m2": 55, "rooms": 2, "rent_pln": 4500, "media_ids": [asset_id]}
+            created = client.post("/v1/me/adverts", json=draft)
+            assert created.status_code == 201, created.text
+            advert = created.json()
+            published = client.post("/v1/me/adverts/" + advert["id"] + "/publish", json={"version": advert["version"]})
+            assert published.status_code == 200, published.text
+            assert client.get("/v1/media/" + asset_id + "/display").status_code == 200
+            with factory() as session:
+                session.execute(text('SET ROLE "' + role + '"'))
+                assert erase_account_data(user, session) == {"erased": True}
+                assert session.get(MediaAsset, asset_id) is None
+            assert client.get("/v1/media/" + asset_id + "/display").status_code == 404
+            assert not list((tmp_path / "role-media").rglob("a"))
+    finally:
+        app.dependency_overrides.clear()
+        del app.state.validate_claims

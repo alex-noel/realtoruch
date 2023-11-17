@@ -187,7 +187,7 @@ def test_storage_failure_erasure_is_retryable(media_client, monkeypatch):
     client, factory, path = media_client
     item = upload(client, "failure").json()
     original = media.delete_bytes
-    def fail(_):
+    def fail(_, **kwargs):
         raise OSError("injected storage failure")
     monkeypatch.setattr(api, "delete_bytes", fail, raising=False)
     # erase_account_data imports the helper dynamically.
@@ -217,7 +217,15 @@ def test_fake_gcs_adapter():
         def download_as_bytes(self, timeout, retry):
             assert timeout == 10 and retry is None
             return self.objects[self.key]
-        def delete(self, timeout, retry):
+        def reload(self, timeout, retry):
+            assert timeout == 10 and retry is None
+            if self.key not in self.objects:
+                error = Exception()
+                error.code = 404
+                raise error
+            self.generation = 1
+        def delete(self, if_generation_match, timeout, retry):
+            assert if_generation_match == 1
             assert timeout == 10 and retry is None
             if self.key not in self.objects:
                 error = Exception()
@@ -285,7 +293,14 @@ def test_fake_gcs_route_lifecycle(media_client, monkeypatch):
             assert kwargs["if_generation_match"] == 0 and self.key not in self.objects
             self.objects[self.key] = data
         def download_as_bytes(self, **kwargs): return self.objects[self.key]
+        def reload(self, **kwargs):
+            if self.key not in self.objects:
+                error = Exception()
+                error.code = 404
+                raise error
+            self.generation = 1
         def delete(self, **kwargs):
+            assert kwargs["if_generation_match"] == 1
             if self.key not in self.objects:
                 error = Exception()
                 error.code = 404
@@ -362,6 +377,7 @@ def test_upload_processing_is_serialized(media_client, monkeypatch):
     with ThreadPoolExecutor(max_workers=2) as pool:
         first = pool.submit(upload, client, "first-serial")
         assert first_started.wait(10)
+        assert app.state.media_processors.locked()
         second = pool.submit(upload, client, "second")
         assert second_reserved.wait(10)
         assert calls == [1]
@@ -369,3 +385,180 @@ def test_upload_processing_is_serialized(media_client, monkeypatch):
         assert first.result(timeout=10).status_code == 201
         assert second.result(timeout=10).status_code == 201
     assert calls == [1, 2]
+
+
+@pytest.mark.parametrize("fmt,mime", [("JPEG", "image/jpeg"), ("PNG", "image/png"), ("WEBP", "image/webp")])
+def test_gps_orientation_stripped_in_both_derivatives(media_client, fmt, mime):
+    from PIL import TiffImagePlugin
+    client, _, _ = media_client
+    exif = Image.Exif()
+    exif[274] = 6
+    exif[270] = "synthetic metadata canary"
+    gps = exif.get_ifd(34853)
+    gps[1] = "N"
+    gps[2] = tuple(TiffImagePlugin.IFDRational(v) for v in (50, 0, 0))
+    gps[3] = "E"
+    gps[4] = tuple(TiffImagePlugin.IFDRational(v) for v in (19, 0, 0))
+    exif[34853] = gps
+    data = picture(fmt, exif=exif, size=(2500, 1100))
+    with Image.open(io.BytesIO(data)) as source:
+        assert source.getexif()[274] == 6 and source.getexif().get_ifd(34853)[1] == "N"
+    response = upload(client, "gps-" + fmt, data, mime)
+    assert response.status_code == 201, response.text
+    item = response.json()
+    for name, size in (("display_url", (901, 2048)), ("thumbnail_url", (176, 400))):
+        response = client.get(item[name])
+        assert response.status_code == 200
+        with Image.open(io.BytesIO(response.content)) as image:
+            assert image.format == "JPEG" and image.size == size and not image.getexif()
+            assert not any(key in image.info for key in ("exif", "icc_profile", "xmp", "comment"))
+
+
+
+def test_competing_payloads_same_key_do_not_replace_winner(media_client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from realtoruch import media
+    client, _, _ = media_client
+    entered, reserved, release = Event(), Event(), Event()
+    original_decode, original_find = media.decode, media.find_key
+    count = 0
+    def find(session, user, key):
+        nonlocal count
+        result = original_find(session, user, key)
+        count += 1
+        if count == 2:
+            reserved.set()
+        return result
+    def paused(data, mime):
+        entered.set()
+        assert release.wait(10)
+        return original_decode(data, mime)
+    monkeypatch.setattr(media, "find_key", find)
+    monkeypatch.setattr(media, "decode", paused)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(upload, client, "shared", picture(size=(20, 10)))
+        assert entered.wait(10)
+        second = pool.submit(upload, client, "shared", picture(size=(10, 20)))
+        assert reserved.wait(10)
+        release.set()
+        winner, loser = first.result(timeout=10), second.result(timeout=10)
+    assert winner.status_code == 201 and loser.status_code == 409
+    assert client.get("/v1/me/media/by-key/shared").json()["id"] == winner.json()["id"]
+    assert Image.open(io.BytesIO(client.get(winner.json()["display_url"]).content)).size == (20, 10)
+
+
+def test_delayed_gcs_put_is_fenced_after_erasure(media_client, monkeypatch):
+    from realtoruch import media
+    from realtoruch.media_storage import GCSStorage
+    client, factory, _ = media_client
+    class RemoteError(Exception):
+        def __init__(self, code): self.code = code
+    class Blob:
+        def __init__(self, bucket, key): self.bucket, self.key = bucket, key
+        def upload_from_string(self, data, if_generation_match, **kwargs):
+            if not data and self.bucket.fail_fence:
+                self.bucket.fail_fence = False
+                raise TimeoutError("fence outcome unknown")
+            if data:
+                self.bucket.delayed = (self.key, data, if_generation_match)
+                raise TimeoutError("accepted, response lost")
+            existing = self.bucket.objects.get(self.key)
+            generation = existing[0] if existing else 0
+            if generation != if_generation_match: raise RemoteError(412)
+            self.bucket.next_generation += 1
+            self.bucket.objects[self.key] = (self.bucket.next_generation, data)
+        def reload(self, **kwargs):
+            if self.key not in self.bucket.objects: raise RemoteError(404)
+            self.generation, data = self.bucket.objects[self.key]
+            self.size = len(data)
+        def delete(self, if_generation_match, **kwargs):
+            if self.key not in self.bucket.objects: raise RemoteError(404)
+            if self.bucket.objects[self.key][0] != if_generation_match: raise RemoteError(412)
+            del self.bucket.objects[self.key]
+    class Bucket:
+        def __init__(self): self.objects, self.delayed, self.next_generation, self.fail_fence = {}, None, 0, True
+        def blob(self, key): return Blob(self, key)
+        def complete_delayed(self):
+            key, data, match = self.delayed
+            existing = self.objects.get(key)
+            if (existing[0] if existing else 0) != match:
+                raise RemoteError(412)
+            self.next_generation += 1
+            self.objects[key] = (self.next_generation, data)
+    bucket = Bucket()
+    monkeypatch.setattr(media, "storage", lambda: GCSStorage(bucket))
+    with pytest.raises(TimeoutError):
+        upload(client, "private-client-key")
+    with factory() as session, pytest.raises(TimeoutError):
+        erase_account_data("one", session)
+    with factory() as session:
+        row = session.query(MediaAsset).one()
+        asset_id = row.id
+        assert row.state == "deleted" and row.idempotency_key == "!" + row.id
+        assert row.description == "" and row.digest is None
+    with factory() as session:
+        assert erase_account_data("one", session) == {"erased": True}
+    key, data, generation_match = bucket.delayed
+    assert generation_match == 0 and bucket.objects[key][1] == b""
+    # The delayed create now fails its generation precondition.
+    with pytest.raises(RemoteError) as delayed:
+        bucket.complete_delayed()
+    assert delayed.value.code == 412 and bucket.objects[key][1] == b""
+    assert client.get("/v1/media/" + asset_id + "/display").status_code == 404
+    with factory() as session:
+        cleanup(session)
+        cleanup(session)
+    assert all(value == b"" for _, value in bucket.objects.values())
+    with factory() as session:
+        assert session.get(MediaAsset, asset_id) is None
+
+
+def test_generation_matched_delete_preserves_newer_object():
+    from realtoruch.media_storage import GCSStorage
+    class Conflict(Exception):
+        code = 412
+    class Blob:
+        generation = None
+        def __init__(self, bucket): self.bucket = bucket
+        def reload(self, **kwargs): self.generation = self.bucket.generation
+        def delete(self, if_generation_match, **kwargs):
+            self.bucket.generation += 1  # A newer create wins after metadata read.
+            if if_generation_match != self.bucket.generation:
+                raise Conflict()
+            self.bucket.content = None
+    class Bucket:
+        generation, content = 5, b"newer object"
+        def blob(self, key): return Blob(self)
+    bucket = Bucket()
+    with pytest.raises(Conflict):
+        GCSStorage(bucket).delete("opaque/a")
+    assert bucket.generation == 6 and bucket.content == b"newer object"
+
+
+def test_failed_owner_deletion_is_retried_once(media_client, monkeypatch):
+    from realtoruch import media
+    client, factory, _ = media_client
+    asset = upload(client, "retry-cleanup").json()
+    original = media.storage()
+    class FlakyStorage:
+        fail, calls = True, 0
+        def fence(self, key):
+            self.calls += 1
+            if self.fail:
+                self.fail = False
+                raise OSError("injected failure")
+            original.fence(key)
+        def __getattr__(self, name): return getattr(original, name)
+    flaky = FlakyStorage()
+    monkeypatch.setattr(media, "storage", lambda: flaky)
+    with pytest.raises(OSError):
+        client.delete("/v1/me/media/" + asset["id"])
+    with factory() as session:
+        row = session.get(MediaAsset, asset["id"])
+        assert row.state == "deleted" and row.digest is not None
+        cleanup(session)
+        assert session.get(MediaAsset, asset["id"]).digest is None
+        calls = flaky.calls
+        cleanup(session)
+    assert flaky.calls == calls == 3
