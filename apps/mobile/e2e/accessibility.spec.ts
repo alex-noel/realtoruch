@@ -473,13 +473,18 @@ test("T20-TC01 primary screens and validation at normal and 200% text size", asy
         await page.screenshot({ path: info.outputPath(`q01-controls-${width}-${scale}.png`) });
         await button(page, "More filters").click();
         const filter = page.getByRole("dialog", { name: "A home that fits." });
-        await filter.getByLabel("MIN RENT · PLN").fill("5000");
+        const min = filter.getByLabel("MIN RENT · PLN");
+        await min.fill("5000");
         const max = filter.getByLabel("RENT BELOW · PLN");
         await max.fill("4000");
         await button(filter, "Show matching homes").click();
-        await expect(filter.getByRole("alert")).toContainText("Minimum values");
+        await expect(min).toHaveAttribute("aria-invalid", "true");
+        await expect(min).toHaveAccessibleDescription(
+          "Minimum rent must be below the exclusive rent maximum.",
+        );
+        await expect(max).toHaveAttribute("aria-invalid", "true");
         await expect(max).toHaveAccessibleDescription(
-          "Minimum values must be lower than maximum values.",
+          "Rent maximum must be above minimum rent.",
         );
         await reachable(button(filter, "Show matching homes"));
         await reachable(button(filter, "Close dialog"));
