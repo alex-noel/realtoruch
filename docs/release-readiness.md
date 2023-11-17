@@ -1,10 +1,28 @@
-# Local release readiness — 12 November 2026
+# Local release readiness — 17 November 2026
 
-**LOCAL_PARTIAL.** The integrated candidate is `a17cf16f4e6c3c33d629684fd6a75685eb147b53` on `codex/core-sprint-2026-11`. Local regression profiles passed; all four hosted CI jobs passed on its application-identical predecessor `d56ae2313f34c574877e16050ea3affd67b064b6`. The final follow-up adds two restricted API database permissions and their real-role regression, verified in the current service profile. The 72-hour collection gate remains incomplete, and the pinned run does not contain the final parser and identity changes. Evidence times below are in UTC.
+**LOCAL_PARTIAL.** The current application candidate is `a7d550c16b359576e8ea3de2a5ff6d0f74d84efb` on `codex/core-sprint-2026-11`. Owner photo uploads now pass local backend, browser and native-adapter/export checks. The 72-hour collection gate, installed mobile and production operations remain open. This continuation is committed locally and has not been pushed or deployed.
+
+## Current continuation
+
+| Check | Result and scope |
+| --- | --- |
+| Offline Python | 420 passed, 0 failed, 133 explicit service/tooling skips on the final application. |
+| PostgreSQL and Elasticsearch | 275 passed, 0 failed, 0 skipped; includes photo migration, restricted API-role lifecycle, metadata, ownership and deletion races. Owned containers were removed. |
+| Frontend | Strict TypeScript and 131 unit tests passed. Complete desktop/responsive browser suite: 38 passed without skips on `e00d7a2`; its frontend is identical to the final application. The two photo flows also passed on the final backend. |
+| Native | Final iOS and Android Hermes/JavaScript exports passed. Native picker/permission/cache adapters have unit coverage; physical-device behavior remains unverified. |
+| Storage/configuration | Private local derivatives, fake GCS generation fences, per-catalog/test isolation, persistent Compose volume and optional disabled cleanup CronJob. Compose/Helm checks and two Helm diagnostic tests passed. No cloud resources created. |
+| Dependency audit | Locked installs and `pip check` passed. OSV found no new advisories; two pre-existing moderate npm advisories remain. |
+| Collection smoke | One 42.7-second current-parser cycle successfully ingested two adverts each from Otodom, Gratka and Morizon, producing four canonical homes. This does not complete 72-hour acceptance. |
+
+[T23/T24 handoff and every AC/test case](verification/T23-T24-handoff.md) and [exact profile evidence](verification/T23-T24-evidence.json) record the dates, revisions, corrected initial failures and external limits. Migration 011 and revised API grants are required before enabling owner uploads. GCS markers must survive lifecycle rules; bucket versions/backups need deployment-specific handling. Photo descriptions remain independent last-write-wins metadata, while advert text and photo order use optimistic versioning.
+
+## Earlier core baseline
+
+The following core evidence records the 12 November candidate `a17cf16f4e6c3c33d629684fd6a75685eb147b53` and its specified compatible revisions. It is retained as historical evidence, not a new hosted CI result for the photo continuation.
 
 Reviewed source was pushed to GitHub with the user's explicit authorization. No cloud resource, container registry image, deployed website, signed mobile app, or external email was created by this integration.
 
-## Verified candidate
+## Core baseline checks
 
 | Check | Result and scope |
 | --- | --- |
@@ -36,16 +54,16 @@ The integrator reviewed the changes and a separate worker reproduced merge, spli
 
 | Gate | Current evidence | Smallest next action / owner |
 | --- | --- | --- |
-| T07 duration and provider coverage | Run `krakow-72h-20261111`, immutable pin `b3782cc`, started `2026-11-11T21:27:38.320642Z`. At `2026-11-11T23:34:20.875698Z`: 7602.6 covered seconds, 0.0 gap seconds, 1 completed of 12 scheduled intervals. Otodom and Morizon each supplied two observations; Gratka discovery failed. No observed live removal. | Keep the owned runner/host available and inspect its manifest after `2026-11-14T21:27:38.320642Z`; elapsed time alone is insufficient. Investigate every failed/missed interval. |
-| Final-version collection | The soak pin predates migrations 009/010, batching and the Gratka mixed-route correction. Offline capture replay recovered 31 supported Gratka adverts; that is not new live success. | Run a separately bounded, explicitly identified current-version validation after the pinned experiment; do not edit the running pin or relabel its evidence. |
+| T07 duration and provider coverage | The original `b3782cc` manifest stopped recording at `2026-11-12T05:54:21.566956Z`: 30,403.246314 covered seconds, two eligible cycles, ten unobserved slots. Its target elapsed without enough coverage; Gratka failed both discovery attempts. No live removal observed. | A new reviewed pin and a host available for the full 72 hours are needed. Preserve the original evidence; elapsed time alone is insufficient. [Current report](verification/collection-soak.md). |
+| Current-parser collection | A separate one-cycle smoke on `9147daf` passed for Otodom, Gratka and Morizon, with four HTTP attempts and two ingested adverts each. Six source adverts deduplicated to four homes. The wrapper's redundant cleanup errored after saving the cycle; a process check confirmed the scheduler exited. | Keep this bounded sample separate from long-run acceptance. The corrected Gratka parser has live success; sustained availability and live removal remain open. |
 | OLX | Configurable feed/HTML connectors and offline access checks exist; automatic HTTP collection remains disabled after 403. | Supply an approved feed or permitted automated access. No account/session bypass was created. |
 | External email and push | File mail, local SMTP protocol, cancellation/retry and receipt tests pass. | Supply sender/provider credentials and an explicitly designated test recipient/device, then validate actual delivery. SMTP acceptance with lost acknowledgement can duplicate physical mail. |
 | Installed mobile and map/domain inputs | Web and native JS exports pass. | Supply platform build/signing tools, device/simulator, restricted Android map key and HTTPS association domain; execute installed cold/warm-link and map checks. |
 | Cloud and operations | Terraform/Helm/Compose and representative SQL roles pass locally. No infrastructure is deployed. | Separately review project/quotas/cost, secrets, IAM/network enforcement, authenticated metrics scraper, TLS/CDN behavior, backups/PITR and deployment approval. Single-zone/single-node configuration does not establish a 95% uptime SLA. |
-| Repository policy | Four hosted jobs pass; source branch was pushed as requested. | Maintainer reviews required-check/branch-protection settings. No default-branch merge or policy change was performed. |
+| Repository policy | Earlier core hosted checks passed after the authorized push. The 17 November photo continuation has local verification and has not been pushed. | Push only when requested; hosted checks must run for the new revision after a push. No default-branch merge or policy change was performed. |
 
-Capacity timings apply to the recorded six-route mix and machine. A separate all-history saturation diagnostic exceeded 750 ms; no production capacity or SLA is inferred. Restore evidence uses paired, quiesced local snapshots, not Cloud SQL PITR. Full-market coverage, verified owner identity, staffed fraud review, media uploads, commercial/sales categories and complete Otodom parity remain separate product work.
+Capacity timings apply to the recorded six-route mix and machine and do not include the new photo decoder workload. A separate all-history saturation diagnostic exceeded 750 ms; no production capacity or SLA is inferred. Restore evidence uses paired, quiesced local snapshots, not Cloud SQL PITR; restoring uploaded media also requires matching object storage. Full-market coverage, verified owner identity, staffed fraud review, portable photo export, commercial/sales categories and complete Otodom parity remain separate product work.
 
 ## Acceptance traceability
 
-The [core acceptance index](verification/core-acceptance.json) records all 157 ACs and 162 test cases across the 26 core tasks, with task-specific evidence and scope limits. T07-AC02 and T07-AC03 remain INCOMPLETE. T32 records that incompleteness rather than converting it into operational acceptance. Conditional/stretch tasks remain outside this core release. See the [T32 handoff](verification/T32-handoff.md), [feature ledger](feature-status.md) and [deployment prerequisites](deployment.md).
+The [core acceptance index](verification/core-acceptance.json) records all 157 ACs and 162 test cases across the 26 core tasks, with task-specific evidence and scope limits. T07-AC02 and T07-AC03 remain INCOMPLETE. T32 records that incompleteness rather than converting it into operational acceptance. The user selected T23/T24 on 17 November; their additional 12 ACs and 12 required cases are recorded separately in the [photo handoff](verification/T23-T24-handoff.md). Other stretch tasks remain outside this continuation. See the historical [T32 handoff](verification/T32-handoff.md), current [feature ledger](feature-status.md) and [deployment prerequisites](deployment.md).
