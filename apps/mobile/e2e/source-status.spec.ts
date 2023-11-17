@@ -82,6 +82,8 @@ test("city responses are fenced independently and fifty visible homes use one pr
   context,
 }, info) => {
   const blocked = await allowLoopback(context);
+  if (info.project.name === "mobile")
+    await page.setViewportSize({ width: 390, height: 844 });
   const krakowSearch = gate();
   const krakowSources = gate();
   const releaseKrakow = gate();
@@ -158,6 +160,30 @@ test("city responses are fenced independently and fifty visible homes use one pr
     await expect(
       page.getByRole("button", { name: "View Warszawa first home" }),
     ).toBeVisible();
+    if (info.project.name === "mobile") {
+      for (const label of [
+        "Discover homes",
+        "Saved homes",
+        "Rent insights",
+        "Saved searches",
+        "Notifications",
+      ])
+        await expect(page.getByText(label, { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Discover homes" }),
+      ).toHaveAttribute("aria-current", "page");
+      await expect(
+        page.getByRole("textbox", { name: "City", exact: true }),
+      ).toBeInViewport();
+      await expect(
+        page.getByRole("textbox", {
+          name: "Search neighborhood, street or keyword",
+        }),
+      ).toBeInViewport();
+      await expect(
+        page.getByRole("heading", { name: "1 homes in Warszawa" }),
+      ).toBeInViewport();
+    }
     await expect(
       page.getByText("Morizon · Automatic collection unavailable"),
     ).toBeVisible();
@@ -317,7 +343,7 @@ test("320 px retains results through offline retry and exposes timestamps by key
     page.getByText("Showing 6 of 7 configured sources."),
   ).toBeVisible();
   const timestamps = page.getByRole("button", {
-    name: "Show collection timestamps",
+    name: "Show provider details",
   });
   await expect(
     page.getByText("Last complete collection · 2026-01-01T10:00:00Z"),
@@ -332,7 +358,7 @@ test("320 px retains results through offline retry and exposes timestamps by key
     page.getByText("Latest attempt · 2026-01-01T12:00:00Z"),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Hide collection timestamps" }),
+    page.getByRole("button", { name: "Hide provider details" }),
   ).toHaveAttribute("aria-expanded", "true");
 
   const filters = page.getByRole("button", { name: "More filters" });
@@ -376,5 +402,44 @@ test("320 px retains results through offline retry and exposes timestamps by key
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     320,
   );
+  expect(blocked).toEqual([]);
+});
+
+test("source status retry appears only after expanding provider details", async ({
+  page,
+  context,
+}) => {
+  const blocked = await allowLoopback(context);
+  let unavailable = true;
+  await page.route(`${API_URL}/v1/sources?*`, (route) =>
+    unavailable
+      ? route.abort("internetdisconnected")
+      : route.fulfill({
+          json: { sources: [source("otodom")], demo_mode: false },
+          headers: { "Access-Control-Allow-Origin": process.env.E2E_WEB_URL! },
+        }),
+  );
+  await page.goto("/", { waitUntil: "commit" });
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Source status unavailable." }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Retry source status" }),
+  ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Show provider details" }).click();
+  const retry = page.getByRole("button", { name: "Retry source status" });
+  await expect(retry).toBeVisible();
+  unavailable = false;
+  await retry.click();
+  await expect(
+    page.getByText("Otodom · Automatic collection unavailable", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(retry).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Hide provider details" }),
+  ).toHaveAttribute("aria-expanded", "true");
   expect(blocked).toEqual([]);
 });

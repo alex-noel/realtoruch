@@ -601,9 +601,14 @@ function RentalApp() {
         style={[
           s.row,
           {
-            gap: 13,
-            padding: compact ? 12 : 15,
+            gap: compact ? 6 : 13,
+            padding: compact ? 6 : 15,
             maxWidth: "100%",
+            minHeight: compact ? 44 : undefined,
+            minWidth: compact && mobile ? "30%" : undefined,
+            flexBasis: compact && mobile ? "30%" : undefined,
+            flexGrow: compact && mobile ? 1 : undefined,
+            justifyContent: compact ? "center" : "flex-start",
             borderLeftWidth: compact ? 0 : 2,
             borderLeftColor: tab === id ? "#BCCDA4" : "transparent",
             backgroundColor:
@@ -615,19 +620,18 @@ function RentalApp() {
           size={18}
           color={compact ? c.green : tab === id ? "#E5EBD8" : "#90A599"}
         />
-        {(!compact || !mobile) && (
-          <Text
-            style={{
-              color: compact ? c.ink : tab === id ? "#F4F6EA" : "#AABBB0",
-              fontSize: 12,
-              fontWeight: tab === id ? "600" : "400",
-              fontFamily: font,
-              flexShrink: 1,
-            }}
-          >
-            {title}
-          </Text>
-        )}
+        <Text
+          style={{
+            color: compact ? c.ink : tab === id ? "#F4F6EA" : "#AABBB0",
+            fontSize: compact && mobile ? 10 : 12,
+            fontWeight: tab === id ? "600" : "400",
+            fontFamily: font,
+            flexShrink: 1,
+            textAlign: compact ? "center" : undefined,
+          }}
+        >
+          {title}
+        </Text>
         {id === "notifications" && inbox.unread_count > 0 ? (
           <Text style={{ color: compact ? c.green : "#B6C7A7", fontSize: 11 }}>
             {inbox.unread_count}
@@ -747,8 +751,8 @@ function RentalApp() {
           style={[
             s.row,
             {
-              minHeight: 76,
-              paddingVertical: 12,
+              minHeight: mobile ? 56 : 76,
+              paddingVertical: mobile ? 6 : 12,
               paddingHorizontal: mobile ? 20 : 36,
               borderBottomWidth: 1,
               borderColor: c.line,
@@ -826,6 +830,7 @@ function RentalApp() {
                 borderColor: c.line,
                 justifyContent: "space-around",
                 flexWrap: "wrap",
+                paddingHorizontal: 8,
                 backgroundColor: "white",
               },
             ]}
@@ -837,9 +842,9 @@ function RentalApp() {
           ref={resultsScroll}
           contentContainerStyle={{
             paddingHorizontal: mobile ? 18 : 36,
-            paddingTop: mobile ? 26 : 34,
+            paddingTop: mobile ? 16 : 34,
             paddingBottom: 50,
-            gap: 26,
+            gap: mobile ? 18 : 26,
           }}
           keyboardShouldPersistTaps="handled"
         >
@@ -962,18 +967,23 @@ function RentalApp() {
                 ]}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.label, { color: c.green }]}>
-                    FIND YOUR PLACE, AT YOUR PACE
+                  <Text
+                    style={[
+                      s.label,
+                      { color: c.green, fontSize: mobile ? 8 : undefined },
+                    ]}
+                  >
+                    {mobile ? "FIND A HOME" : "FIND YOUR PLACE, AT YOUR PACE"}
                   </Text>
                   <Text
                     accessibilityRole="header"
                     style={[
                       s.title,
                       {
-                        fontSize: mobile ? 34 : 42,
-                        marginTop: 12,
+                        fontSize: mobile ? 28 : 42,
+                        marginTop: mobile ? 4 : 12,
                         letterSpacing: -1.8,
-                        lineHeight: mobile ? 39 : 49,
+                        lineHeight: mobile ? 33 : 49,
                       },
                     ]}
                   >
@@ -981,10 +991,20 @@ function RentalApp() {
                       ? "The ones that feel like home."
                       : "Good places. Clear choices."}
                   </Text>
-                  <Text style={[s.muted, { marginTop: 12, fontSize: 13 }]}>
+                  <Text
+                    style={[
+                      s.muted,
+                      {
+                        marginTop: mobile ? 6 : 12,
+                        fontSize: mobile ? 12 : 13,
+                      },
+                    ]}
+                  >
                     {tab === "saved"
                       ? "Your favorite homes, including delisted ones. We’ll notify you when a saved home returns at a lower price."
-                      : "Rentals from across the web. Duplicates removed. Details made clear."}
+                      : mobile
+                        ? "Rental listings, made clear."
+                        : "Rentals from across the web. Duplicates removed. Details made clear."}
                   </Text>
                 </View>
                 {desktop && tab === "discover" && (
@@ -1194,56 +1214,6 @@ function RentalApp() {
                       ))}
                     </View>
                   </View>
-                  <SourceStatus
-                    key={filters.city}
-                    city={filters.city}
-                    data={sourceData}
-                    loading={sourceLoading}
-                    failed={sourceFailed}
-                    onRetry={retrySources}
-                  />
-                  {summary && (
-                    <View
-                      style={[
-                        s.row,
-                        { backgroundColor: "#EBEEE4", padding: 15, gap: 14 },
-                      ]}
-                    >
-                      <View
-                        style={{
-                          width: 31,
-                          height: 31,
-                          backgroundColor: "#DAE2CE",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <House size={16} color={c.green} />
-                      </View>
-                      <Text
-                        style={[
-                          s.text,
-                          { fontSize: 12, flex: 1, lineHeight: 19 },
-                        ]}
-                      >
-                        <Text style={{ fontWeight: "600" }}>
-                          {summary.source_listings} adverts. {summary.homes}{" "}
-                          homes. One clear view.
-                        </Text>
-                        {!mobile &&
-                          `  We brought ${summary.duplicates_removed} duplicate adverts together, so you don't have to.`}
-                      </Text>
-                      {!mobile && (
-                        <Text
-                          style={[s.label, { color: c.green, fontSize: 8 }]}
-                        >
-                          {summary.demo
-                            ? "SAMPLE DATA"
-                            : "ACROSS CONNECTED SOURCES"}
-                        </Text>
-                      )}
-                    </View>
-                  )}
                 </>
               )}
               <View
@@ -1334,6 +1304,60 @@ function RentalApp() {
                   </View>
                 )}
               </View>
+              {tab === "discover" && (
+                <>
+                  {summary && (
+                    <View
+                      style={[
+                        s.row,
+                        { backgroundColor: "#EBEEE4", padding: 15, gap: 14 },
+                      ]}
+                    >
+                      <View
+                        style={{
+                          width: 31,
+                          height: 31,
+                          backgroundColor: "#DAE2CE",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <House size={16} color={c.green} />
+                      </View>
+                      <Text
+                        style={[
+                          s.text,
+                          { fontSize: 12, flex: 1, lineHeight: 19 },
+                        ]}
+                      >
+                        <Text style={{ fontWeight: "600" }}>
+                          {summary.source_listings} adverts. {summary.homes}{" "}
+                          homes. One clear view.
+                        </Text>
+                        {!mobile &&
+                          `  We brought ${summary.duplicates_removed} duplicate adverts together, so you don't have to.`}
+                      </Text>
+                      {!mobile && (
+                        <Text
+                          style={[s.label, { color: c.green, fontSize: 8 }]}
+                        >
+                          {summary.demo
+                            ? "SAMPLE DATA"
+                            : "ACROSS CONNECTED SOURCES"}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                  <SourceStatus
+                    key={filters.city}
+                    city={filters.city}
+                    data={sourceData}
+                    loading={sourceLoading}
+                    failed={sourceFailed}
+                    onRetry={retrySources}
+                  />
+                </>
+              )}
               {tab === "discover" && (failed || (result && !currentPage)) && (
                 <View style={[s.card, { padding: 14, gap: 8, alignItems: "flex-start" }]}>
                   {failed && (

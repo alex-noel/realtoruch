@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { vi } from "vitest";
-import { describeSource } from "../src/components/SourceStatus";
+import {
+  describeSource,
+  summarizeSources,
+} from "../src/components/SourceStatus";
 import type { SourceHealth } from "../src/types";
 
 vi.mock("react-native", () => ({
@@ -144,5 +147,51 @@ describe("city source collection status", () => {
         errors: [{ kind: "SourceAccessError", http_status: null }],
       }),
     ).toBe("access-blocked");
+  });
+
+  it("keeps delayed and unavailable providers in the collapsed summary and caps visible coverage", () => {
+    const fresh: SourceHealth = {
+      ...provider,
+      name: "fresh-provider",
+      health: {
+        ...provider.health!,
+        finished_at: "2026-11-11T12:00:00Z",
+        last_success_at: "2026-11-11T12:00:00Z",
+      },
+    };
+    const disabled = {
+      ...provider,
+      name: "olx",
+      enabled: false,
+      health: null,
+      cadence_minutes: null,
+      last_observed_at: null,
+      stored_adverts: 1,
+    };
+    const inputs = [
+      fresh,
+      provider,
+      disabled,
+      ...Array.from({ length: 5 }, (_, i) => ({
+        ...provider,
+        name: `source-${i}`,
+      })),
+    ];
+    const summary = summarizeSources(inputs, now);
+    expect(summary.providers).toHaveLength(6);
+    expect(summary.omittedCount).toBe(2);
+    expect(summary.warnings.map(({ status }) => status.provider)).toContain(
+      "Otodom",
+    );
+    expect(
+      summary.warnings.find(({ source }) => source.name === "otodom")?.status,
+    ).toMatchObject({
+      state: "delayed",
+      label: "Collection delayed",
+      lastSuccess: "2026-11-11T10:00:00Z",
+    });
+    expect(summary.warnings.map(({ status }) => status.label)).toContain(
+      "Automatic collection unavailable",
+    );
   });
 });

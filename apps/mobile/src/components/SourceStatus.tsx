@@ -92,6 +92,31 @@ export function describeSource(source: SourceHealth, now = Date.now()) {
   };
 }
 
+export function summarizeSources(sources: SourceHealth[], now = Date.now()) {
+  const providers = sources
+    .slice(0, MAX_VISIBLE_PROVIDERS)
+    .map((source) => ({ source, status: describeSource(source, now) }));
+  return {
+    providers,
+    warnings: providers.filter(
+      ({ status }) =>
+        status.state !== "fresh" ||
+        status.freshness !== "fresh" ||
+        !!status.storedAdverts,
+    ),
+    omittedCount: Math.max(0, sources.length - MAX_VISIBLE_PROVIDERS),
+  };
+}
+
+function freshnessNote(status: ReturnType<typeof describeSource>) {
+  if (status.state === status.freshness) return null;
+  return status.freshness === "unknown"
+    ? "Freshness unknown"
+    : status.freshness === "delayed"
+      ? "Last complete collection is delayed"
+      : "Last complete collection is within cadence";
+}
+
 export default function SourceStatus({
   city,
   data,
@@ -108,92 +133,116 @@ export default function SourceStatus({
   const [showDetails, setShowDetails] = useState(false);
   const now = Date.now();
   const sources = data?.sources ?? [];
+  const { providers, warnings, omittedCount } = summarizeSources(sources, now);
+  const warningGroups = warnings.reduce<
+    { providers: string[]; status: ReturnType<typeof describeSource> }[]
+  >((groups, entry) => {
+    const existing = groups.find(
+      ({ status }) =>
+        status.label === entry.status.label &&
+        freshnessNote(status) === freshnessNote(entry.status) &&
+        status.storedAdverts === entry.status.storedAdverts,
+    );
+    if (existing) existing.providers.push(entry.status.provider);
+    else
+      groups.push({ providers: [entry.status.provider], status: entry.status });
+    return groups;
+  }, []);
+  const toggleDetails = (
+    <View style={{ alignItems: "flex-start" }}>
+      <Pressable
+        accessibilityRole="button"
+        aria-expanded={showDetails}
+        onPress={() => setShowDetails((open) => !open)}
+        style={s.outline}
+      >
+        <Text style={[s.text, { fontSize: 13, fontWeight: "600" }]}>
+          {showDetails ? "Hide provider details" : "Show provider details"}
+        </Text>
+      </Pressable>
+    </View>
+  );
   return (
     <View style={[s.card, { padding: 14, gap: 10 }]}>
       <Text accessibilityRole="header" style={[s.text, { fontWeight: "600" }]}>
         Source collection · {city || "All cities"}
       </Text>
       {failed ? (
-        <View style={{ gap: 8, alignItems: "flex-start" }}>
+        <View style={{ gap: 8 }}>
           <Text accessibilityRole="alert" style={s.muted}>
             Source status unavailable.
           </Text>
-          <Button outline onPress={onRetry}>
-            Retry source status
-          </Button>
+          {toggleDetails}
+          {showDetails && (
+            <View style={{ alignItems: "flex-start" }}>
+              <Button outline onPress={onRetry}>
+                Retry source status
+              </Button>
+            </View>
+          )}
         </View>
       ) : sources.length ? (
         <>
           <Text style={s.muted}>
-            Collection status reflects configured runs. Individual adverts can
-            be older.
+            Run health reflects configured sources; adverts may be older.
           </Text>
-          {sources.slice(0, MAX_VISIBLE_PROVIDERS).map((source) => {
-            const status = describeSource(source, now);
-            return (
-              <View
-                key={source.name}
-                style={{
-                  gap: 4,
-                  paddingTop: 8,
-                  borderTopWidth: 1,
-                  borderColor: c.line,
-                }}
-              >
-                <Text style={s.text}>
-                  <Text style={{ fontWeight: "600" }}>{status.provider}</Text> ·{" "}
-                  {status.label}
-                </Text>
-                {status.state !== status.freshness && (
-                  <Text style={s.muted}>
-                    {status.freshness === "unknown"
-                      ? "Freshness unknown"
-                      : status.freshness === "delayed"
-                        ? "Last complete collection is delayed"
-                        : "Last complete collection is within cadence"}
-                  </Text>
-                )}
-                {!!status.storedAdverts && (
-                  <Text style={s.muted}>{status.storedAdverts}</Text>
-                )}
-                {showDetails && (
-                  <View style={{ gap: 4 }}>
-                    <Text style={s.muted}>
-                      Last complete collection ·{" "}
-                      {status.lastSuccess ?? "Unknown"}
-                    </Text>
-                    <Text style={s.muted}>
-                      Latest attempt · {status.latestAttempt ?? "Unknown"}
-                    </Text>
-                    <Text style={s.muted}>
-                      Latest stored observation ·{" "}
-                      {status.latestObservation ?? "Unknown"}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            );
-          })}
-          {sources.length > MAX_VISIBLE_PROVIDERS && (
+          {warningGroups.length ? (
+            warningGroups.map(({ providers: names, status }) => (
+              <Text key={`${status.label}:${names.join(",")}`} style={s.text}>
+                <Text style={{ fontWeight: "600" }}>{names.join(", ")}</Text> ·{" "}
+                {status.label}
+                {freshnessNote(status) ? ` · ${freshnessNote(status)}` : ""}
+                {status.storedAdverts ? ` · ${status.storedAdverts}` : ""}
+              </Text>
+            ))
+          ) : (
+            <Text style={s.muted}>
+              All listed sources report fresh collection status.
+            </Text>
+          )}
+          {omittedCount > 0 && (
             <Text style={s.muted}>
               Showing {MAX_VISIBLE_PROVIDERS} of {sources.length} configured
               sources.
             </Text>
           )}
-          <View style={{ alignItems: "flex-start" }}>
-            <Pressable
-              accessibilityRole="button"
-              aria-expanded={showDetails}
-              onPress={() => setShowDetails((open) => !open)}
-              style={s.outline}
-            >
-              <Text style={[s.text, { fontSize: 13, fontWeight: "600" }]}>
-                {showDetails
-                  ? "Hide collection timestamps"
-                  : "Show collection timestamps"}
-              </Text>
-            </Pressable>
-          </View>
+          {toggleDetails}
+          {showDetails && (
+            <View style={{ gap: 10 }}>
+              {providers.map(({ source, status }) => (
+                <View
+                  key={source.name}
+                  style={{
+                    gap: 4,
+                    paddingTop: 8,
+                    borderTopWidth: 1,
+                    borderColor: c.line,
+                  }}
+                >
+                  <Text style={s.text}>
+                    <Text style={{ fontWeight: "600" }}>{status.provider}</Text>{" "}
+                    · {status.label}
+                  </Text>
+                  {freshnessNote(status) && (
+                    <Text style={s.muted}>{freshnessNote(status)}</Text>
+                  )}
+                  {!!status.storedAdverts && (
+                    <Text style={s.muted}>{status.storedAdverts}</Text>
+                  )}
+                  <Text style={s.muted}>
+                    Last complete collection · {status.lastSuccess ?? "Unknown"}
+                  </Text>
+                  <Text style={s.muted}>
+                    Latest attempt · {status.latestAttempt ?? "Unknown"}
+                  </Text>
+                  <Text style={s.muted}>
+                    Latest stored observation ·{" "}
+                    {status.latestObservation ?? "Unknown"}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
         </>
       ) : (
         <Text accessibilityLiveRegion="polite" style={s.muted}>
