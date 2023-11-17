@@ -113,3 +113,38 @@ connector, portal, rental-journey and lifecycle suites on 2026-11-11:
 **141 passed, zero failed or skipped**. Ruff and whitespace checks passed.
 The foreground run is owned by the integrator, session `50850`, at the unchanged
 detached pin. This local acceptance does not close the live elapsed-time gate.
+
+## Follow-up on 17 November 2026
+
+The original foreground session stopped with 30,403.246314 seconds of runner
+coverage. The immutable manifest has two eligible cycles and 10 elapsed slots
+without a recorded admission disposition. Otodom and Morizon each succeeded
+twice. Gratka failed both discovery attempts. The read-only report now marks
+the stale heartbeat, uncovered tail and unobserved slots explicitly.
+
+The current-version live smoke at `9147daf80f57d0071f77f9dfde73118a9de6411f`
+recorded one successful check for each provider in 42.666446 seconds. This
+includes the corrected Gratka parser. Each provider ingested two observations
+in four HTTP attempts. The collector completed and saved the cycle. The
+wrapper returned 1 after a redundant cleanup attempt, and a separate process
+check confirmed the scheduler had exited. Both runs and their private
+artifact locations are documented in [collection-soak.md](collection-soak.md).
+
+| Acceptance | Follow-up |
+| --- | --- |
+| T07-AC01 / TC01 | PASS (controlled). Restart retains prior slots and recovers completed checkpoints. Persisted and recovered budget violations each stop the next cycle. |
+| T07-AC02 / TC02 | INCOMPLETE (live). The original pin has 2 of 12 eligible intervals. The newer pin has one bounded live cycle. A fake-clock regression preserves a heartbeat gap that crosses the horizon. |
+| T07-AC03 / TC02, TC05 | INCOMPLETE (live soak). The newer pin has a successful live check for each provider. The original soak has two Gratka failures and 10 unobserved intervals. |
+| T07-AC04 / TC03, TC04 | PASS (controlled). The separate failure and replay drill passed on the follow-up base. |
+| T07-AC05 / TC04 | PASS (controlled). Unchanged, repriced and inactive cases passed. Live longitudinal evidence remains open. |
+| T07-AC06 / TC05, TC06 | PASS (reporting). Expired slots with no recorded outcome and persisted misses appear separately. Real removal remains unverified in both live runs. |
+
+Verification on 17 November used the shared Python 3.12 virtual environment
+with `PYTHONPATH=backend` in the follow-up checkout. The updated reliability
+suite passed 10 tests. The collection-health, cloud-fake, connector, portal,
+rental-journey, lifecycle and metrics regression passed 145 tests and skipped
+six service-only cases. The run emitted the existing Starlette TestClient
+deprecation warning. Both saved version 1 manifests were read successfully
+with the updated reporter. There are no migration or source configuration
+changes. G04 still needs a reviewed pin and a host available for the full
+bounded 72-hour schedule.

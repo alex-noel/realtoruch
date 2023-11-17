@@ -4,8 +4,12 @@
 import argparse
 import json
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+ADMISSION = timedelta(minutes=10)
+HEARTBEAT = 60
+HEARTBEAT_LIMIT = 2 * HEARTBEAT
 
 
 def timestamp(value):
@@ -24,8 +28,20 @@ COUNTERS = (
 )
 
 
-def aggregate(manifest):
+def aggregate(manifest, *, now=None):
     """Use an allowlist; never emit source URLs/hashes, advert content or private IDs."""
+    now = now if now is not None else datetime.now(timezone.utc)
+    started = instant(manifest["started_at"])
+    horizon = instant(manifest["ends_at"])
+    through = min(instant(manifest["observed_through"]), horizon)
+    elapsed_through = min(max(now, through), horizon)
+    if through == horizon:
+        heartbeat_status = "HORIZON_REACHED"
+    elif (now - through).total_seconds() > HEARTBEAT_LIMIT:
+        heartbeat_status = "STALE"
+    else:
+        heartbeat_status = "RECENT"
+
     pin = manifest["pin"]
     provider_names = tuple(pin["sources"])
     per_source = {name: Counter() for name in provider_names}
@@ -34,6 +50,10 @@ def aggregate(manifest):
     intervals = []
     for cycle in manifest["cycles"]:
         state = cycle["state"]
+        reason = cycle.get("reason")
+        if state == "pending" and elapsed_through > instant(cycle["scheduled_at"]) + ADMISSION:
+            state = "unobserved"
+            reason = "admission_not_observed"
         counts[state] += 1
         if cycle.get("started_at"):
             counts["attempted"] += 1
@@ -54,7 +74,7 @@ def aggregate(manifest):
                 stats["lease_losses"] += 1
             if source.get("attempted") and "network_attempts" not in source:
                 stats["unknown_network_totals"] += 1
-            if status in ("unobserved", "running") and not source.get("attempted"):
+            if cycle.get("started_at") and status in ("unobserved", "running") and not source.get("attempted"):
                 stats["unknown_provider_attempts"] += 1
             for key in COUNTERS:
                 stats[key] += source.get(key, 0)
@@ -64,18 +84,15 @@ def aggregate(manifest):
                 errors[name][label] += 1
         intervals.append({
             **{key: cycle[key] for key in (
-                "id", "scheduled_at", "state", "started_at", "finished_at", "eligible", "reason",
+                "id", "scheduled_at", "started_at", "finished_at", "eligible",
                 "counts_before", "counts_after", "history_delta", "budget_violations",
             ) if key in cycle},
-            "sources": states,
+            "state": state, "sources": states, **({"reason": reason} if reason else {}),
         })
 
-    horizon = instant(manifest["ends_at"])
-    through = min(instant(manifest["observed_through"]), horizon)
-    wall_seconds = (through - instant(manifest["started_at"])).total_seconds()
     gap_seconds = sum((instant(gap["to"]) - instant(gap["from"])).total_seconds()
                       for gap in manifest["runner_gaps"])
-    covered_seconds = max(0, wall_seconds - gap_seconds)
+    covered_seconds = max(0, (through - started).total_seconds() - gap_seconds)
     history = (manifest.get("latest_counts") or {}).get("history", {})
     all_successful = all(per_source[name]["successful_checks"] for name in provider_names)
     budget_violations = sum(len(cycle.get("budget_violations", [])) for cycle in manifest["cycles"])
@@ -83,7 +100,7 @@ def aggregate(manifest):
     if budget_violations:
         status = "FAILED"
     elif (covered_seconds >= 72 * 3600 and counts["eligible"] >= 12 and all_successful
-          and not counts["pending"] and not counts["running"]
+          and not counts["pending"] and not counts["running"] and not counts["unobserved"]
           and not any(stats["unknown_network_totals"] or stats["unknown_provider_attempts"]
                       for stats in per_source.values())):
         status = "VERIFIED"
@@ -92,18 +109,24 @@ def aggregate(manifest):
         "commit": pin["commit"], "config_sha256": pin["config_sha256"], "schema": manifest.get("schema"),
         "runtime": manifest["runtime"], "city": pin["city"], "budget": pin["budget"],
         "started_at": manifest["started_at"], "target_end": manifest["ends_at"],
-        "observed_through": timestamp(through), "wall_elapsed_seconds": wall_seconds,
+        "reported_at": timestamp(now), "observed_through": timestamp(through),
+        "wall_elapsed_seconds": (elapsed_through - started).total_seconds(),
+        "runner_heartbeat_status": heartbeat_status,
         "runner_covered_seconds": covered_seconds, "runner_gap_seconds": gap_seconds,
+        "runner_unobserved_seconds": (elapsed_through - through).total_seconds(),
         "runner_gaps": manifest["runner_gaps"],
         "cycle_counts": {key: counts[key] for key in (
-            "attempted", "eligible", "completed", "deferred", "missed", "interrupted", "running", "pending",
+            "attempted", "eligible", "completed", "deferred", "missed", "interrupted",
+            "running", "pending", "unobserved",
         )},
         "providers": {
             name: {
                 **dict(per_source[name]), "errors": dict(errors[name]),
                 "success_fraction": {
                     "succeeded": per_source[name]["succeeded"],
-                    "accounted_intervals": len(intervals) - counts["pending"] - counts["running"],
+                    "accounted_intervals": (
+                        len(intervals) - counts["pending"] - counts["running"] - counts["unobserved"]
+                    ),
                     "scheduled_intervals": len(intervals),
                 },
             } for name in provider_names
