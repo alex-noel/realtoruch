@@ -42,11 +42,9 @@ test('search controls preserve rent, area, advertiser, polygon and commission bo
   expect(blocked).toEqual([]);
 });
 
-test('results pager keeps cards and pins on the same page and preserves browsing position', async ({ page, context }, info) => {
-  const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
-  const blocked: string[] = [];
+function pagedHomes(): Listing[] {
   const image = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-  const homes: Listing[] = Array.from({ length: 49 }, (_, index) => ({
+  return Array.from({ length: 49 }, (_, index) => ({
     id: `q09-home-${index + 1}`,
     title: `Q09 home ${index + 1}`,
     description: 'Fictional apartment for the pagination check',
@@ -59,6 +57,12 @@ test('results pager keeps cards and pins on the same page and preserves browsing
     first_seen: '2026-01-01T12:00:00Z', last_seen: '2026-01-01T12:00:00Z',
     risk_score: 0, risk_flags: [], sources: [],
   }));
+}
+
+test('results pager keeps cards and pins on the same page and preserves browsing position', async ({ page, context }, info) => {
+  const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
+  const blocked: string[] = [];
+  const homes = pagedHomes();
   const requests: URLSearchParams[] = [];
   let releasePageTwo!: () => void;
   const pageTwoPending = new Promise<void>(resolve => { releasePageTwo = resolve; });
@@ -215,4 +219,131 @@ test('results pager keeps cards and pins on the same page and preserves browsing
   await expect(previous).toBeDisabled();
   await expect(next).toBeEnabled();
   expect(blocked).toEqual([]);
+});
+
+test.describe('explicit sort', () => {
+  test.use({ hasTouch: true });
+
+  test('sort choices work by keyboard and touch and keep the latest result', async ({ page, context }, info) => {
+    if (info.project.name === 'mobile') await page.setViewportSize({ width: 320, height: 800 });
+    const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
+    const blocked: string[] = [];
+    const homes = pagedHomes();
+    const requests: URLSearchParams[] = [];
+    let releaseOlderSort!: () => void;
+    const olderSortPending = new Promise<void>(resolve => { releaseOlderSort = resolve; });
+
+    // Simulate an older transport response that arrives even after cancellation.
+    await page.addInitScript(() => {
+      const fetch = window.fetch.bind(window);
+      window.fetch = (input, init) => {
+        if (typeof input === 'string') {
+          const url = new URL(input, location.href);
+          if (url.pathname === '/v1/listings' && url.searchParams.get('sort') === 'price_asc')
+            return fetch(input, { ...init, signal: undefined });
+        }
+        return fetch(input, init);
+      };
+    });
+    await context.route('**/*', async route => {
+      const url = new URL(route.request().url());
+      if (url.protocol === 'data:') return route.continue();
+      if (url.hostname !== '127.0.0.1' || !allowed.has(url.port)) {
+        blocked.push(url.origin);
+        return route.abort('blockedbyclient');
+      }
+      if (url.origin !== process.env.E2E_API_URL || url.pathname !== '/v1/listings')
+        return route.continue();
+
+      requests.push(url.searchParams);
+      const sort = url.searchParams.get('sort');
+      const number = Number(url.searchParams.get('page'));
+      const size = Number(url.searchParams.get('page_size'));
+      if (sort === 'price_asc') await olderSortPending;
+      const result: SearchResult = {
+        items: homes.slice((number - 1) * size, number * size).map((home, index) => ({
+          ...home, title: `Q08 ${sort} page ${number} home ${index + 1}`,
+        })),
+        total: homes.length, page: number, page_size: size, engine: 'fixture',
+      };
+      return route.fulfill({ json: result });
+    });
+
+    await page.goto('/', { waitUntil: 'commit' });
+    const button = (name: string) => page.getByRole('button', { name, exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Sort homes' });
+    const choice = (name: string) => dialog.getByRole('button', { name, exact: true });
+    const trigger = (label: string) => button(`Change sort order, ${label} selected`);
+    const result = (sort: string, number = 1) => button(`Q08 ${sort} page ${number} home 1`);
+    const direct = button('Direct offers');
+    await direct.click();
+    await expect.poll(() => requests.at(-1)?.get('advertiser')).toBe('private');
+    await button('No commission').click();
+    await expect.poll(() => requests.at(-1)?.get('no_commission')).toBe('true');
+    await button('Next').click();
+    await expect(result('newest', 2)).toBeVisible();
+    const beforeSort = requests.length;
+    const nextQuery = new URLSearchParams(requests.at(-1));
+    nextQuery.set('page', '1');
+    nextQuery.set('sort', 'price_desc');
+
+    await page.getByRole('button', { name: /^Change sort order/ }).focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeVisible();
+    await expect(choice('Close dialog')).toBeFocused();
+    for (const label of ['Newest first', 'Lowest rent', 'Highest rent', 'Largest first']) {
+      await expect(choice(label)).toBeInViewport({ ratio: 1 });
+      await expect(choice(label)).toHaveAttribute('aria-pressed', String(label === 'Newest first'));
+    }
+    if (info.project.name === 'mobile')
+      await page.screenshot({ path: info.outputPath('q08-sort-320px.png') });
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger('Newest first')).toBeFocused();
+    await trigger('Newest first').tap();
+    await choice('Cancel').tap();
+    await expect(dialog).toHaveCount(0);
+    await expect(result('newest', 2)).toBeVisible();
+    expect(requests).toHaveLength(beforeSort);
+
+    await trigger('Newest first').tap();
+    await choice('Newest first').tap();
+    await expect(dialog).toHaveCount(0);
+    await expect(result('newest', 2)).toBeVisible();
+    expect(requests).toHaveLength(beforeSort);
+
+    await trigger('Newest first').press('Enter');
+    for (const label of ['Newest first', 'Lowest rent', 'Highest rent']) {
+      await page.keyboard.press('Tab');
+      await expect(choice(label)).toBeFocused();
+    }
+    await page.keyboard.press('Enter');
+    await expect(result('price_desc')).toBeVisible();
+    await expect(trigger('Highest rent')).toBeFocused();
+    expect(requests).toHaveLength(beforeSort + 1);
+    expect(Object.fromEntries(requests.at(-1)!)).toEqual(Object.fromEntries(nextQuery));
+
+    await trigger('Highest rent').tap();
+    await expect(choice('Highest rent')).toHaveAttribute('aria-pressed', 'true');
+    await choice('Lowest rent').tap();
+    try {
+      await expect.poll(() => requests.at(-1)?.get('sort')).toBe('price_asc');
+      await trigger('Lowest rent').tap();
+      await choice('Largest first').tap();
+      await expect(result('area_desc')).toBeVisible();
+      const olderResponse = page.waitForResponse(response => new URL(response.url()).searchParams.get('sort') === 'price_asc');
+      releaseOlderSort();
+      expect(await (await olderResponse).finished()).toBeNull();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await expect(result('area_desc')).toBeVisible();
+      await expect(result('price_asc')).toHaveCount(0);
+    } finally {
+      releaseOlderSort();
+    }
+    await trigger('Largest first').tap();
+    await expect(choice('Largest first')).toHaveAttribute('aria-pressed', 'true');
+    await choice('Newest first').tap();
+    await expect(result('newest')).toBeVisible();
+    expect(blocked).toEqual([]);
+  });
 });
