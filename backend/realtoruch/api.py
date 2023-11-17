@@ -57,6 +57,8 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app):
+    import asyncio
+    app.state.media_processors = asyncio.Semaphore(1)
     if settings.environment != "production":
         init_db()
     yield
@@ -68,7 +70,7 @@ app = FastAPI(
     description="Free, paginated public rental data. No account required for reads. Sample data is explicitly labelled. Contact fingerprints are never exposed.",
     lifespan=lifespan,
 )
-install_http(app)
+install_http(app, media_upload=True)
 from .account_data import guard_account_write, router as account_data_router
 app.include_router(account_data_router)
 from .email_alerts import router as email_router
@@ -77,6 +79,8 @@ from .identity_review import router as identity_router
 from .marketplace import router as marketplace_router
 
 app.include_router(email_router)
+from .media import router as media_router
+app.include_router(media_router)
 app.include_router(marketplace_router)
 app.include_router(identity_router)
 
@@ -512,6 +516,10 @@ def erase_account_data(user_id: str, session=Depends(get_session)):
             publish_observation(session, advert, session.get(AdvertiserProfile, user_id), "inactive")
         session.delete(advert)
     session.flush()
+    from .media import delete_bytes
+    from .models import MediaAsset
+    for asset in session.scalars(select(MediaAsset).where(MediaAsset.user_id == user_id)):
+        asset.state = "deleted"
     session.execute(delete(AdvertiserProfile).where(AdvertiserProfile.user_id == user_id))
 
     notifications = select(Notification.id).where(Notification.user_id == user_id)
@@ -538,5 +546,11 @@ def erase_account_data(user_id: str, session=Depends(get_session)):
         Report,
     ):
         session.execute(delete(model).where(model.user_id == user_id))
+    session.commit()
+    # Closure and media tombstones are durable before external storage deletion.
+    # A failed delete raises so the account job retries; the tombstone fences writes.
+    for asset in session.scalars(select(MediaAsset).where(MediaAsset.user_id == user_id)):
+        delete_bytes(asset)
+        session.delete(asset)
     session.commit()
     return {"erased": True}

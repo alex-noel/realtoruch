@@ -8,7 +8,8 @@
     {"version": "006", "file": "006_search_revision.sql"},
     {"version": "008", "file": "008_delivery_leases.sql"},
     {"version": "009", "file": "009_account_closure.sql"},
-    {"version": "010", "file": "010_message_read_cursors.sql"}
+    {"version": "010", "file": "010_message_read_cursors.sql"},
+    {"version": "011", "file": "011_media_assets.sql"}
   ],
   "auth": [
     {"version": "001", "file": "001_auth.sql"},
