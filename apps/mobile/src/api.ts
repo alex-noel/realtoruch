@@ -31,8 +31,12 @@ export function subscribeSession(listener: (state: SessionState) => void) {
 function publish(state: SessionState) { sessionState = state; listeners.forEach(listener => listener(state)); }
 export function getSessionState() { return sessionState; }
 export function isCurrentAccessToken(token: string) { return accessToken === token; }
+export type RequestErrorCode = "unknown" | "validation" | "version_conflict" | "verification_required" |
+  "rate_limited" | "search_limit" | "advert_limit" | "profile_required" | "profile_type_conflict" |
+  "conversation_blocked" | "message_retry_conflict" | "appeal_pending" | "already_reviewed" | "moderation_hidden";
 export class SessionError extends Error {
-  constructor(public kind: "invalid" | "forbidden" | "transient" | "http" | "storage" | "superseded", message: string, public status?: number) {
+  constructor(public kind: "invalid" | "forbidden" | "transient" | "http" | "storage" | "superseded", message: string, public status?: number,
+    public code: RequestErrorCode = "unknown", public fields: string[] = []) {
     super(message); this.name = "SessionError";
   }
 }
@@ -176,6 +180,52 @@ function validationMessage(data: unknown): string {
   }
   return "Request could not be completed. Please check your details.";
 }
+// Business recovery is keyed by route, status and a known server detail. Never
+// display an arbitrary detail/msg/input value or use it as a DOM attribute.
+function requestFeedback(path: string, status: number, data: unknown): { code: RequestErrorCode; message: string; fields?: string[] } {
+  const route = path.split("?", 1)[0];
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  const adverts = /^\/v1\/me\/adverts(?:\/[^/]+(?:\/(?:publish|withdraw|appeal))?)?$/.test(route);
+  const messages = /^\/v1\/(?:me\/conversations\/[^/]+(?:\/(?:messages|block|read))?|adverts\/[^/]+\/conversations)$/.test(route);
+  const review = /^\/v1\/moderation\/reports\/[^/]+\/review$/.test(route);
+  if (status === 429) return { code: "rate_limited", message: messages ? "Please wait before sending more messages, then try again." : "Too many requests. Please wait, then try again." };
+  if (status === 403 && detail === "Verify your account email first in Account" && (adverts || messages || route === "/v1/me/advertiser" || review))
+    return { code: "verification_required", message: "Verify your email in Account, then try again." };
+  if (adverts && status === 409 && detail === "This advert changed on another device. Reload before editing.")
+    return { code: "version_conflict", message: "This advert changed on another device. Review the latest version before saving again." };
+  if (adverts && status === 409 && detail === "This home is hidden after review. Submit an appeal to request another review.")
+    return { code: "moderation_hidden", message: "This home is hidden after review. Submit an appeal from My rental adverts." };
+  if (adverts && status === 409 && detail === "A review is already pending")
+    return { code: "appeal_pending", message: "Your appeal is already awaiting review." };
+  if (route === "/v1/me/advertiser" && status === 409 && detail === "Withdraw published adverts before changing advertiser type")
+    return { code: "profile_type_conflict", message: "Withdraw your published adverts before changing advertiser type." };
+  if (review && status === 409 && detail === "Report is no longer pending")
+    return { code: "already_reviewed", message: "This report has already been reviewed. Refresh the queue." };
+  if (messages && status === 409 && detail === "Client message ID already used with different text")
+    return { code: "message_retry_conflict", message: "This message attempt used different text. Refresh the conversation before sending again." };
+  if (messages && status === 403 && detail === "This conversation is blocked")
+    return { code: "conversation_blocked", message: "This conversation is blocked. Messages cannot be sent." };
+  if (route === "/v1/me/searches" && status === 422 && detail === "You can save up to 30 searches")
+    return { code: "search_limit", message: "You have reached 30 saved searches. Remove a search before saving another." };
+  if (adverts && status === 422 && detail === "Create your advertiser profile first")
+    return { code: "profile_required", message: "Create your advertiser profile in My rental adverts first." };
+  if (adverts && status === 422 && detail === "You can keep up to 100 adverts")
+    return { code: "advert_limit", message: "You have reached the 100-advert limit." };
+  if (status === 422 && Array.isArray(detail)) {
+    const allowed = new Set(["email", "password", "name",
+      ...(adverts ? ["title", "description", "city", "district", "region", "address", "lat", "lon", "area_m2", "rooms", "floor", "rent_pln", "fees_pln", "deposit_pln", "commission_pln", "property_type", "amenities", "images"] : [])]);
+    const fields = [...new Set(detail.flatMap(item => {
+      const loc: unknown = item && typeof item === "object" ? item.loc : null;
+      if (!Array.isArray(loc)) return [];
+      // Array validators end with an index. Pick only a known field name.
+      const field = [...loc].reverse().find(value => typeof value === "string" && allowed.has(value));
+      return typeof field === "string" ? [field] : [];
+    }))].slice(0, 20);
+    if (fields.length) return { code: "validation", fields, message: `Please check: ${fields.join(", ")}.` };
+  }
+  const authValidation = /^\/v1\/auth\/(?:login|register|account|reauthenticate)$/.test(route) && [400, 401, 409, 422].includes(status);
+  return { code: "unknown", message: authValidation ? validationMessage(data) : "Request could not be completed. Please check your details." };
+}
 function linkValidationMessage(path: string, status: number, data: unknown) {
   if (status !== 400 && status !== 401 && status !== 403) return null;
   const detail = (data as { detail?: unknown } | null)?.detail;
@@ -251,7 +301,8 @@ export async function request<T>(path: string, options: RequestInit & { anonymou
       checkResponse();
       if (kind === "invalid" && usedToken && (mayRetry || didRetry) && path !== "/v1/auth/refresh") await invalidate(intent);
       const linkMessage = linkValidationMessage(path, response.status, data);
-      throw new SessionError(kind, linkMessage ?? (kind === "invalid" ? ((path.endsWith("/login") || path.endsWith("/account")) ? validationMessage(data) : "Session expired or revoked. Sign in again.") : kind === "transient" ? "Cannot reach the service. Try again." : validationMessage(data)), response.status);
+      const feedback = requestFeedback(path, response.status, data);
+      throw new SessionError(kind, linkMessage ?? (kind === "invalid" ? ((path.endsWith("/login") || path.endsWith("/account")) ? validationMessage(data) : "Session expired or revoked. Sign in again.") : kind === "transient" ? "Cannot reach the service. Try again." : feedback.message), response.status, feedback.code, feedback.fields);
     }
     const data = await response.json();
     checkResponse();

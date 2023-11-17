@@ -12,6 +12,57 @@ const response = (data: unknown, status = 200) => new Response(JSON.stringify(da
 async function load() { return import("../src/api"); }
 beforeEach(() => { vi.resetModules(); f.platform.OS = "ios"; f.store.clear(); f.failRead = false; f.failWrite = false; f.failDelete = false; f.writeGate = null; f.enteredWrite = false; vi.unstubAllGlobals(); });
 
+describe("business error recovery", () => {
+  it.each([
+    ["/v1/me/adverts/a", 409, "This advert changed on another device. Reload before editing.", "version_conflict"],
+    ["/v1/me/adverts/a/publish", 403, "Verify your account email first in Account", "verification_required"],
+    ["/v1/me/conversations/a/messages", 429, "Please wait before sending more messages", "rate_limited"],
+    ["/v1/me/searches", 422, "You can save up to 30 searches", "search_limit"],
+    ["/v1/me/adverts", 422, "Create your advertiser profile first", "profile_required"],
+    ["/v1/me/adverts", 422, "You can keep up to 100 adverts", "advert_limit"],
+    ["/v1/me/advertiser", 409, "Withdraw published adverts before changing advertiser type", "profile_type_conflict"],
+    ["/v1/me/conversations/a/messages", 403, "This conversation is blocked", "conversation_blocked"],
+    ["/v1/me/conversations/a/messages", 409, "Client message ID already used with different text", "message_retry_conflict"],
+    ["/v1/me/adverts/a/appeal", 409, "A review is already pending", "appeal_pending"],
+    ["/v1/moderation/reports/a/review", 409, "Report is no longer pending", "already_reviewed"],
+    ["/v1/me/adverts/a/publish", 409, "This home is hidden after review. Submit an appeal to request another review.", "moderation_hidden"],
+  ])("maps %s %s without invalidating the account", async (path, status, detail, code) => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(result("valid-session"))).mockResolvedValueOnce(response({ detail }, Number(status)));
+    vi.stubGlobal("fetch", fetch);
+    const client = await load();
+    await client.api.signIn("synthetic@example.test", "synthetic-password", false);
+    await expect(client.request(String(path))).rejects.toMatchObject({ code, status, fields: [] });
+    expect(client.getSessionState()).toBe("active");
+    expect(client.isCurrentAccessToken("valid-session")).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["/unrelated", 409, "This advert changed on another device. Reload before editing."],
+    ["/unrelated", 409, "Invalid credentials"],
+    ["/unrelated", 409, [{ loc: ["body", "email"], msg: "private-input" }]],
+    ["/v1/me/adverts/a", 422, "This advert changed on another device. Reload before editing."],
+    ["/v1/me/adverts/a", 409, "<script>secret-token</script>"],
+    ["/v1/me/adverts/a", 409, { token: "secret-token", message: "owner@example.test" }],
+  ])("does not trust an unknown route/status/detail combination", async (path, status, detail) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ detail }, Number(status))));
+    const client = await load();
+    await expect(client.request(String(path))).rejects.toMatchObject({ code: "unknown", message: "Request could not be completed. Please check your details.", fields: [] });
+  });
+
+  it("maps only known owner validation fields, including image-array errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ detail: [
+      { loc: ["body", "advert", "rent_pln"], msg: "secret-input", input: "secret-input" },
+      { loc: ["body", "advert", "images", 2], msg: "https://private.invalid/secret" },
+      { loc: ["body", "secret-token"], msg: "owner@example.test" },
+      { loc: ["body", "advert", "rent_pln"] },
+      null,
+    ] }, 422)));
+    const client = await load();
+    await expect(client.request("/v1/me/adverts/a")).rejects.toMatchObject({ code: "validation", fields: ["rent_pln", "images"], message: "Please check: rent_pln, images." });
+  });
+});
+
 describe("session resilience", () => {
   it("cannot restore credentials from a refresh completing after confirmed logout", async () => {
     f.store.set("realtoruch_refresh", "original");
@@ -85,9 +136,19 @@ describe("session resilience", () => {
     let release!: () => void; f.writeGate = new Promise<void>(resolve => { release = resolve; });
     const restore = client.restoreToken();
     await vi.waitFor(() => expect(f.enteredWrite).toBe(true));
+    // setToken alone leaves sessionState initially signed-out. Observe the new
+    // logout publication, rather than accidentally accepting that initial state.
+    let confirmed!: () => void;
+    const confirmedLogout = new Promise<void>(resolve => { confirmed = resolve; });
+    let observeLogout = false;
+    const unsubscribe = client.subscribeSession(state => {
+      if (observeLogout && state === "signed-out") confirmed();
+    });
+    observeLogout = true;
     const logout = client.api.signOut();
-    await vi.waitFor(() => expect(client.getSessionState()).toBe("signed-out"));
+    await confirmedLogout;
     release(); await logout; await expect(restore).rejects.toMatchObject({ kind: "superseded" });
+    unsubscribe();
     expect(f.store.size).toBe(0); expect(client.getSessionState()).toBe("signed-out");
   });
   it("reports local cleanup failure after confirmed logout and blocks same-instance restore", async () => {

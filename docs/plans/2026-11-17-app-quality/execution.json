@@ -12,21 +12,26 @@
     },
     {
       "id": "Q02",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6-luna",
+      "branch": "codex/q02-field-semantics",
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "medium"
     },
     {
       "id": "Q03",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
+      "status": "VERIFIED_LOCAL",
+      "assignee": "parent",
+      "branch": "codex/app-quality-2026-11",
       "commit": null,
-      "evidence": [],
-      "blocked_by": []
+      "evidence": [
+        "docs/verification/Q03-handoff.md"
+      ],
+      "blocked_by": [],
+      "reasoning_effort": "high",
+      "review": "Independent Terra high review approved after generic fallback correction;39session tests and typecheck passed."
     },
     {
       "id": "Q04",
@@ -75,12 +80,13 @@
     },
     {
       "id": "Q09",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6.1-sol",
+      "branch": "codex/q09-map-pagination",
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "medium"
     },
     {
       "id": "Q10",
@@ -237,12 +243,17 @@
     },
     {
       "id": "Q27",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
-      "commit": null,
-      "evidence": [],
-      "blocked_by": []
+      "status": "VERIFIED_LOCAL",
+      "assignee": "gpt-6.1-terra",
+      "branch": "codex/q27-rental-desk",
+      "commit": "0f19dd5",
+      "evidence": [
+        "docs/verification/Q27-handoff.md"
+      ],
+      "blocked_by": [],
+      "reasoning_effort": "low",
+      "worker_commit": "770b7b5f88e86a0cd9bdf86311a2b600c17776ce",
+      "review": "Parent compared extraction, preserved handlers/type-only cycles; worker typecheck,12unit and2browser passed."
     },
     {
       "id": "Q28",
