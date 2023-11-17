@@ -10,7 +10,11 @@ export const c = {
   orange: "#A84625",
   cream: "#F0E9D8",
   warning: "#935C2F",
+  danger: "#9B302B",
 };
+export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
+export const typeSize = { label: 10, caption: 12, control: 13, body: 14, title: 26 };
+export const controlHeight = 44;
 export const font =
   Platform.OS === "web"
     ? 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
@@ -19,20 +23,20 @@ export const s = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center" },
   label: {
     color: c.muted,
-    fontSize: 10,
+    fontSize: typeSize.label,
     fontWeight: "700",
     letterSpacing: 1.4,
     fontFamily: font,
   },
   title: {
     color: c.ink,
-    fontSize: 26,
+    fontSize: typeSize.title,
     fontWeight: "600",
     letterSpacing: -1,
     fontFamily: font,
   },
-  text: { color: c.ink, fontSize: 14, lineHeight: 22, fontFamily: font },
-  muted: { color: c.muted, fontSize: 12, lineHeight: 19, fontFamily: font },
+  text: { color: c.ink, fontSize: typeSize.body, lineHeight: 22, fontFamily: font },
+  muted: { color: c.muted, fontSize: typeSize.caption, lineHeight: 19, fontFamily: font },
   button: {
     backgroundColor: c.green,
     paddingVertical: 13,
@@ -40,12 +44,12 @@ export const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    gap: 8,
-    minHeight: 44,
+    gap: space.sm,
+    minHeight: controlHeight,
   },
   buttonText: {
     color: "white",
-    fontSize: 13,
+    fontSize: typeSize.control,
     fontWeight: "600",
     fontFamily: font,
   },
@@ -58,8 +62,8 @@ export const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    minHeight: 44,
+    gap: space.sm,
+    minHeight: controlHeight,
   },
   input: {
     borderWidth: 1,
@@ -69,7 +73,7 @@ export const s = StyleSheet.create({
     color: c.ink,
     backgroundColor: "white",
     minHeight: 46,
-    fontSize: 14,
+    fontSize: typeSize.body,
     fontFamily: font,
   },
   card: { backgroundColor: c.paper, borderWidth: 1, borderColor: c.line },

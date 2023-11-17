@@ -5,9 +5,11 @@ import React, {
   useId,
   useLayoutEffect,
   useRef,
+  useState,
 } from "react";
 import {
   KeyboardAvoidingView,
+  ActivityIndicator,
   Modal,
   Platform,
   Pressable,
@@ -18,7 +20,7 @@ import {
 } from "react-native";
 import Check from "lucide-react-native/icons/check";
 import X from "lucide-react-native/icons/x";
-import { c, s } from "../theme";
+import { c, s, controlHeight, typeSize } from "../theme";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export function Button({
@@ -28,6 +30,9 @@ export function Button({
   disabled = false,
   label,
   expanded,
+  variant,
+  busy = false,
+  busyLabel = "Working…",
 }: {
   children: ReactNode;
   onPress: () => void;
@@ -35,28 +40,40 @@ export function Button({
   disabled?: boolean;
   label?: string;
   expanded?: boolean;
+  variant?: "primary" | "secondary" | "danger" | "quiet";
+  busy?: boolean;
+  busyLabel?: string;
 }) {
+  const [hovered, setHovered] = useState(false);
+  const kind = variant ?? (outline ? "secondary" : "primary");
+  const filled = kind === "primary" || kind === "danger";
+  const unavailable = disabled || busy;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={busy ? busyLabel : label}
+      accessibilityState={{ disabled: unavailable, busy }}
+      {...(Platform.OS === "web" ? { "aria-busy": busy || undefined } : {})}
       aria-expanded={expanded}
-      disabled={disabled}
+      disabled={unavailable}
       onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       style={({ pressed }) => [
-        outline ? s.outline : s.button,
-        { maxWidth: "100%", opacity: disabled ? 0.5 : pressed ? 0.9 : 1 },
+        filled ? s.button : s.outline,
+        kind === "danger" && { backgroundColor: c.danger },
+        kind === "quiet" && { borderColor: "transparent", backgroundColor: "transparent" },
+        { maxWidth: "100%", minWidth: controlHeight, opacity: unavailable ? 0.55 : pressed ? 0.75 : hovered ? 0.88 : 1 },
       ]}
     >
+      {busy && <ActivityIndicator size="small" color={filled ? c.paper : c.green} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />}
       <Text
         style={[
-          outline
-            ? [s.text, { fontSize: 13, fontWeight: "600" }]
-            : s.buttonText,
+          filled ? s.buttonText : [s.text, { fontSize: typeSize.control, fontWeight: "600" }],
           { flexShrink: 1, textAlign: "center" },
         ]}
       >
-        {children}
+        {busy ? busyLabel : children}
       </Text>
     </Pressable>
   );
@@ -79,7 +96,8 @@ export function Chip({
       style={[
         s.outline,
         {
-          minHeight: 38,
+          minHeight: controlHeight,
+          minWidth: controlHeight,
           maxWidth: "100%",
           paddingVertical: 8,
           paddingHorizontal: 12,

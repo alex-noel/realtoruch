@@ -3,20 +3,25 @@
   "tasks": [
     {
       "id": "Q01",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
+      "status": "VERIFIED_LOCAL",
+      "assignee": "parent",
+      "branch": "codex/app-quality-2026-11",
       "commit": null,
-      "evidence": [],
-      "blocked_by": []
+      "evidence": [
+        "docs/verification/Q01-handoff.md"
+      ],
+      "blocked_by": [],
+      "reasoning_effort": "high"
     },
     {
       "id": "Q02",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6-luna",
       "branch": "codex/q02-field-semantics",
-      "commit": null,
-      "evidence": [],
+      "commit": "c3a8496",
+      "evidence": [
+        "docs/verification/Q02-handoff.md"
+      ],
       "blocked_by": [],
       "reasoning_effort": "medium"
     },
@@ -53,12 +58,13 @@
     },
     {
       "id": "Q06",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6-luna",
+      "branch": "codex/q06-filter-validation",
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "medium"
     },
     {
       "id": "Q07",
@@ -71,11 +77,13 @@
     },
     {
       "id": "Q08",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6.1-sol",
       "branch": "codex/q08-sort-selector",
-      "commit": null,
-      "evidence": [],
+      "commit": "00eb435",
+      "evidence": [
+        "docs/verification/Q08-handoff.md"
+      ],
       "blocked_by": [],
       "reasoning_effort": "medium"
     },
@@ -107,7 +115,7 @@
       "status": "VERIFIED_LOCAL",
       "assignee": "parent",
       "branch": "codex/app-quality-2026-11",
-      "commit": null,
+      "commit": "cc4a4c0",
       "evidence": [
         "docs/verification/Q11-handoff.md"
       ],
@@ -116,12 +124,13 @@
     },
     {
       "id": "Q12",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6.1-sol",
+      "branch": "codex/q12-gallery",
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "medium"
     },
     {
       "id": "Q13",
@@ -170,11 +179,13 @@
     },
     {
       "id": "Q18",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6.1-terra",
       "branch": "codex/q18-private-collections",
-      "commit": null,
-      "evidence": [],
+      "commit": "9c636cd",
+      "evidence": [
+        "docs/verification/Q18-handoff.md"
+      ],
       "blocked_by": [],
       "reasoning_effort": "high"
     },
@@ -198,12 +209,13 @@
     },
     {
       "id": "Q21",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6.1-terra",
+      "branch": "codex/q21-inbox",
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "high"
     },
     {
       "id": "Q22",

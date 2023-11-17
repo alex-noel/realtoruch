@@ -355,6 +355,7 @@ test("T20-TC01 primary screens and validation at normal and 200% text size", asy
         );
         await reachable(button(page, "Find a home →"));
         await reachable(button(page, "More filters"));
+        await page.screenshot({ path: info.outputPath(`q01-controls-${width}-${scale}.png`) });
         await button(page, "More filters").click();
         const filter = page.getByRole("dialog", { name: "A home that fits." });
         await filter.getByLabel("MIN RENT · PLN").fill("5000");
