@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import Response
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from .account_data import guard_account_write
 from .db import get_session
@@ -82,10 +82,10 @@ def referenced(session, asset):
         select(Advert).where(Advert.user_id == asset.user_id)))
 
 
-def delete_bytes(asset):
+def delete_bytes(asset, *, permanent=False):
     adapter = storage()
     for kind in ("display", "thumbnail"):
-        adapter.delete(key_for(asset, kind))
+        (adapter.fence if permanent else adapter.delete)(key_for(asset, kind))
 
 
 def decode(data, mime):
@@ -237,7 +237,12 @@ def cancel_key(key: str, claims=Depends(require_claims), session=Depends(get_ses
     else:
         row.state = "deleted"
     session.commit()
-    delete_bytes(row)
+    guard_account_write(session, user)
+    row = owned(session, user, row.id)
+    if row.digest is not None:
+        delete_bytes(row, permanent=True)
+        row.digest = None
+    session.commit()
     return asset_data(row)
 
 
@@ -257,7 +262,12 @@ def remove(asset_id: str, claims=Depends(require_claims), session=Depends(get_se
         raise HTTPException(409, "Remove media from adverts before deleting")
     row.state = "deleted"
     session.commit()
-    delete_bytes(row)
+    guard_account_write(session, user)
+    row = owned(session, user, row.id)
+    if row.digest is not None:
+        delete_bytes(row, permanent=True)
+        row.digest = None
+    session.commit()
     return asset_data(row)
 
 
@@ -307,28 +317,44 @@ def public_media(asset_id: str, kind: str, session=Depends(get_session)):
 def cleanup(session, cutoff=None):
     from .models import AccountClosure
     cutoff = cutoff or now() - timedelta(hours=24)
-    users = session.scalars(select(MediaAsset.user_id).where(MediaAsset.created_at < cutoff).distinct()).all()
+    # Digest is bound before any storage write; a deleted open-account row
+    # retains it until both permanent fences have been confirmed. Closed rows
+    # scrub digest immediately, so the account tombstone selects them instead.
+    pending_delete = (MediaAsset.state == "deleted") & or_(
+        MediaAsset.digest.is_not(None), MediaAsset.user_id.in_(select(AccountClosure.user_id)))
+    eligible = or_((MediaAsset.created_at < cutoff) & (MediaAsset.state != "deleted"), pending_delete)
+    users = session.scalars(select(MediaAsset.user_id).where(eligible).distinct()).all()
     session.rollback()
     for user in users:
-        try:
-            guard_account_write(session, user)
-        except HTTPException as exc:
-            if exc.status_code != 401:
-                raise
-            session.rollback()
-            guard_account_write(session, user, closing=True)
+        def lock_account():
+            try:
+                guard_account_write(session, user)
+            except HTTPException as exc:
+                if exc.status_code != 401:
+                    raise
+                session.rollback()
+                guard_account_write(session, user, closing=True)
+        lock_account()
         closed = session.get(AccountClosure, user) is not None
-        rows = list(session.scalars(select(MediaAsset).where(MediaAsset.user_id == user, MediaAsset.created_at < cutoff)))
-        to_delete = []
+        rows = list(session.scalars(select(MediaAsset).where(MediaAsset.user_id == user, eligible)))
+        ids = []
         for row in rows:
             if closed or row.state == "deleted" or not referenced(session, row):
                 row.state = "deleted"
-                to_delete.append(row)
+                ids.append(row.id)
         session.commit()
-        for row in to_delete:
-            delete_bytes(row)
+        lock_account()
+        closed = session.get(AccountClosure, user) is not None
+        for asset_id in ids:
+            row = session.get(MediaAsset, asset_id, populate_existing=True)
+            if not row:
+                continue
+            if closed or row.digest is not None:
+                delete_bytes(row, permanent=True)
             if closed:
                 session.delete(row)
+            else:
+                row.digest = None
         session.commit()
 
 

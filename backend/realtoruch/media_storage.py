@@ -58,6 +58,9 @@ class LocalStorage:
         except FileNotFoundError:
             pass
 
+    def fence(self, key):
+        self.delete(key)
+
 
 class GCSStorage:
     """Inject a bucket/client; creation and credentials are operator responsibilities."""
@@ -78,7 +81,32 @@ class GCSStorage:
 
     def delete(self, key):
         try:
-            self.bucket.blob(key).delete(timeout=10, retry=None)
+            blob = self.bucket.blob(key)
+            blob.reload(timeout=10, retry=None)
+            blob.delete(if_generation_match=blob.generation, timeout=10, retry=None)
         except Exception as exc:
             if getattr(exc, "code", None) != 404:
                 raise
+
+    def fence(self, key):
+        """Leave a zero-byte live generation to fence delayed create-only PUTs."""
+        for _ in range(3):
+            blob = self.bucket.blob(key)
+            try:
+                blob.reload(timeout=10, retry=None)
+            except Exception as exc:
+                if getattr(exc, "code", None) != 404:
+                    raise
+                generation = 0
+            else:
+                if blob.size == 0:
+                    return
+                generation = blob.generation
+            try:
+                blob.upload_from_string(b"", content_type="application/octet-stream",
+                                        if_generation_match=generation, timeout=10, retry=None)
+                return
+            except Exception as exc:
+                if getattr(exc, "code", None) not in (404, 412):
+                    raise
+        raise RuntimeError("Media storage fence conflicted repeatedly")

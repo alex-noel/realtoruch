@@ -520,6 +520,9 @@ def erase_account_data(user_id: str, session=Depends(get_session)):
     from .models import MediaAsset
     for asset in session.scalars(select(MediaAsset).where(MediaAsset.user_id == user_id)):
         asset.state = "deleted"
+        asset.idempotency_key = "!" + asset.id
+        asset.digest = None
+        asset.description = ""
     session.execute(delete(AdvertiserProfile).where(AdvertiserProfile.user_id == user_id))
 
     notifications = select(Notification.id).where(Notification.user_id == user_id)
@@ -550,7 +553,8 @@ def erase_account_data(user_id: str, session=Depends(get_session)):
     # Closure and media tombstones are durable before external storage deletion.
     # A failed delete raises so the account job retries; the tombstone fences writes.
     for asset in session.scalars(select(MediaAsset).where(MediaAsset.user_id == user_id)):
-        delete_bytes(asset)
+        delete_bytes(asset, permanent=True)
         session.delete(asset)
+    # A confirmed GCS marker permanently fences late create-only writes.
     session.commit()
     return {"erased": True}
