@@ -94,6 +94,98 @@ test('filter validation parses decimal commas and enforces rent-exclusive and ar
   expect(blocked).toEqual([]);
 });
 
+test('filter summaries remove one constraint and reset defaults in the current city', async ({ page, context }) => {
+  const apiOrigin = process.env.E2E_API_URL!;
+  const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
+  const blocked: string[] = [];
+  await context.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (url.protocol === 'data:' || (url.hostname === '127.0.0.1' && allowed.has(url.port))) return route.continue();
+    blocked.push(url.origin);
+    return route.abort('blockedbyclient');
+  });
+  const requests: URLSearchParams[] = [];
+  await context.route(url => url.origin === apiOrigin && url.pathname === '/v1/listings', async route => {
+    const url = new URL(route.request().url());
+    requests.push(url.searchParams);
+    return route.fulfill({
+      json: {
+        items: [], total: 0, page: Number(url.searchParams.get('page') || 1),
+        page_size: Number(url.searchParams.get('page_size') || 24), engine: 'fixture',
+      },
+      headers: { 'Access-Control-Allow-Origin': process.env.E2E_WEB_URL!, 'Access-Control-Allow-Credentials': 'true' },
+    });
+  });
+
+  await page.goto('/', { waitUntil: 'commit' });
+  await page.getByRole('textbox', { name: 'City', exact: true }).fill('Warszawa');
+  await page.getByRole('textbox', { name: 'Search neighborhood, street or keyword' }).fill('Old Town');
+  const initialSearch = page.waitForRequest(request => {
+    const url = new URL(request.url());
+    return url.pathname === '/v1/listings' && url.searchParams.get('city') === 'Warszawa' && url.searchParams.get('q') === 'Old Town';
+  });
+  await page.getByRole('button', { name: 'Find a home →' }).click();
+  await initialSearch;
+  await expect(page.getByText(/No homes match these filters in Warszawa/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'More filters' }).click();
+  const dialog = page.getByRole('dialog', { name: 'A home that fits.' });
+  await dialog.getByLabel('MIN RENT · PLN').fill('2000');
+  await dialog.getByLabel('MIN AREA · M²').fill('50');
+  await dialog.getByRole('button', { name: 'House', exact: true }).click();
+  const appliedFilters = page.waitForRequest(request => {
+    const url = new URL(request.url());
+    return url.pathname === '/v1/listings' && url.searchParams.get('min_price') === '2000' && url.searchParams.get('min_area') === '50';
+  });
+  await dialog.getByRole('button', { name: 'Show matching homes' }).click();
+  await appliedFilters;
+  await expect(page.getByRole('button', { name: 'Apartments ×', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Houses ×', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Search: Old Town ×/ })).toBeVisible();
+  await expect(page.getByText('Filters (4)', { exact: true })).toBeVisible();
+
+  const removeRent = page.getByRole('button', { name: /Base rent ≥.*PLN ×/ });
+  const remainingFilters = page.waitForRequest(request => {
+    const url = new URL(request.url());
+    return url.pathname === '/v1/listings' && url.searchParams.get('min_price') === null && url.searchParams.get('min_area') === '50';
+  });
+  await removeRent.click();
+  await remainingFilters;
+  await expect(page.getByRole('button', { name: /Base rent ≥.*PLN ×/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Houses ×', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Search: Old Town ×/ })).toBeVisible();
+  await expect(page.getByText('Filters (3)', { exact: true })).toBeVisible();
+
+  const resetSearch = page.waitForRequest(request => {
+    const url = new URL(request.url());
+    return url.pathname === '/v1/listings' && url.searchParams.get('city') === 'Warszawa' &&
+      url.searchParams.get('property_type') === 'apartment' && url.searchParams.get('page') === '1' &&
+      !url.searchParams.get('q') && !url.searchParams.get('min_area');
+  });
+  await page.getByRole('button', { name: 'Reset filters', exact: true }).click();
+  await resetSearch;
+  await expect(page.getByRole('textbox', { name: 'City', exact: true })).toHaveValue('Warszawa');
+  await expect(page.getByRole('textbox', { name: 'Search neighborhood, street or keyword' })).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Apartments ×', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Houses ×', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Search: Old Town ×/ })).toHaveCount(0);
+  await expect(page.getByText('Filters (0)', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'More filters' }).click();
+  const resetDialog = page.getByRole('dialog', { name: 'A home that fits.' });
+  await resetDialog.getByLabel('MIN RENT · PLN').fill('3000');
+  const resetFromDialog = page.waitForRequest(request => {
+    const url = new URL(request.url());
+    return url.pathname === '/v1/listings' && url.searchParams.get('city') === 'Warszawa' &&
+      url.searchParams.get('property_type') === 'apartment' && !url.searchParams.get('min_price');
+  });
+  await resetDialog.getByRole('button', { name: 'Reset filters', exact: true }).click();
+  await resetFromDialog;
+  await expect(resetDialog).toHaveCount(0);
+  await expect(page.getByText('Filters (0)', { exact: true })).toBeVisible();
+  expect(blocked).toEqual([]);
+  expect(requests.at(-1)?.get('city')).toBe('Warszawa');
+});
+
 function pagedHomes(): Listing[] {
   const image = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   return Array.from({ length: 49 }, (_, index) => ({
