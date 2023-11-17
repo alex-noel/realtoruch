@@ -10,9 +10,10 @@ period from runner coverage. Shorter pauses are below the detection threshold.
 The horizon is fixed at 72 hours. Any detected runner gap leaves fewer than 72
 hours of runner coverage and therefore an incomplete run even when the wall
 clock reaches the horizon. The runner neither fills missed slots nor silently
-extends the schedule.
+extends the schedule. A recorded request-budget violation stops collection
+across restarts, including when recovered from the last worker result.
 
-The live pin is `b3782cca0f4a05b788e4fd00656ef01327deb552`; the SHA-256 of
+The original soak pin is `b3782cca0f4a05b788e4fd00656ef01327deb552`. The SHA-256 of
 `config/sources.live.json` is
 `1340806cbb1e8e552a6ca9fac26a27835814e45ee68caa3f163b935a4f20fba3`.
 Only Kraków and Otodom, Gratka and Morizon are included. Each provider may check
@@ -37,50 +38,81 @@ initial observation and changes to other fields; observed rent changes and
 transitions to inactive are counted separately. Queue snapshots are counts of
 pending work in SQLite; the live soak does not run delivery or index workers.
 
-## Live evidence
+The reporter caps wall elapsed time at the fixed horizon. It reports saved
+runner coverage, recorded gaps and the unobserved tail after the last heartbeat.
+A heartbeat older than 120 seconds before the horizon checkpoint is stale.
+Expired slots still marked pending in the manifest appear as unobserved in the
+report and stay outside the accounted-interval denominator. Only the runner
+records missed slots on a later checkpoint. Reporting reads only the manifest.
+
+## Original live soak
 
 Run `krakow-72h-20261111` started at **2026-11-11 21:27:38.320642 UTC**.
-Its fixed target end is **2026-11-14 21:27:38.320642 UTC**.
-The first slot ended at **2026-11-11 21:28:19.729317 UTC**. At the initial
-report snapshot, the run had 41.41 seconds of observed coverage, one attempted
-and eligible slot, 11 pending, and zero deferred, missed, interrupted or gaps.
-The live result is **INCOMPLETE**.
+Its last heartbeat was **2026-11-12 05:54:21.566956 UTC**, before the fixed
+target end of **2026-11-14 21:27:38.320642 UTC**. The 17 November read-only
+report recorded **30,403.246314 seconds** (8 hours 27 minutes) covered and
+**228,796.753686 seconds** (63 hours 33 minutes) unobserved.
+The stale manifest has **2 of 12 eligible cycles**, 10 unobserved intervals,
+and zero recorded gaps, misses, deferrals or interruptions. Both completed
+cycles ended in under 42 seconds. The live result is **INCOMPLETE**.
 
-| Provider | Outcome | Discovery parsed | New details checked / ingested | Due rechecks | HTTP attempts (robots / retry) | Body bytes |
+| Provider | Cycle results | Discovery parsed | New details checked / ingested | Due rechecks | HTTP attempts (robots / retry) | Body bytes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Otodom | Succeeded | 1 | 2 / 2 | 0 | 4 (1 / 0) | 2,114,394 |
-| Gratka | Failed: discovery parser reported `unrecognized_page` | 0 | 0 / 0 | 0 | 2 (1 / 0) | 993,748 |
-| Morizon | Succeeded | 1 | 2 / 2 | 0 | 4 (1 / 0) | 2,235,301 |
+| Otodom | Two successes | 2 | 4 / 4 | 0 | 8 (2 / 0) | 4,242,383 |
+| Gratka | Two discovery `unrecognized_page` failures | 0 | 0 / 0 | 0 | 4 (2 / 0) | 1,986,866 |
+| Morizon | Two successes | 2 | 4 / 4 | 0 | 8 (2 / 0) | 4,457,534 |
 
-Gratka has no successful real check at this snapshot. The scheduler recorded
-the failure without an out-of-schedule retry. There were zero budget violations
-and zero lease losses. The isolated SQLite catalog used migrations 001, 005,
-006 and 008. From an empty baseline it grew to four homes, four source adverts,
-four initial history rows, and four event receipts. There were zero recorded
-rent changes, status changes or daily checkpoints. Pending work was four outbox
-and four alert events, with zero email or push deliveries. **No real removal was
-observed**; it remains unverified independently of the fixture drill.
+The isolated SQLite catalog used migrations 001, 005, 006 and 008. From an
+empty baseline it grew to eight homes, eight source adverts, eight initial
+history rows and eight event receipts. Pending work was eight outbox and eight
+alert events. There were zero budget violations, lease losses, email or push
+deliveries, recorded rent changes, status changes, or daily checkpoints. Live
+removal remains **UNVERIFIED**.
 
-To resume, run the same command in the clean detached checkout at the same pin:
-
-```sh
-/Users/alexnoel/Documents/ChatGPT/realtoruch/.venv/bin/python scripts/reliability.py soak --run-id krakow-72h-20261111 --commit b3782cca0f4a05b788e4fd00656ef01327deb552
-```
-
-The command runs in the foreground. The lock stays held by an in-flight
-collector if the scheduler process dies; let that collector exit before
-resuming. Do not edit the pinned checkout or open the run catalog for writing.
-The following command reads only the manifest and emits aggregate counts:
+The original checkout and manifest are preserved. From the repository root,
+the current reporter reads the original run with the following command.
 
 ```sh
-/Users/alexnoel/Documents/ChatGPT/realtoruch/.venv/bin/python scripts/soak_report.py .local/verification/T07/krakow-72h-20261111/manifest.json
+.venv/bin/python scripts/soak_report.py .local/worktrees/t07-live/.local/verification/T07/krakow-72h-20261111/manifest.json
 ```
 
-Private artifacts in the detached checkout:
-`.local/verification/T07/krakow-72h-20261111/{manifest.json,catalog.db,cycle-*.json,cycle-*.log}`.
-The child runs in that directory with an explicit clean environment, a stable
-run-owned phone key and file-only email settings. No real recipients are
-configured. Old one-shot flags retain their previous behavior and catalog.
+## Current-version live smoke
+
+A separate start on pin `9147daf80f57d0071f77f9dfde73118a9de6411f` used the
+same source config and request budgets. It recorded one eligible cycle from
+**2026-11-17 13:54:08.754074 UTC** through **2026-11-17 13:54:51.420520 UTC**,
+with **42.666446 seconds** of runner coverage. Each provider discovered one
+page, ingested two adverts and used four HTTP attempts, including one robots
+request. There were zero retries, errors, lease losses or budget violations.
+Gratka succeeded on this pin, which includes the mixed-route parser correction
+in `3db8927`. SQLite applied 001, 005, 006, 008, 009 and 010. The private
+catalog contains six source adverts, six history rows and four canonical homes.
+Live removal remains **UNVERIFIED**.
+
+The smoke used run ID `krakow-current-smoke-20261117` and the standard
+`scripts/reliability.py soak` command in the separate `t07-smoke-20261117`
+checkout. The wrapper terminated the scheduler after its saved cycle-01
+result. A redundant process-group cleanup then returned EPERM and caused the
+wrapper to exit 1. A separate process check found no matching runner. The
+completed cycle remains in its private manifest beside the catalog and logs.
+The smoke checks the newer parser, migrations and ingestion paths for one
+live cycle. The 72-hour gate remains **INCOMPLETE**.
+
+## Starting and resuming a reviewed run
+
+Start the bounded schedule in a clean checkout at the reviewed SHA, with an
+available host and network for the full 72 hours.
+
+```sh
+/Users/alexnoel/Documents/ChatGPT/realtoruch/.venv/bin/python scripts/reliability.py soak --run-id "$soak_run_id" --commit "$soak_commit"
+```
+
+The command runs in the foreground. Resume an interrupted run with the same ID
+and pin after any in-flight collector exits and releases the lock. Keep the
+checkout and catalog unchanged while the run is live. The artifacts are private
+under `.local/verification/T07/<run-id>/`. The child uses an explicit clean
+environment, a stable run-owned phone key and file-only email settings. The
+original one-shot flags retain their existing catalog.
 
 ## Separate deterministic drill
 

@@ -5,6 +5,7 @@ import json
 import multiprocessing
 import os
 import sys
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -127,7 +128,7 @@ def test_interruption_recovers_finished_sql_checkpoint_without_assuming_unknown_
     assert cycle["state"] == "interrupted"
     assert cycle["sources"]["otodom"]["checkpoint_id"] == "otodom-checkpoint"
     assert cycle["sources"]["gratka"]["checkpoint_id"] == "gratka-checkpoint"
-    report = runner.aggregate(manifest)
+    report = runner.aggregate(manifest, now=T0 + timedelta(seconds=3))
     assert report["providers"]["otodom"]["successful_checks"] == 1
     assert report["providers"]["gratka"]["unknown_network_totals"] == 1
     assert report["providers"]["morizon"]["unknown_provider_attempts"] == 1
@@ -159,11 +160,11 @@ def test_t07_tc05_tc06_deferrals_failures_gaps_and_removal_are_distinct(runner, 
     runner.observe(manifest, now, resumed=True)
     assert runner.advance(manifest, now) is None
 
-    summary = runner.aggregate(manifest)
+    summary = runner.aggregate(manifest, now=now)
     assert summary["status"] == "INCOMPLETE"
     assert summary["cycle_counts"] == {
         "attempted": 3, "eligible": 1, "completed": 1, "deferred": 2, "missed": 2,
-        "interrupted": 0, "running": 0, "pending": 7,
+        "interrupted": 0, "running": 0, "pending": 7, "unobserved": 0,
     }
     assert summary["providers"]["otodom"]["failed"] == 1
     assert summary["providers"]["otodom"]["deferred"] == 2
@@ -179,7 +180,8 @@ def test_t07_tc05_tc06_deferrals_failures_gaps_and_removal_are_distinct(runner, 
 
 def test_acceptance_requires_elapsed_horizon_and_success_for_each_source(runner, tmp_path):
     manifest = runner.new_manifest("clock-fixture", synthetic_pin(), T0)
-    for minute in range(72 * 60 + 1):
+    horizon = T0 + timedelta(hours=72)
+    for minute in range(72 * 60):
         now = T0 + timedelta(minutes=minute)
         runner.observe(manifest, now)
         cycle = runner.advance(manifest, now)
@@ -188,12 +190,122 @@ def test_acceptance_requires_elapsed_horizon_and_success_for_each_source(runner,
                 {"source": name, "status": "succeeded", "ingested": 1, "network_attempts": 3}
                 for name in SOURCES
             ], tmp_path)
-        if minute == 71 * 60:
-            assert runner.aggregate(manifest)["status"] == "INCOMPLETE"
-    assert runner.aggregate(manifest)["status"] == "VERIFIED"
+    assert runner.aggregate(manifest, now=horizon)["status"] == "INCOMPLETE"
+
+    late = horizon + timedelta(hours=1)
+    stalled = deepcopy(manifest)
+    runner.observe(stalled, late)
+    summary = runner.aggregate(stalled, now=late)
+    assert summary["wall_elapsed_seconds"] == 72 * 3600
+    assert summary["runner_covered_seconds"] == 72 * 3600 - 60
+    assert summary["runner_gaps"] == [{
+        "from": runner.timestamp(horizon - timedelta(minutes=1)),
+        "to": runner.timestamp(horizon),
+        "reason": "heartbeat_gap",
+    }]
+    assert summary["status"] == "INCOMPLETE"
+
+    runner.observe(manifest, horizon)
+    assert runner.aggregate(manifest, now=horizon)["status"] == "VERIFIED"
     for cycle in manifest["cycles"]:
         cycle["sources"]["gratka"]["ingested"] = 0
-    assert runner.aggregate(manifest)["status"] == "INCOMPLETE"
+    assert runner.aggregate(manifest, now=horizon)["status"] == "INCOMPLETE"
+
+
+def test_stale_manifest_shows_unobserved_tail_and_slots_without_rewriting_history(runner, tmp_path):
+    manifest = runner.new_manifest("stalled-fixture", synthetic_pin(), T0)
+    reports = [
+        {"source": name, "status": "succeeded", "ingested": 1, "network_attempts": 3}
+        for name in SOURCES
+    ]
+    completed(runner, manifest, runner.advance(manifest, T0), T0, reports, tmp_path)
+    second = T0 + runner.INTERVAL
+    completed(runner, manifest, runner.advance(manifest, second), second, reports, tmp_path)
+    last_heartbeat = T0 + timedelta(hours=8)
+    manifest["observed_through"] = runner.timestamp(last_heartbeat)
+    saved = deepcopy(manifest)
+
+    recent = runner.aggregate(manifest, now=last_heartbeat + timedelta(seconds=120))
+    assert recent["runner_heartbeat_status"] == "RECENT"
+    assert recent["runner_unobserved_seconds"] == 120
+    assert recent["cycle_counts"]["pending"] == 10
+    assert recent["cycle_counts"]["unobserved"] == 0
+    stale = runner.aggregate(manifest, now=last_heartbeat + timedelta(seconds=121))
+    assert stale["runner_heartbeat_status"] == "STALE"
+    assert stale["cycle_counts"]["pending"] == 10
+
+    deadline = T0 + 2 * runner.INTERVAL + runner.ADMISSION
+    assert runner.aggregate(manifest, now=deadline)["cycle_counts"]["unobserved"] == 0
+    expired = runner.aggregate(manifest, now=deadline + timedelta(seconds=1))
+    assert expired["cycle_counts"]["unobserved"] == 1
+    assert expired["cycle_counts"]["pending"] == 9
+    assert expired["intervals"][2]["reason"] == "admission_not_observed"
+    assert expired["intervals"][2]["sources"] == dict.fromkeys(SOURCES, "unobserved")
+
+    late = T0 + timedelta(days=5)
+    report = runner.aggregate(manifest, now=late)
+    assert report["status"] == "INCOMPLETE"
+    assert report["runner_heartbeat_status"] == "STALE"
+    assert report["reported_at"] == runner.timestamp(late)
+    assert report["observed_through"] == runner.timestamp(last_heartbeat)
+    assert report["wall_elapsed_seconds"] == 72 * 3600
+    assert report["runner_covered_seconds"] == 8 * 3600
+    assert report["runner_gap_seconds"] == 0
+    assert report["runner_unobserved_seconds"] == 64 * 3600
+    assert report["cycle_counts"] == {
+        "attempted": 2, "eligible": 2, "completed": 2, "deferred": 0, "missed": 0,
+        "interrupted": 0, "running": 0, "pending": 0, "unobserved": 10,
+    }
+    assert report["providers"]["gratka"]["success_fraction"] == {
+        "succeeded": 2, "accounted_intervals": 2, "scheduled_intervals": 12,
+    }
+    assert report["providers"]["gratka"]["unobserved"] == 10
+    assert "unknown_provider_attempts" not in report["providers"]["gratka"]
+    assert manifest == saved
+
+    runner.observe(manifest, late, resumed=True)
+    assert runner.advance(manifest, late) is None
+    resumed = runner.aggregate(manifest, now=late)
+    assert resumed["runner_heartbeat_status"] == "HORIZON_REACHED"
+    assert resumed["runner_covered_seconds"] == report["runner_covered_seconds"]
+    assert resumed["runner_unobserved_seconds"] == 0
+    assert resumed["runner_gap_seconds"] == 64 * 3600
+    assert resumed["cycle_counts"]["missed"] == 10
+    assert resumed["cycle_counts"]["unobserved"] == 0
+    assert resumed["providers"]["gratka"]["success_fraction"]["accounted_intervals"] == 12
+
+
+@pytest.mark.parametrize("persisted_state", ["completed", "running"])
+def test_resume_halts_after_a_persisted_or_recovered_budget_violation(
+    runner, tmp_path, monkeypatch, capsys, persisted_state,
+):
+    pin = synthetic_pin()
+    manifest = runner.new_manifest("over-budget", pin, T0)
+    cycle = runner.advance(manifest, T0)
+    reports = [
+        {"source": name, "status": "succeeded", "ingested": 1, "network_attempts": 19}
+        for name in SOURCES
+    ]
+    if persisted_state == "completed":
+        completed(runner, manifest, cycle, T0, reports, tmp_path)
+    else:
+        cycle.update(state="running", started_at=runner.timestamp(T0),
+                     counts_before=runner.catalog_snapshot(tmp_path)[0])
+        runner.atomic_write(runner.result_path(tmp_path, cycle), {"sources": reports})
+    path = tmp_path / "manifest.json"
+    runner.atomic_write(path, manifest)
+    now = T0 + runner.INTERVAL
+    monkeypatch.setattr(runner, "datetime", SimpleNamespace(now=lambda _: now))
+    monkeypatch.setattr(runner, "checked_pin", lambda _: pin)
+    monkeypatch.setattr(runner, "run_cycle", lambda *args: pytest.fail("started a cycle after budget violation"))
+
+    assert runner.run_soak(tmp_path, manifest["run_id"], pin, -1) == 1
+    saved = json.loads(path.read_text())
+    assert saved["cycles"][0]["state"] == "completed"
+    assert saved["cycles"][1]["state"] == "pending"
+    report = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert report["status"] == "FAILED"
+    assert report["budget_violations"] == 3
 
 
 class FetchClock:

@@ -18,7 +18,14 @@ from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from soak_report import aggregate, instant, timestamp
+from soak_report import (
+    ADMISSION,
+    HEARTBEAT,
+    HEARTBEAT_LIMIT,
+    aggregate,
+    instant,
+    timestamp,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = Path("config/sources.live.json")
@@ -26,9 +33,6 @@ RUNS = ROOT / ".local/verification/T07"
 CITY = "Kraków"
 SOURCES = ("otodom", "gratka", "morizon")
 INTERVAL = timedelta(hours=6)
-ADMISSION = timedelta(minutes=10)
-HEARTBEAT = 60
-HEARTBEAT_LIMIT = 2 * HEARTBEAT
 CYCLE_TIMEOUT = 15 * 60
 LIMITS = {
     "max_pages": 1, "max_listings": 2, "max_rechecks": 4,
@@ -206,15 +210,15 @@ def new_manifest(run_id, pin, now):
 
 def observe(manifest, now, *, resumed=False):
     previous = instant(manifest["observed_through"])
-    now = min(now, instant(manifest["ends_at"]))
+    through = min(now, instant(manifest["ends_at"]))
     if now < previous:
         raise ValueError("UTC clock precedes the saved heartbeat; wait for the clock to catch up")
-    if now > previous and (resumed or (now - previous).total_seconds() > HEARTBEAT_LIMIT):
+    if through > previous and (resumed or (now - previous).total_seconds() > HEARTBEAT_LIMIT):
         manifest["runner_gaps"].append({
-            "from": timestamp(previous), "to": timestamp(now),
+            "from": timestamp(previous), "to": timestamp(through),
             "reason": "runner_restart" if resumed else "heartbeat_gap",
         })
-    manifest["observed_through"] = timestamp(now)
+    manifest["observed_through"] = timestamp(through)
 
 
 def advance(manifest, now):
@@ -430,6 +434,9 @@ def run_soak(directory, run_id, pin, lock_fd):
                       "started_at": manifest["started_at"], "target_end": manifest["ends_at"]}), flush=True)
     while True:
         now = datetime.now(timezone.utc)
+        if any(cycle.get("budget_violations") for cycle in manifest["cycles"]):
+            print(json.dumps(aggregate(manifest, now=now)), flush=True)
+            return 1
         observe(manifest, now)
         cycle = advance(manifest, now)
         if cycle:
@@ -447,13 +454,10 @@ def run_soak(directory, run_id, pin, lock_fd):
             print(json.dumps({"cycle": cycle["id"], "state": cycle["state"],
                               "sources": {key: val["status"] for key, val in cycle["sources"].items()}}),
                   flush=True)
-            if cycle["budget_violations"]:
-                print(json.dumps(aggregate(manifest)), flush=True)
-                return 1
             continue
         checkpoint(path, manifest, now)
         if now >= instant(manifest["ends_at"]):
-            report = aggregate(manifest)
+            report = aggregate(manifest, now=now)
             print(json.dumps(report), flush=True)
             return int(report["status"] != "VERIFIED")
         next_due = min((instant(row["scheduled_at"]) for row in manifest["cycles"]
