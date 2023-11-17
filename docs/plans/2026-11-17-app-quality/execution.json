@@ -1,0 +1,370 @@
+{
+  "baseline_commit": "3bbe7b413c61e86095d1b5a6cce14c3c15bb9d83",
+  "tasks": [
+    {
+      "id": "Q01",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q02",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q03",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q04",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q05",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q06",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q07",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q08",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q09",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q10",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q11",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q12",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q13",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q14",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q15",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q16",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q17",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q18",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q19",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q20",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q21",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q22",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q23",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q24",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q25",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q26",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q27",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q28",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q29",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q30",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q31",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q32",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q33",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q34",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q35",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q36",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q37",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q38",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q39",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    },
+    {
+      "id": "Q40",
+      "status": "PLANNED",
+      "assignee": null,
+      "branch": null,
+      "commit": null,
+      "evidence": [],
+      "blocked_by": []
+    }
+  ],
+  "execution_start_revision": "3872e35",
+  "integration_branch": "codex/app-quality-2026-11",
+  "reuse_candidates": {
+    "Q32-Q34": "Owner media implementation in active Plan Polish rental listings app chat; inspect reviewed output before duplicating implementation."
+  }
+}

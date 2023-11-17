@@ -1,0 +1,1937 @@
+{
+  "schema_version": 1,
+  "plan": "App quality and completion",
+  "date": "2026-11-17",
+  "timezone": "Europe/Warsaw",
+  "baseline_commit": "3bbe7b413c61e86095d1b5a6cce14c3c15bb9d83",
+  "status": "PLANNED",
+  "task_count": 40,
+  "estimate_note": "Active implementation and focused validation ranges, not model runtime or a delivery promise; exclude external waits and a suggested 25 percent integration reserve.",
+  "tasks": [
+    {
+      "id": "Q01",
+      "slug": "visual-foundations",
+      "title": "Unify visual tokens and control states",
+      "group": "Foundations",
+      "priority": "P2",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "shared-ui"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/theme.ts",
+          "finding": "A small palette exists, but spacing, type sizes and interaction styling are repeated inline."
+        },
+        {
+          "path": "apps/mobile/src/components/UI.tsx",
+          "finding": "Buttons have pressed opacity but no common loading or destructive variant."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/theme.ts",
+        "apps/mobile/src/components/UI.tsx",
+        "apps/mobile/src/web.css"
+      ],
+      "change": "Keep the existing green, cream and square-corner identity. Define a small spacing/type scale and shared button variants, including visible busy, disabled, hover and focus states. Publish usage examples for later screen tasks; migrate only shared primitives here.",
+      "acceptance": [
+        "Existing consumers render without signature breakage; busy buttons announce progress and cannot submit twice.",
+        "Primary, secondary and destructive actions remain distinguishable without color alone, with at least 44 CSS px target boxes for shared controls.",
+        "Review representative controls at 320 and 1440 px and 200% text; existing focus and contrast checks pass."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Existing accessibility.spec.ts checks plus before/after control screenshots."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No new brand, font download, design-system dependency or whole-app style rewrite.",
+      "status": "PLANNED",
+      "file": "tasks/Q01-visual-foundations.md"
+    },
+    {
+      "id": "Q02",
+      "slug": "field-semantics",
+      "title": "Complete shared field semantics and inline errors",
+      "group": "Foundations",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "shared-ui"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/UI.tsx",
+          "finding": "Field only offers secure/numeric flags; email, password autocomplete, helper text and per-field errors are not modeled."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/UI.tsx",
+        "apps/mobile/tests/fields.test.tsx (new)"
+      ],
+      "change": "Add explicit input-purpose, autocomplete, submit, helper and error props with web/native mappings. Preserve existing call sites. Keep parsing separate from the visual field component.",
+      "acceptance": [
+        "Email, current-password and new-password modes expose the correct platform hints; labels remain programmatically associated.",
+        "Only invalid fields announce errors, using stable IDs; helper text remains available without marking valid fields invalid.",
+        "Keyboard submission and multiline behavior are distinct, and existing numeric inputs remain compatible."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "New focused field semantics tests; verify web DOM and native prop mapping."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q02-field-semantics.md"
+    },
+    {
+      "id": "Q03",
+      "slug": "actionable-api-errors",
+      "title": "Preserve safe actionable API errors",
+      "group": "Foundations",
+      "priority": "P1",
+      "estimate_hours": [
+        3,
+        4
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "api-client"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/api.ts",
+          "finding": "validationMessage recognizes only a few login strings and email/password/name fields."
+        },
+        {
+          "path": "backend/realtoruch/marketplace.py",
+          "finding": "Version conflicts, verification requirements and cooldowns already have distinct server failures."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/api.ts",
+        "apps/mobile/src/marketplaceApi.ts",
+        "apps/mobile/tests/session.test.ts",
+        "docs/contracts/client-errors.md (new)"
+      ],
+      "change": "Define a bounded route/status/known-error mapping for version conflict, verification required, rate limits, saved-search limits and validation fields. Expose structured recoverable categories to UI consumers without displaying arbitrary server text. Preserve the existing refresh and sign-out paths.",
+      "acceptance": [
+        "Known failures lead to useful recovery text and typed categories; unknown errors retain a safe generic fallback.",
+        "Server input echoes, HTML, credentials and private identifiers never enter displayed error text.",
+        "401 refresh/replay, cancellation and account-switch regression tests remain green; a 409 does not log out the user."
+      ],
+      "verification": [
+        "npm run test:unit -- tests/session.test.ts",
+        "Add response-fixture cases for each mapped error and malicious unknown text; npm run typecheck."
+      ],
+      "review": "strong: error disclosure and session boundary",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q03-actionable-api-errors.md"
+    },
+    {
+      "id": "Q04",
+      "slug": "scoped-feedback",
+      "title": "Make success and failure feedback visible and accessible",
+      "group": "Foundations",
+      "priority": "P2",
+      "estimate_hours": [
+        2,
+        4
+      ],
+      "depends_on": [
+        "Q01"
+      ],
+      "merge_locks": [
+        "app-feedback",
+        "shared-ui"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "finding": "One absolute toast handles both successes and errors; it can sit outside an active dialog and near the comparison tray."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/App.tsx (feedback only)",
+        "apps/mobile/src/components/UI.tsx",
+        "apps/mobile/e2e/accessibility.spec.ts"
+      ],
+      "change": "Introduce scoped feedback with polite success announcements, persistent actionable errors and an explicit dismiss control. Use an overlay-safe placement and an inline variant for dialogs. Migrate the root toast; later tasks own their individual pending operations.",
+      "acceptance": [
+        "Success is announced once without interrupting typing; errors remain until dismissed or resolved.",
+        "Feedback stays readable with comparison open, keyboard visible and 200% text; it does not cover essential controls.",
+        "Dialog-owned errors render inside the active dialog; dismissal has a named keyboard-accessible target."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Focused responsive/keyboard browser checks for toast, comparison and open-dialog combinations."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q04-scoped-feedback.md"
+    },
+    {
+      "id": "Q05",
+      "slug": "compact-discovery-shell",
+      "title": "Reduce discovery chrome and clarify mobile navigation",
+      "group": "Foundations",
+      "priority": "P2",
+      "estimate_hours": [
+        3,
+        4
+      ],
+      "depends_on": [
+        "Q01"
+      ],
+      "merge_locks": [
+        "app-shell",
+        "source-status"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "finding": "Large marketing header, search, provider status and navigation precede results; narrow navigation is icon-heavy."
+        },
+        {
+          "path": "apps/mobile/src/components/SourceStatus.tsx",
+          "finding": "Provider explanations are always expanded above the results."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/App.tsx (header/navigation only)",
+        "apps/mobile/src/components/SourceStatus.tsx",
+        "apps/mobile/tests/sourceStatus.test.ts"
+      ],
+      "change": "Use a compact mobile heading, concise navigation labels and a collapsible provider-details section. Keep search and result context prominent. Preserve the existing desktop identity, source-health semantics and discovery controls.",
+      "acceptance": [
+        "At 390×844 the search controls and result heading are reachable without scrolling through expanded provider explanations; 320 px and 200% text may grow naturally without overlap.",
+        "Every navigation item has a visible understandable label and announced selected state; current counts remain legible.",
+        "Unavailable/stale source warnings remain visible in the summary; expanding exposes exact timestamps and retry without implying complete coverage."
+      ],
+      "verification": [
+        "npm run test:unit -- tests/sourceStatus.test.ts",
+        "source-status.spec.ts and accessibility.spec.ts; capture 320/390/768/1440 px views."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q05-compact-discovery-shell.md"
+    },
+    {
+      "id": "Q06",
+      "slug": "filter-number-validation",
+      "title": "Fix decimal and range input in filters",
+      "group": "Discovery",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [
+        "Q02"
+      ],
+      "merge_locks": [
+        "dialogs-filter"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/Dialogs.tsx",
+          "finding": "FilterDialog.numeric strips commas, so 50,5 becomes 505; apply permits equal min/max rent despite an exclusive ceiling."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/Dialogs.tsx (FilterDialog)",
+        "apps/mobile/src/filterNumbers.ts (new)",
+        "apps/mobile/tests/filterNumbers.test.ts (new)",
+        "apps/mobile/e2e/boundaries.spec.ts"
+      ],
+      "change": "Keep raw editable text until validation. Parse documented comma or dot decimals without silent digit stripping; validate fields before applying. Keep integer PLN rent and decimal area rules consistent with the API.",
+      "acceptance": [
+        "Area 50,5 and 50.5 both mean 50.5; malformed, negative, nonfinite and partial inputs do not become another valid number.",
+        "Equal rent bounds are invalid because max rent is exclusive; equal area bounds remain valid because area bounds are inclusive.",
+        "Blank remains unset, errors identify the field, and correcting input clears errors without losing other draft values."
+      ],
+      "verification": [
+        "New pure numeric parsing cases; npm run typecheck.",
+        "boundaries.spec.ts includes comma input and exclusive/inclusive equal-bound cases."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "Do not change backend rent semantics or implement locale selection.",
+      "status": "PLANNED",
+      "file": "tasks/Q06-filter-number-validation.md"
+    },
+    {
+      "id": "Q07",
+      "slug": "active-filter-summary",
+      "title": "Expose active filters and predictable reset actions",
+      "group": "Discovery",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [
+        "Q06"
+      ],
+      "merge_locks": [
+        "app-discovery",
+        "dialogs-filter"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "finding": "Advanced values are mostly hidden behind a partial count; empty-state reset uses DEFAULT_FILTERS and changes the city."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/App.tsx (filter summary/empty state)",
+        "apps/mobile/src/components/Dialogs.tsx (FilterDialog)",
+        "apps/mobile/src/filterSummary.ts (new)"
+      ],
+      "change": "Show compact removable summaries of all applied constraints, including the default apartment property type. Define the badge as the number of deviations from DEFAULT_FILTERS, not the number of visible summaries. Label the reset action Reset filters: restore documented defaults while preserving the selected city and clearing text/polygon. Reuse one summary/count helper for discovery and saved searches.",
+      "acceptance": [
+        "Every applied constraint is represented truthfully, including the default apartment type, direct, zero commission and risk; the badge counts deviations from defaults and labels base rent accurately.",
+        "Removing one constraint preserves the others and resets pagination. Reset filters restores defaults, clears query/polygon and retains the city; the apartment summary remains visible and the deviation badge becomes zero.",
+        "No-results recovery resets constraints in the current city instead of jumping to Kraków; the UI explains that the default property type remains apartments."
+      ],
+      "verification": [
+        "New filter-summary helper cases; npm run typecheck.",
+        "Browser: apply several filters, remove one, reset filters, and recover an empty Warszawa result."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q07-active-filter-summary.md"
+    },
+    {
+      "id": "Q08",
+      "slug": "explicit-sort",
+      "title": "Replace sort cycling with an explicit choice",
+      "group": "Discovery",
+      "priority": "P2",
+      "estimate_hours": [
+        1,
+        2
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "app-discovery"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "finding": "Change sort order advances through a hidden array of choices rather than presenting a selection."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/App.tsx (sort control)",
+        "apps/mobile/e2e/boundaries.spec.ts"
+      ],
+      "change": "Offer the existing four named sort options in an accessible selector or small panel. Keep the current sort visible and preserve the existing search lifecycle.",
+      "acceptance": [
+        "Keyboard and touch can choose any option directly; current choice is announced.",
+        "Cancel makes no request; choosing a different sort resets page to one and retains filters.",
+        "Rapid changes cannot display a stale sort result; the UI works at 320 px."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Focused browser sort selection/cancel and latest-request checks."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q08-explicit-sort.md"
+    },
+    {
+      "id": "Q09",
+      "slug": "map-pagination",
+      "title": "Make pagination work in list split and map views",
+      "group": "Discovery",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "app-discovery"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "finding": "The pager is nested under showList, so map-only users cannot browse past the first 24 results."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/App.tsx (results/pager)",
+        "apps/mobile/e2e/boundaries.spec.ts"
+      ],
+      "change": "Extract one shared results pager outside the list-only branch. Preserve search snapshot rules and move focus/scroll to the result context after a deliberate page change.",
+      "acceptance": [
+        "A fixture with at least 49 homes can reach pages 1–3 in map, list and split views; marker and card IDs match the same page.",
+        "No pager operates on an obsolete result snapshot; loading and end pages disable the correct controls.",
+        "Switching view retains page and filters; closing a listing restores the previous browsing position."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Browser regression exercises next/previous in map-only mode and closing details on page two."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q09-map-pagination.md"
+    },
+    {
+      "id": "Q10",
+      "slug": "detail-hydration",
+      "title": "Show detail loading and recover locally from failures",
+      "group": "Discovery",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        4
+      ],
+      "depends_on": [
+        "Q03",
+        "Q04"
+      ],
+      "merge_locks": [
+        "app-detail",
+        "dialogs-detail"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "finding": "openHome displays card data, hydrates detail asynchronously and reports failure only through the global toast."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/App.tsx (openHome/detail state)",
+        "apps/mobile/src/components/Dialogs.tsx (DetailDialog)",
+        "apps/mobile/e2e/boundaries.spec.ts"
+      ],
+      "change": "Model summary/loading/loaded/failed/unavailable detail states. Keep the summary visible while history and contact data load, and offer retry inside the dialog. Retain detailRequest and account-generation fencing.",
+      "acceptance": [
+        "Transport failure shows local retry without pretending missing history/contact data is an empty successful result.",
+        "404/hidden/unavailable detail has truthful copy and does not leave stale contact actions active.",
+        "Open A, then B, and resolve A late: B remains open; close/unmount/account switch prevents stale completion."
+      ],
+      "verification": [
+        "Deterministic delayed/failing detail-response tests; npm run typecheck.",
+        "Browser opens detail offline, retries, switches homes and verifies modal feedback."
+      ],
+      "review": "strong: detail visibility and account race preservation",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q10-detail-hydration.md"
+    },
+    {
+      "id": "Q11",
+      "slug": "broken-photo-fallback",
+      "title": "Handle broken listing photos across all screens",
+      "group": "Discovery",
+      "priority": "P1",
+      "estimate_hours": [
+        1,
+        2
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "listing-photo"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/ListingCard.tsx",
+          "finding": "ListingPhoto has no web onError or native onError handling; detail and comparison reuse it."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/ListingCard.tsx (ListingPhoto)",
+        "apps/mobile/tests/listingPhoto.test.tsx (new)"
+      ],
+      "change": "Render a neutral accessible placeholder for failed URLs while preserving image dimensions and lazy loading. Reset failure state when the photo source changes.",
+      "acceptance": [
+        "404, rejected and undecodable URLs produce a stable placeholder wherever ListingPhoto is rendered in cards, detail and compare; missing-photo call sites are completed in Q12/Q14.",
+        "Changing from a broken to a working URL recovers; the fallback cannot trigger an endless retry loop.",
+        "Aspect ratio, alt text, lazy loading and native rendering remain intact without layout jumps."
+      ],
+      "verification": [
+        "New photo failure/source-change cases; npm run typecheck.",
+        "Browser screenshot with synthetic failed image URLs."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q11-broken-photo-fallback.md"
+    },
+    {
+      "id": "Q12",
+      "slug": "usable-photo-gallery",
+      "title": "Make listing galleries usable with many photos",
+      "group": "Discovery",
+      "priority": "P2",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [
+        "Q11"
+      ],
+      "merge_locks": [
+        "dialogs-detail"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/Dialogs.tsx",
+          "finding": "DetailDialog renders a full Photo N chip for every image and a single static image."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/Dialogs.tsx (gallery)",
+        "apps/mobile/e2e/accessibility.spec.ts"
+      ],
+      "change": "Add previous/next controls, a position count and a bounded thumbnail strip. Reset the selected photo when the listing changes and expose a no-photo state.",
+      "acceptance": [
+        "Zero, one and 30-photo fixtures remain usable at 320 px; missing photos have an explicit placeholder, and controls/selected position are labelled.",
+        "Web keyboard navigation works while gallery controls are focused without stealing keys from other inputs.",
+        "Only the displayed image and bounded nearby thumbnails load; failed images use Q11 recovery."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Browser one/30-photo, keyboard, source change and failed-photo checks."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No image editor, new gallery library, fullscreen zoom system or remote image transformation.",
+      "status": "PLANNED",
+      "file": "tasks/Q12-usable-photo-gallery.md"
+    },
+    {
+      "id": "Q13",
+      "slug": "listing-hierarchy",
+      "title": "Clarify listing costs and bring primary actions forward",
+      "group": "Discovery",
+      "priority": "P2",
+      "estimate_hours": [
+        3,
+        4
+      ],
+      "depends_on": [
+        "Q01",
+        "Q10"
+      ],
+      "merge_locks": [
+        "listing-card",
+        "dialogs-detail"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/ListingCard.tsx",
+          "finding": "Cards mix several small badges, price and secondary actions."
+        },
+        {
+          "path": "apps/mobile/src/components/Dialogs.tsx",
+          "finding": "Contact/save/report actions follow long source and history content."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/ListingCard.tsx (layout)",
+        "apps/mobile/src/components/Dialogs.tsx (DetailDialog layout)"
+      ],
+      "change": "Create a clear title, availability, base-rent and known-cost hierarchy. Place save and the appropriate contact/source action near the top; group detailed sources, risk explanations and observations below.",
+      "acceptance": [
+        "Unknown fees remain unknown, zero remains zero, and no partial total is labelled a complete monthly cost.",
+        "Imported adverts link to the provider; only eligible first-party adverts offer private messaging; unavailable states remain explicit.",
+        "Primary actions are reachable before long descriptions/history at 390 px, remain visible at 200% text and do not overlap content."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Review fixtures with zero/unknown fees, long text, multiple sources and delisted favorites; owner and accessibility browser specs."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No new pricing calculation, risk score, ownership-verification claim or sticky overlay that hides content.",
+      "status": "PLANNED",
+      "file": "tasks/Q13-listing-hierarchy.md"
+    },
+    {
+      "id": "Q14",
+      "slug": "comparison-editing",
+      "title": "Improve mobile comparison and selection management",
+      "group": "Discovery",
+      "priority": "P2",
+      "estimate_hours": [
+        3,
+        4
+      ],
+      "depends_on": [
+        "Q11",
+        "Q13"
+      ],
+      "merge_locks": [
+        "app-comparison",
+        "dialogs-compare"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/Dialogs.tsx",
+          "finding": "CompareDialog stacks complete home columns on narrow screens."
+        },
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "finding": "Comparison tray exposes count and clear, without named per-home removal; snapshots can age."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/App.tsx (comparison)",
+        "apps/mobile/src/components/Dialogs.tsx (CompareDialog)"
+      ],
+      "change": "Show named selections with individual removal, and use metric-first comparison on mobile so the same attribute is adjacent across homes. Explicitly label comparison snapshots or refresh them safely when opening.",
+      "acceptance": [
+        "One selection can be removed without clearing the others; maximum three remains enforced with visible feedback.",
+        "Long titles and source names do not misalign desktop rows; mobile can compare a metric across two/three homes without scrolling through whole cards. A no-photo placeholder keeps compared homes identifiable and aligned.",
+        "Unknown costs and inactive status remain explicit; any refresh failure preserves and labels the last snapshot."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Browser two/three-home selection, individual removal, long values and stale/error scenario."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q14-comparison-editing.md"
+    },
+    {
+      "id": "Q15",
+      "slug": "map-failure-recovery",
+      "title": "Recover from map loading and tile failures",
+      "group": "Discovery",
+      "priority": "P1",
+      "estimate_hours": [
+        3,
+        4
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "maps",
+        "app-discovery"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/DeferredPropertyMap.web.tsx",
+          "finding": "Suspense handles loading but not rejected map imports."
+        },
+        {
+          "path": "apps/mobile/src/components/PropertyMap.web.tsx",
+          "finding": "Leaflet import and tile layer have no visible failure recovery."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/DeferredPropertyMap.web.tsx",
+        "apps/mobile/src/components/PropertyMap.web.tsx",
+        "apps/mobile/src/components/PropertyMap.tsx",
+        "apps/mobile/src/components/MapDrawing.tsx (fallback integration only)",
+        "apps/mobile/src/App.tsx (map fallback view callback only)"
+      ],
+      "change": "Add a scoped map error boundary and observable map/tile failure states with retry and list fallback. Keep coordinate entry available in the owner editor when the basemap is unavailable.",
+      "acceptance": [
+        "Rejected chunk import and repeated tile failures show distinct actionable messages, not a blank map or zero-result claim.",
+        "Retry cleans up old map/listener instances; filters and drawn area survive; no repeated automatic network loop.",
+        "Discovery remains usable through list view, and owner pin coordinates can still be edited; attribution remains present when tiles render."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Local browser import/tile fault injection plus existing keyboard polygon regression; native adapter error smoke where supported."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q15-map-failure-recovery.md"
+    },
+    {
+      "id": "Q16",
+      "slug": "overlapping-map-homes",
+      "title": "Expose every home when map markers overlap",
+      "group": "Discovery",
+      "priority": "P2",
+      "estimate_hours": [
+        4,
+        6
+      ],
+      "depends_on": [
+        "Q09",
+        "Q15"
+      ],
+      "merge_locks": [
+        "maps"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/PropertyMap.web.tsx",
+          "finding": "One price marker is created per home with no collision handling."
+        },
+        {
+          "path": "apps/mobile/src/components/PropertyMap.tsx",
+          "finding": "Native markers also overlap for shared coordinates."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/PropertyMap.web.tsx",
+        "apps/mobile/src/components/PropertyMap.tsx",
+        "apps/mobile/src/components/mapGroups.ts (new)"
+      ],
+      "change": "Use a small shared grouping strategy for coincident/nearby markers and a selectable home list for each group. Keep grouping limited to the current page and preserve approximate-location wording.",
+      "acceptance": [
+        "A fixture with five homes at one point exposes all five by touch and through a keyboard-accessible web equivalent.",
+        "Selected home and page changes update groups correctly; drawing mode suppresses marker interactions as before.",
+        "No extra all-catalog fetch or coordinate jitter presents a fabricated precise address; group totals equal renderable active homes."
+      ],
+      "verification": [
+        "New pure grouping tests and browser group selection check; npm run typecheck.",
+        "Native adapter tests and JS export; installed-device interaction remains a separate gate."
+      ],
+      "review": "strong: shared map behavior and accessibility",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q16-overlapping-map-homes.md"
+    },
+    {
+      "id": "Q17",
+      "slug": "readable-rent-history",
+      "title": "Improve rent history and insights on small screens",
+      "group": "Discovery",
+      "priority": "P2",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "insights",
+        "dialogs-history"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/Insights.tsx",
+          "finding": "A fixed 800×290 chart labels every month; text rows already exist."
+        },
+        {
+          "path": "apps/mobile/src/components/Dialogs.tsx",
+          "finding": "Listing history silently slices to the latest eight observations."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/Insights.tsx",
+        "apps/mobile/src/components/Dialogs.tsx (history only)"
+      ],
+      "change": "Use readable bounded date ticks, a concise chart summary and clear sample/period labels. Retain the existing textual data and methodology. Label the eight-observation detail limit and optionally reveal more already-loaded rows.",
+      "acceptance": [
+        "Zero, one, many and flat-value series render without misleading percentage changes or unreadable phone labels.",
+        "Small samples and illustrative data remain prominent; period change is described as observed sample medians, not appreciation of the same homes.",
+        "History truncation is explicit; dates and PLN values are consistently readable; switching city resets an invalid district selection."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Deterministic zero/one/24-month/long-history fixtures at 320 and 1440 px."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No historical aggregation changes, new chart package or market-wide claim.",
+      "status": "PLANNED",
+      "file": "tasks/Q17-readable-rent-history.md"
+    },
+    {
+      "id": "Q18",
+      "slug": "private-section-loading",
+      "title": "Load saved homes searches and inbox independently",
+      "group": "Private journeys",
+      "priority": "P1",
+      "estimate_hours": [
+        3,
+        5
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "app-private-state"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "finding": "refreshAccount uses one Promise.all, preventing all three updates if any endpoint fails."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/App.tsx (refreshAccount and private views)",
+        "apps/mobile/src/hooks/useAccountCollections.ts (new)",
+        "apps/mobile/tests/accountCollections.test.ts (new)"
+      ],
+      "change": "Extract independent loading/data/error/retry state for favorites, searches and notifications. Keep the account-generation boundary and preserve loaded pages according to explicit merge rules.",
+      "acceptance": [
+        "Failure of each endpoint leaves the other two usable; successful empty and initial loading are distinguishable.",
+        "Retry preserves last successful data; stale data is labelled when a refresh fails, without silently clearing collections.",
+        "Account switch/sign-out clears old private data immediately; delayed old-account responses cannot populate the new account."
+      ],
+      "verification": [
+        "New controlled-response lifecycle tests; npm run typecheck.",
+        "Existing session, journey and account-switch browser regressions."
+      ],
+      "review": "strong: private state and session-generation races",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q18-private-section-loading.md"
+    },
+    {
+      "id": "Q19",
+      "slug": "saved-search-completion",
+      "title": "Resume saving after sign in and clarify saved searches",
+      "group": "Private journeys",
+      "priority": "P1",
+      "estimate_hours": [
+        3,
+        4
+      ],
+      "depends_on": [
+        "Q07",
+        "Q18"
+      ],
+      "merge_locks": [
+        "app-saved-searches"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "finding": "Guest Save search opens auth without a pending intent; the default name is hardcoded to Kraków and cards show little constraint detail."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/App.tsx (save-search intent/cards)",
+        "apps/mobile/src/filterSummary.ts (from Q07)",
+        "apps/mobile/e2e/journey.spec.ts"
+      ],
+      "change": "Capture the requested search when sign-in is required, then reopen its naming dialog after authentication. Derive a useful editable name from city/constraints, show the shared filter summary and add named deletion confirmation with per-row busy/error state.",
+      "acceptance": [
+        "A guest saving a Warszawa polygon search returns to that exact draft after login; cancellation makes no saved search.",
+        "Saving produces one record and preserves the silent existing-match baseline; displayed constraints equal persisted filters.",
+        "Cancel deletion preserves the search; confirmed deletion affects only the selected row and failures are retryable in place."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Browser guest/auth continuation, save baseline and deletion cancel/failure cases."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No rename/pause API, duplicate-search merging or alert-baseline changes.",
+      "status": "PLANNED",
+      "file": "tasks/Q19-saved-search-completion.md"
+    },
+    {
+      "id": "Q20",
+      "slug": "saved-home-feedback",
+      "title": "Make saved homes and favorite mutations predictable",
+      "group": "Private journeys",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [
+        "Q04",
+        "Q18",
+        "Q13"
+      ],
+      "merge_locks": [
+        "app-favorites",
+        "listing-card",
+        "dialogs-detail"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/App.tsx",
+          "finding": "favoriteBusy is a ref not surfaced by cards; saved view has little separation of active and unavailable homes."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/App.tsx (favorites)",
+        "apps/mobile/src/components/ListingCard.tsx (save control)",
+        "apps/mobile/src/components/Dialogs.tsx (DetailDialog save props/control only)"
+      ],
+      "change": "Expose per-home pending state on save actions in card/detail, with inline recovery. Add a small All/Available/Unavailable saved-home filter and useful loaded-empty guidance.",
+      "acceptance": [
+        "Repeated save taps issue one operation; failed save keeps the last confirmed state and offers retry.",
+        "Removing a home from Saved updates only after success; zero matching availability results differ from an empty saved collection.",
+        "Delisted favorites remain accessible; moderation-hidden visibility rules and account-switch fencing are unchanged."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Browser slow/failed favorite action and active/delisted saved-home fixtures; existing visibility backend tests if API behavior changes."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q20-saved-home-feedback.md"
+    },
+    {
+      "id": "Q21",
+      "slug": "notification-pagination",
+      "title": "Make notification pagination and read actions reliable",
+      "group": "Private journeys",
+      "priority": "P1",
+      "estimate_hours": [
+        4,
+        6
+      ],
+      "depends_on": [
+        "Q03",
+        "Q18"
+      ],
+      "merge_locks": [
+        "notification-api",
+        "app-private-state",
+        "notification-ui"
+      ],
+      "evidence": [
+        {
+          "path": "backend/realtoruch/api.py",
+          "finding": "Notification listing uses offset pagination."
+        },
+        {
+          "path": "apps/mobile/src/components/NotificationInbox.tsx",
+          "finding": "Older notifications is inferred from item counts, with no request guard; read actions have no per-item pending state."
+        }
+      ],
+      "allowed_scope": [
+        "backend/realtoruch/api.py (notification list only)",
+        "backend/realtoruch/schemas.py (notification DTO only)",
+        "apps/mobile/src/api.ts (notification method)",
+        "apps/mobile/src/types.ts",
+        "apps/mobile/src/App.tsx (notification handlers)",
+        "apps/mobile/src/components/NotificationInbox.tsx",
+        "docs/contracts/notifications.md (new)",
+        "apps/mobile/src/hooks/useAccountCollections.ts (from Q18)"
+      ],
+      "change": "Publish an additive stable cursor/has-more contract based on existing ordered fields, retaining compatibility for current page callers. Consume it with guarded load-more and per-item read state. Do not change notification creation or delivery.",
+      "acceptance": [
+        "Insert new notifications between pages, including equal timestamps: stable ID tie-breaking keeps every older matching ID reachable once. Refreshing the head preserves the loaded older tail and continuation cursor; end-of-list is authoritative.",
+        "Double-click load more issues one request; failure retains loaded rows and cursor, and retry recovers.",
+        "Mark-read failure leaves unread state intact; refresh and pagination never mark other rows read or leak another account."
+      ],
+      "verification": [
+        "Add focused API pagination tests with interleaved insertion and ownership cases.",
+        "npm run typecheck; focused inbox state/browser tests; run relevant real-service profile for the new query."
+      ],
+      "review": "strong: cursor contract, ownership and ordering",
+      "executor": "economy",
+      "out_of_scope": "No new notification categories, mark-all-read behavior or delivery/alert-rule rewrite.",
+      "status": "PLANNED",
+      "file": "tasks/Q21-notification-pagination.md"
+    },
+    {
+      "id": "Q22",
+      "slug": "email-preference-recovery",
+      "title": "Show truthful email preference loading and recovery",
+      "group": "Private journeys",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [
+        "Q18"
+      ],
+      "merge_locks": [
+        "notification-ui"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/NotificationInbox.tsx",
+          "finding": "Preference lookup errors are swallowed; defaults look like a confirmed disabled preference and can retain another user state."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/NotificationInbox.tsx (email preference)",
+        "apps/mobile/tests/notificationPreferences.test.tsx (new)"
+      ],
+      "change": "Represent unknown/loading/failed/disabled/confirmation-pending/enabled states explicitly. Show channel-specific retry and keep toggles unavailable until authoritative preferences load.",
+      "acceptance": [
+        "A failed lookup never claims email alerts are off; retry loads the true state.",
+        "Failed updates retain the last confirmed value and explain recovery; confirmation pending remains distinct from enabled.",
+        "Switching account clears old email/preferences immediately; late load or mutation responses cannot update the new account."
+      ],
+      "verification": [
+        "New delayed/error/account-switch preference tests; npm run typecheck.",
+        "Journey browser confirmation/resend/disable flow using file mail only."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q22-email-preference-recovery.md"
+    },
+    {
+      "id": "Q23",
+      "slug": "push-capability",
+      "title": "Check push capability before requesting permission",
+      "group": "Private journeys",
+      "priority": "P1",
+      "estimate_hours": [
+        3,
+        4
+      ],
+      "depends_on": [
+        "Q22"
+      ],
+      "merge_locks": [
+        "push-adapters",
+        "notification-ui"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/pushClient.web.ts",
+          "finding": "enablePush prompts permission before server configuration lookup; pushEnabled trusts a localStorage ID."
+        },
+        {
+          "path": "apps/mobile/src/pushClient.ts",
+          "finding": "Native enabled state also relies on a stored marker."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/pushClient.web.ts",
+        "apps/mobile/src/pushClient.ts",
+        "apps/mobile/src/components/NotificationInbox.tsx (device preference)"
+      ],
+      "change": "Check server and platform capability first. Reconcile stored markers with real permission/subscription state where the platform exposes it; represent unavailable, denied, available, pending and subscribed states accurately.",
+      "acceptance": [
+        "Disabled server configuration or unsupported browser causes no permission prompt; only an explicit user action requests permission.",
+        "A stale local marker does not falsely show working alerts; failed registration has a recoverable state without duplicate subscriptions.",
+        "Disable and logout retain revocation behavior; denied permission explains settings recovery without repeated prompts."
+      ],
+      "verification": [
+        "Fake permission/config/subscription adapter tests on both platforms; npm run typecheck.",
+        "Local browser smoke; no external push send is needed or claimed."
+      ],
+      "review": "strong: subscription ownership and logout behavior",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q23-push-capability.md"
+    },
+    {
+      "id": "Q24",
+      "slug": "auth-form-usability",
+      "title": "Finish sign in and password form interactions",
+      "group": "Accounts",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [
+        "Q02",
+        "Q03"
+      ],
+      "merge_locks": [
+        "dialogs-auth",
+        "account-dialog"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/Dialogs.tsx",
+          "finding": "AuthDialog uses generic fields and a 12-character disabled rule without inline explanation."
+        },
+        {
+          "path": "apps/mobile/src/components/AccountDialog.tsx",
+          "finding": "Reset and deletion password inputs use the same minimal Field."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/Dialogs.tsx (AuthDialog)",
+        "apps/mobile/src/components/AccountDialog.tsx (password fields)",
+        "apps/mobile/src/components/UI.tsx (password reveal if needed)"
+      ],
+      "change": "Apply Q02 field semantics, keyboard submit and accessible password reveal. Explain validation near inputs, with appropriate current/new-password hints. Keep authentication and account-enumeration behavior unchanged.",
+      "acceptance": [
+        "Password managers can distinguish sign-in, registration, reset and current-password confirmation; email uses the right keyboard/autofill.",
+        "Users understand why submission is unavailable; invalid fields are announced and focus moves sensibly after an unsuccessful submit.",
+        "Reveal does not log or persist passwords; register/reset/sign-in transitions clear irrelevant messages and keep existing link handling working."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Existing linking/session browser cases plus keyboard submit, reveal and validation checks."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q24-auth-form-usability.md"
+    },
+    {
+      "id": "Q25",
+      "slug": "account-panel-recovery",
+      "title": "Make account and device management recoverable",
+      "group": "Accounts",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        4
+      ],
+      "depends_on": [
+        "Q03",
+        "Q24"
+      ],
+      "merge_locks": [
+        "account-dialog"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/AccountDialog.tsx",
+          "finding": "Account and sessions are fetched together; failure leaves no explicit loading or section retry."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/AccountDialog.tsx (account/session sections)",
+        "apps/mobile/e2e/boundaries.spec.ts"
+      ],
+      "change": "Load identity and device sessions independently with section-specific retry. Separate account, security and destructive actions visually. Refresh verification status after returning from a verification link and keep device revocation feedback local.",
+      "acceptance": [
+        "A failed devices request does not hide account identity; a failed identity request cannot imply an empty verified account.",
+        "Current device is labelled; revocation disables only its operation and failure leaves the device available for retry.",
+        "Verification refresh and sign-out retry are reachable; loading/error states do not overlap navigation or deletion controls at 320 px."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Browser independent load failures, verification refresh, revoke failure and sign-out retry."
+      ],
+      "review": "strong: preserve device/session and deletion boundaries",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q25-account-panel-recovery.md"
+    },
+    {
+      "id": "Q26",
+      "slug": "account-export",
+      "title": "Expose the existing account data export",
+      "group": "Accounts",
+      "priority": "P1",
+      "estimate_hours": [
+        4,
+        6
+      ],
+      "depends_on": [
+        "Q03",
+        "Q25"
+      ],
+      "merge_locks": [
+        "account-dialog",
+        "api-client",
+        "native-dependencies"
+      ],
+      "evidence": [
+        {
+          "path": "backend/realtoruch/auth.py",
+          "finding": "/v1/auth/reauthenticate already issues a five-minute session-bound export token."
+        },
+        {
+          "path": "backend/realtoruch/account_data.py",
+          "finding": "The bounded private export exists, but api.ts and AccountDialog expose no download/share action."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/api.ts (export methods)",
+        "apps/mobile/src/components/AccountDialog.tsx (export)",
+        "apps/mobile/src/accountExport.web.ts (new)",
+        "apps/mobile/src/accountExport.ts (new)",
+        "apps/mobile/package.json (only required native adapter)",
+        "apps/mobile/package-lock.json",
+        "backend/tests/test_account_data.py"
+      ],
+      "change": "Add Export my data with password reauthentication, then a named JSON download on web or explicit share/save adapter on native. Reuse the existing export endpoint, limits and scope; use temporary files only when needed. Handle export-purpose-token 401 as export reauthentication, not global session invalidation; distinguish it from a truly invalid access session.",
+      "acceptance": [
+        "Wrong password, expired export-purpose token, offline failure and oversized export show distinct safe recovery. Expired export authorization re-prompts for export password without signing out a valid account; invalid/revoked access still follows existing session rules.",
+        "Password/token are cleared after use; private data/token never appear in URLs, logs, generic cache or persistent state; temporary files are cleaned after sharing/cancel.",
+        "Existing own-user/session export restrictions remain unchanged; web file content and native adapter cleanup are verified, with installed native share acceptance reported separately."
+      ],
+      "verification": [
+        "npm run typecheck; new export adapter tests and browser download-content assertion.",
+        "Run test_export_auth_scope_and_size and other export cases in backend/tests/test_account_data.py; add client regression proving purpose-token expiry preserves a valid session. Report required service prerequisites explicitly."
+      ],
+      "review": "strong: private data, token lifecycle and platform file cleanup",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q26-account-export.md"
+    },
+    {
+      "id": "Q27",
+      "slug": "rental-desk-boundaries",
+      "title": "Extract rental desk components for safe delegation",
+      "group": "Owner workflow",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        3
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "marketplace-shell"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/MarketplaceDialog.tsx",
+          "finding": "AdvertDesk, AdvertEditor and ReviewDesk share one large file, creating conflicts for parallel quality work."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/MarketplaceDialog.tsx",
+        "apps/mobile/src/components/AdvertDesk.tsx (new)",
+        "apps/mobile/src/components/AdvertEditor.tsx (new)",
+        "apps/mobile/src/components/ReviewDesk.tsx (new)"
+      ],
+      "change": "Move the three existing components to focused modules with small typed props and an explicit parent-close/dirty-state extension point. Preserve behavior and lazy marketplace loading; publish the component interfaces for following tasks.",
+      "acceptance": [
+        "Existing owner and moderation behavior is unchanged; no API or state-machine rewrite.",
+        "Editor, dashboard and review workers can modify separate files; shared shell ownership and props are documented.",
+        "The marketplace stays lazy-loaded and existing owner/messages browser cases pass."
+      ],
+      "verification": [
+        "npm run typecheck; existing owner.spec.ts and messages unit tests.",
+        "Review a move-oriented diff; no new tests are needed solely to mirror extraction."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No styling overhaul, unrelated App.tsx extraction or new router.",
+      "status": "PLANNED",
+      "file": "tasks/Q27-rental-desk-boundaries.md"
+    },
+    {
+      "id": "Q28",
+      "slug": "owner-form-validation",
+      "title": "Organize owner fields and match server validation",
+      "group": "Owner workflow",
+      "priority": "P1",
+      "estimate_hours": [
+        4,
+        5
+      ],
+      "depends_on": [
+        "Q02",
+        "Q03",
+        "Q06",
+        "Q27"
+      ],
+      "merge_locks": [
+        "owner-editor"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/MarketplaceDialog.tsx",
+          "finding": "Original AdvertEditor coerces numbers on each keystroke and accepts world coordinate bounds."
+        },
+        {
+          "path": "backend/realtoruch/marketplace.py",
+          "finding": "AdvertBody requires Poland coordinates, bounded numeric fields and specific text constraints."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/AdvertEditor.tsx (from Q27)",
+        "apps/mobile/src/ownerValidation.ts (new)",
+        "apps/mobile/src/components/coordinates.ts",
+        "apps/mobile/tests/ownerValidation.test.ts (new)"
+      ],
+      "change": "Group fields into Basics, Location, Costs and Photos without a new wizard framework. Preserve raw number strings and validate against current AdvertBody rules. Reuse Q06 parsing where semantics match. Replace comma-separated known amenities with labelled selections while retaining unknown stored values.",
+      "acceptance": [
+        "Validate required text, integer rent/rooms, decimal area, optional blank vs zero, negative floor bounds and server maxima; do not loosen the server.",
+        "Out-of-Poland coordinates fail inline even when globally valid; valid numeric edits remain possible without cursor/value jumps.",
+        "First invalid field is reachable from a summary; changing sections preserves text; existing unknown amenities are visible and not silently dropped."
+      ],
+      "verification": [
+        "New table-driven validation cases; npm run typecheck.",
+        "Owner browser valid/invalid save at 320 px, including 50,5 area and zero fees."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q28-owner-form-validation.md"
+    },
+    {
+      "id": "Q29",
+      "slug": "unsaved-owner-edits",
+      "title": "Protect unsaved advert and profile changes",
+      "group": "Owner workflow",
+      "priority": "P1",
+      "estimate_hours": [
+        3,
+        4
+      ],
+      "depends_on": [
+        "Q27",
+        "Q28"
+      ],
+      "merge_locks": [
+        "owner-editor",
+        "owner-dashboard",
+        "marketplace-shell"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/MarketplaceDialog.tsx",
+          "finding": "Back, mode switch and dialog close unmount editor/profile state without a dirty-state guard."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/AdvertEditor.tsx (from Q27)",
+        "apps/mobile/src/components/AdvertDesk.tsx (from Q27)",
+        "apps/mobile/src/components/MarketplaceDialog.tsx"
+      ],
+      "change": "Use one dirty-state contract for advert and profile edits. Intercept Back, mode changes, dialog close/Escape and native back. Offer Keep editing and Discard; offer Save only for a valid complete draft.",
+      "acceptance": [
+        "All deliberate exit paths protect changed content; pristine or successfully saved content exits normally.",
+        "Failed save retains all fields and dirty state; canceling discard restores focus to the editor.",
+        "No partial-draft autosave or publication is implied; sign-out/account change clears private state instead of preserving it for another account."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Owner browser close/Escape/tab/back/cancel-discard tests plus native back adapter check."
+      ],
+      "review": "strong: account reset must override draft preservation",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q29-unsaved-owner-edits.md"
+    },
+    {
+      "id": "Q30",
+      "slug": "owner-conflict-recovery",
+      "title": "Recover safely from concurrent advert edits",
+      "group": "Owner workflow",
+      "priority": "P1",
+      "estimate_hours": [
+        3,
+        5
+      ],
+      "depends_on": [
+        "Q03",
+        "Q29"
+      ],
+      "merge_locks": [
+        "owner-editor",
+        "owner-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "backend/realtoruch/marketplace.py",
+          "finding": "Version checks already reject stale edits with 409."
+        },
+        {
+          "path": "apps/mobile/src/marketplaceApi.ts",
+          "finding": "Client submits versions but has no conflict-reconciliation flow."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/AdvertEditor.tsx (from Q27)",
+        "apps/mobile/src/components/AdvertDesk.tsx (from Q27)",
+        "apps/mobile/src/marketplaceApi.ts (fetch latest advert only if needed)"
+      ],
+      "change": "On conflict, retain a snapshot of the local draft, fetch the latest permitted advert and show changed-field context. Let the user reload after confirming discard or explicitly select values to submit against the latest version.",
+      "acceptance": [
+        "Two-session edit test proves no automatic overwrite; latest server content is unchanged until an explicit reconciled save.",
+        "Local text and photos remain available during conflict recovery; a failed latest-version fetch is retryable.",
+        "A second concurrent update causes another recoverable conflict; withdrawn/hidden/deleted state is explained without bypassing server rules."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Real local API two-session owner browser scenario; existing optimistic-version backend regression."
+      ],
+      "review": "strong: optimistic concurrency and moderation state",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q30-owner-conflict-recovery.md"
+    },
+    {
+      "id": "Q31",
+      "slug": "owner-publish-preview",
+      "title": "Add a clear review step before publishing changes",
+      "group": "Owner workflow",
+      "priority": "P2",
+      "estimate_hours": [
+        3,
+        4
+      ],
+      "depends_on": [
+        "Q13",
+        "Q28",
+        "Q29",
+        "Q30"
+      ],
+      "merge_locks": [
+        "owner-editor",
+        "owner-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/MarketplaceDialog.tsx",
+          "finding": "Original owner flow saves forms and publishes from a card without a listing review preview."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/AdvertEditor.tsx (from Q27)",
+        "apps/mobile/src/components/AdvertDesk.tsx (from Q27)",
+        "apps/mobile/src/components/AdvertPreview.tsx (new)"
+      ],
+      "change": "Provide a read-only preview from the current draft before publishing or applying edits to a published advert. Summarize photos, location disclosure, base rent and known/unknown charges, and keep saving a draft separate from publication.",
+      "acceptance": [
+        "Preview matches the values actually submitted; returning to edit preserves content; preview does not call publish.",
+        "Unverified accounts receive a verification path that preserves the draft; no misleading verified-owner badge appears.",
+        "Publishing remains one explicit action with progress and local result feedback; conflict or failure keeps the preview/draft recoverable."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Owner browser draft→preview→edit→publish, unknown fees and unverified-account cases."
+      ],
+      "review": "standard",
+      "executor": "economy",
+      "out_of_scope": "No new backend advert states or payment flow. Q34 wires new upload states into this preview later.",
+      "status": "PLANNED",
+      "file": "tasks/Q31-owner-publish-preview.md"
+    },
+    {
+      "id": "Q32",
+      "slug": "owned-media-producer",
+      "title": "Implement bounded owned image upload and storage",
+      "group": "Owned photos",
+      "priority": "P1",
+      "estimate_hours": [
+        6,
+        9
+      ],
+      "depends_on": [],
+      "merge_locks": [
+        "media-schema",
+        "media-api",
+        "backend-dependencies"
+      ],
+      "evidence": [
+        {
+          "path": "docs/plans/2026-11-12-two-week-sprint/tasks/T23-owned-media-storage.md",
+          "finding": "T23 remains unimplemented; current adverts store external HTTPS links."
+        },
+        {
+          "path": "backend/realtoruch/marketplace.py",
+          "finding": "Images are currently HTTPS URLs, maximum 30."
+        }
+      ],
+      "allowed_scope": [
+        "backend/realtoruch/media.py (new)",
+        "backend/realtoruch/media_storage.py (new)",
+        "backend/realtoruch/models.py (MediaAsset)",
+        "backend/realtoruch/settings.py (media config)",
+        "backend/realtoruch/api.py (upload route/body limit)",
+        "backend/realtoruch/migrations.py (new hook)",
+        "infra/sql/011_media_assets.sql (new)",
+        "infra/sql/migrations.json",
+        "backend/pyproject.toml",
+        "backend/requirements-runtime.lock",
+        "backend/requirements-dev.lock",
+        "backend/tests/test_media.py (new)",
+        "docs/contracts/media.md (new)"
+      ],
+      "change": "Publish the media DTO/state/error/idempotency contract first. Implement verified-owner upload/status/delete and a run-owned local storage adapter; define a fakeable remote adapter interface. Keep the feature disabled until Q33 lifecycle and Q34 UI integration are reviewed. Carry forward T23 limits: JPEG/PNG/WebP, 10 MiB streamed, 20 MP decoded, orientation normalization, metadata stripping, thumbnail and display rendition up to 2048 px. Before applying migration 011, review the complete Q33 attachment/cleanup relations and freeze them in this contract. Pin visibility: draft previews owner-only; validated published derivatives follow listing visibility; withdrawn/saved-delisted reads follow the existing detail authorization; hidden and erased assets deny public retrieval. Never expose originals. Any later schema addition uses an integrator-assigned forward migration and SQLite hook.",
+      "acceptance": [
+        "Reject spoofed types, animations, SVG, oversized/chunked bodies and decompression bombs before readiness; originals never become public.",
+        "Opaque IDs and idempotency isolate owners; upload/delete/status enforce closure/ownership, and paths/errors reveal no filesystem or private metadata.",
+        "Migration 011 supports fresh/upgrade SQLite and PostgreSQL without changing applied checksums; local fixtures demonstrate bounded processing and clean failure."
+      ],
+      "verification": [
+        "New media validation/ownership/idempotency tests using generated images; migration registry validation.",
+        "make verify-services for actual roles/migrations when routes are integrated; report missing prerequisites explicitly."
+      ],
+      "review": "strong: upload processing, auth, resource bounds and migrations",
+      "executor": "experienced",
+      "out_of_scope": "No bucket/CDN provisioning, arbitrary-URL proxying, portal-photo copying or public media rollout. Q33 owns attachment, retrieval visibility and lifecycle cleanup.",
+      "status": "PLANNED",
+      "file": "tasks/Q32-owned-media-producer.md"
+    },
+    {
+      "id": "Q33",
+      "slug": "owned-media-lifecycle",
+      "title": "Integrate media attachment privacy and erasure",
+      "group": "Owned photos",
+      "priority": "P1",
+      "estimate_hours": [
+        6,
+        9
+      ],
+      "depends_on": [
+        "Q32"
+      ],
+      "merge_locks": [
+        "media-api",
+        "marketplace-backend",
+        "account-erasure",
+        "database-grants"
+      ],
+      "evidence": [
+        {
+          "path": "backend/realtoruch/marketplace.py",
+          "finding": "Existing publish/edit/withdraw lifecycle has no owned-asset attachment."
+        },
+        {
+          "path": "backend/realtoruch/account_data.py",
+          "finding": "Export and account-closure fencing cover current entities but no owned media."
+        },
+        {
+          "path": "backend/realtoruch/api.py",
+          "finding": "erase_account_data is the rental-account erasure entry point that must remove owned media."
+        }
+      ],
+      "allowed_scope": [
+        "backend/realtoruch/media.py (from Q32)",
+        "backend/realtoruch/media_storage.py (from Q32)",
+        "backend/realtoruch/marketplace.py",
+        "backend/realtoruch/account_data.py",
+        "backend/realtoruch/models.py (only agreed media relations)",
+        "backend/realtoruch/worker.py (cleanup wiring)",
+        "infra/sql (narrow role grants)",
+        "backend/tests/test_media.py (from Q32)",
+        "backend/tests/test_account_data.py",
+        "docs/contracts/media.md (from Q32)",
+        "backend/realtoruch/api.py (erase_account_data and media retrieval wiring only)"
+      ],
+      "change": "Attach only ready owned asset IDs, preserving order and existing HTTPS-link compatibility within a combined 30-image cap. Define private-draft preview and validated public derivative access, withdrawal/delisting/moderation behavior, deletion and 24-hour orphan cleanup. Extend export/erasure and role grants. Consume the complete schema and visibility contract frozen by Q32; if a new field is still needed, obtain an integrator-assigned forward migration and SQLite hook. Never edit applied migration 011.",
+      "acceptance": [
+        "Cross-owner/pending/deleted attachments fail atomically; public DTOs expose only authorized derivatives and no internal asset metadata.",
+        "Deletion/closure racing upload or attach cannot resurrect media; repeated cleanup is safe and never removes an attached valid asset.",
+        "Public, draft, withdrawn, saved-delisted and hidden visibility policies are explicit and tested; export/erasure and restricted-role PostgreSQL tests cover media."
+      ],
+      "verification": [
+        "New controlled-order media/closure tests, compatibility fixtures and actual-role service tests.",
+        "make verify-services; relevant account/marketplace regressions; record migration and recovery implications."
+      ],
+      "review": "strong: attachment transactions, visibility, erasure and least privilege",
+      "executor": "experienced",
+      "out_of_scope": "Do not rewrite canonical identity, retained saved-home semantics or existing image URLs; no cloud deployment.",
+      "status": "PLANNED",
+      "file": "tasks/Q33-owned-media-lifecycle.md"
+    },
+    {
+      "id": "Q34",
+      "slug": "owner-photo-uploader",
+      "title": "Finish photo picking upload ordering and retry",
+      "group": "Owned photos",
+      "priority": "P1",
+      "estimate_hours": [
+        5,
+        7
+      ],
+      "depends_on": [
+        "Q11",
+        "Q29",
+        "Q30",
+        "Q31",
+        "Q33"
+      ],
+      "merge_locks": [
+        "owner-editor",
+        "media-client",
+        "native-dependencies"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/MarketplaceDialog.tsx",
+          "finding": "Current editor only accepts newline-separated photo URLs."
+        },
+        {
+          "path": "docs/plans/2026-11-12-two-week-sprint/tasks/T24-owner-photo-uploader.md",
+          "finding": "The prior uploader scope remains unfinished."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/AdvertEditor.tsx (from Q27)",
+        "apps/mobile/src/components/AdvertPreview.tsx (from Q31)",
+        "apps/mobile/src/components/PhotoUploader.tsx (new)",
+        "apps/mobile/src/mediaClient.ts (new)",
+        "apps/mobile/src/marketplaceApi.ts (media DTO)",
+        "apps/mobile/package.json",
+        "apps/mobile/package-lock.json"
+      ],
+      "change": "Consume the reviewed Q32/Q33 contract with web/native picker adapters, per-photo queued/uploading/ready/failed states, retry/cancel and accessible reorder/remove. Limit active uploads to three. Show the first ready ordered image as the cover while retaining legacy links visibly.",
+      "acceptance": [
+        "Only ready owned IDs attach in selected order; unresolved uploads prevent publication with clear next actions.",
+        "Permission denial, invalid files, timeout, cancel and conflict preserve other photos/text; retries reuse identity and late canceled responses cannot attach.",
+        "Keyboard reorder/remove works at 320 px; previews/listeners/temp files are cleaned on exit and account change."
+      ],
+      "verification": [
+        "New uploader state/adapter tests and complete local owner upload→order→save→publish browser flow.",
+        "npm run typecheck and native JS exports; installed photo-picker/permission checks remain explicitly separate."
+      ],
+      "review": "strong: media contract, cancellation and account lifecycle",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q34-owner-photo-uploader.md"
+    },
+    {
+      "id": "Q35",
+      "slug": "owner-dashboard-status",
+      "title": "Clarify advert status and appeal progress",
+      "group": "Owner workflow",
+      "priority": "P1",
+      "estimate_hours": [
+        3,
+        5
+      ],
+      "depends_on": [
+        "Q03",
+        "Q25",
+        "Q27",
+        "Q31"
+      ],
+      "merge_locks": [
+        "owner-dashboard",
+        "marketplace-backend"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/MarketplaceDialog.tsx",
+          "finding": "Original cards show minimal state, allow predictably rejected actions and hide appeal submission progress."
+        },
+        {
+          "path": "backend/realtoruch/marketplace.py",
+          "finding": "Own-advert responses omit pending appeal status although duplicate appeals return 409."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/AdvertDesk.tsx (from Q27)",
+        "apps/mobile/src/marketplaceApi.ts (own-advert DTO)",
+        "backend/realtoruch/marketplace.py (own-advert projection only)",
+        "backend/tests/test_marketplace.py"
+      ],
+      "change": "Add independent profile/adverts loading and retry, last-saved time, meaningful draft/published/withdrawn/hidden actions and named withdrawal confirmation. Project a minimal own-advert appeal state from existing records; show submitted/pending/resolved feedback without exposing review contents.",
+      "acceptance": [
+        "Loading is not shown as an empty dashboard; a failed profile request does not discard a successfully loaded advert list.",
+        "Hidden adverts offer the appropriate appeal path rather than a publish action that must fail; pending appeals cannot be resubmitted after refresh.",
+        "Withdrawal cancellation changes nothing; successful actions announce the affected advert; appeal state is visible only to its owner."
+      ],
+      "verification": [
+        "Focused own-advert/appeal authorization backend tests; npm run typecheck.",
+        "Owner browser independent load errors, states, withdraw cancel and appeal refresh."
+      ],
+      "review": "strong: owner-only appeal projection and visibility",
+      "executor": "economy",
+      "out_of_scope": "No advert lifecycle, moderation-decision or billing changes beyond the minimal owner-only appeal projection; preserve existing authorization and hide/restore rules.",
+      "status": "PLANNED",
+      "file": "tasks/Q35-owner-dashboard-status.md"
+    },
+    {
+      "id": "Q36",
+      "slug": "conversation-presentation",
+      "title": "Improve conversation overview and reading context",
+      "group": "Messages and moderation",
+      "priority": "P2",
+      "estimate_hours": [
+        3,
+        4
+      ],
+      "depends_on": [
+        "Q01",
+        "Q04"
+      ],
+      "merge_locks": [
+        "messages-presentation"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/MessagesPanel.tsx",
+          "finding": "Conversation rows omit existing updated_at/blocked fields and the composer follows the full history."
+        },
+        {
+          "path": "apps/mobile/src/marketplaceApi.ts",
+          "finding": "Conversation already includes activity time, unread count and block state."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/MessagesPanel.tsx",
+        "apps/mobile/tests/messages.test.tsx"
+      ],
+      "change": "Use existing metadata for readable last-activity, unread and blocked states. Keep selected property context and a reachable composer/new-message action on narrow screens. Preserve the measured message viewport rather than replacing the read-state model.",
+      "acceptance": [
+        "Overview shows meaningful status without needing a new last-message-preview API; long titles and empty inbox remain usable.",
+        "New arrivals never force scrolling away from history; offscreen arrivals stay unread until displayed.",
+        "Keyboard/composer layout and history paging preserve visible-message acknowledgements, retry IDs and foreground polling behavior."
+      ],
+      "verification": [
+        "npm run test:unit -- tests/messages.test.tsx; npm run typecheck.",
+        "Owner/messages browser journey with long thread, offscreen arrival and narrow keyboard layout."
+      ],
+      "review": "strong: displayed-message/read-cursor regression",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q36-conversation-presentation.md"
+    },
+    {
+      "id": "Q37",
+      "slug": "message-draft-exit",
+      "title": "Protect message drafts and describe their lifetime honestly",
+      "group": "Messages and moderation",
+      "priority": "P1",
+      "estimate_hours": [
+        2,
+        4
+      ],
+      "depends_on": [
+        "Q27",
+        "Q29"
+      ],
+      "merge_locks": [
+        "messages-state",
+        "marketplace-shell"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/messagesState.ts",
+          "finding": "Drafts are an in-memory Map; some error text says they are saved."
+        },
+        {
+          "path": "apps/mobile/src/components/MarketplaceDialog.tsx",
+          "finding": "A new InboxModel is created on each dialog mount, so close/reopen loses drafts."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/messagesState.ts",
+        "apps/mobile/src/components/MarketplaceDialog.tsx (message exit only)",
+        "apps/mobile/src/components/MessagesPanel.tsx (draft copy)",
+        "apps/mobile/tests/messages.test.tsx"
+      ],
+      "change": "Keep the current in-dialog thread-switch draft behavior and add a deliberate discard/keep-editing exit guard. State that drafts are kept while this rental desk stays open. Cover parent close/Escape/native back without adding plaintext persistence. Extend the Q27/Q29 shared dirty-state and exit contract; do not introduce a competing nested close guard.",
+      "acceptance": [
+        "Closing with any unsent draft requires an explicit discard or returns to editing; confirming discard closes cleanly.",
+        "Sign-out/account switch clears drafts and cannot show another account private text; this reset overrides the ordinary exit guard.",
+        "Unchanged-text retries preserve their client message IDs; failed-send text remains editable and the UI makes no durable-save promise."
+      ],
+      "verification": [
+        "Existing messages unit tests plus close/discard/account-switch cases; npm run typecheck.",
+        "Browser draft→thread switch→close cancel→close discard and native back adapter test."
+      ],
+      "review": "strong: private drafts and retry identity",
+      "executor": "economy",
+      "out_of_scope": "No localStorage/AsyncStorage message-body persistence or new server draft entity.",
+      "status": "PLANNED",
+      "file": "tasks/Q37-message-draft-exit.md"
+    },
+    {
+      "id": "Q38",
+      "slug": "moderation-review-context",
+      "title": "Make moderation decisions contextual and deliberate",
+      "group": "Messages and moderation",
+      "priority": "P1",
+      "estimate_hours": [
+        3,
+        5
+      ],
+      "depends_on": [
+        "Q03",
+        "Q27"
+      ],
+      "merge_locks": [
+        "moderation-ui"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/src/components/MarketplaceDialog.tsx",
+          "finding": "Original ReviewDesk shares one reason between all reports and sends hide/restore/merge/split immediately."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/src/components/ReviewDesk.tsx (from Q27)",
+        "apps/mobile/src/marketplaceApi.ts (existing report fields only)",
+        "apps/mobile/e2e/owner.spec.ts"
+      ],
+      "change": "Use per-report reason state, explicit loading/error/empty states and selected report context. Show report age from the existing response. Confirm consequential actions with the affected home and source/target details; handle already-reviewed conflicts by refreshing safely.",
+      "acceptance": [
+        "Editing one report reason never changes another; failed decisions preserve the intended row input.",
+        "Hide/restore/merge/split confirmation names exactly what changes; cancellation makes no request and submission is single-flight.",
+        "401/403/409 produce safe recovery; normal users still cannot access the queue or grant themselves moderation; identity correction semantics remain unchanged."
+      ],
+      "verification": [
+        "npm run typecheck",
+        "Local moderator/normal-user browser scenarios and existing moderation/identity regression checks for unchanged behavior."
+      ],
+      "review": "strong: moderation action targeting and identity correction boundaries",
+      "executor": "economy",
+      "out_of_scope": "No new merge/split algorithm, automatic decision, report-content disclosure or queue pagination in this task.",
+      "status": "PLANNED",
+      "file": "tasks/Q38-moderation-review-context.md"
+    },
+    {
+      "id": "Q39",
+      "slug": "visual-browser-regressions",
+      "title": "Add focused visual and cross-browser quality coverage",
+      "group": "Acceptance",
+      "priority": "P1",
+      "estimate_hours": [
+        4,
+        6
+      ],
+      "depends_on": [
+        "Q01",
+        "Q02",
+        "Q03",
+        "Q04",
+        "Q05",
+        "Q06",
+        "Q07",
+        "Q08",
+        "Q09",
+        "Q10",
+        "Q11",
+        "Q12",
+        "Q13",
+        "Q14",
+        "Q15",
+        "Q16",
+        "Q17",
+        "Q18",
+        "Q19",
+        "Q20",
+        "Q21",
+        "Q22",
+        "Q23",
+        "Q24",
+        "Q25",
+        "Q26",
+        "Q27",
+        "Q28",
+        "Q29",
+        "Q30",
+        "Q31",
+        "Q32",
+        "Q33",
+        "Q34",
+        "Q35",
+        "Q36",
+        "Q37",
+        "Q38"
+      ],
+      "merge_locks": [
+        "browser-tests",
+        "frontend-test-dependencies"
+      ],
+      "evidence": [
+        {
+          "path": "apps/mobile/playwright.config.ts",
+          "finding": "Both projects use Chromium, one at a mobile-sized viewport."
+        },
+        {
+          "path": "apps/mobile/e2e/accessibility.spec.ts",
+          "finding": "Good geometry/focus/text checks exist, but reviewed screenshot baselines do not."
+        }
+      ],
+      "allowed_scope": [
+        "apps/mobile/playwright.config.ts",
+        "apps/mobile/e2e/run.py",
+        "apps/mobile/e2e/quality.spec.ts (new)",
+        "apps/mobile/e2e/quality.spec.ts-snapshots (new)",
+        "docs/verification/Q39-quality.md (new)"
+      ],
+      "change": "Add a small deterministic screenshot set for discovery, detail, saved homes, owner editor and messages at 390 and 1440 px, reviewed before baselining. Add a tagged WebKit/Firefox functional smoke profile for discovery/filter, sign-in/restore, detail, saved action and one owner/message flow. Keep existing performance cases Chromium-only.",
+      "acceptance": [
+        "Use synthetic catalog, local photos/tiles and fixed clock; screenshots contain no real accounts, tokens or mail.",
+        "A deliberately introduced overlap fails the baseline check; revert the fault before handoff; never bulk-accept diffs just to pass.",
+        "Browser binaries and results are reported honestly; missing engines are blocked, not passed or silently skipped; responsive Chromium is not described as installed mobile."
+      ],
+      "verification": [
+        "Run the new focused profile on installed Chromium/WebKit/Firefox; npm run typecheck.",
+        "Run existing accessibility suite for 320/390/768/1440 px and 200% text, retaining keyboard polygon and modal checks."
+      ],
+      "review": "strong: visual baseline approval and coverage claims",
+      "executor": "economy",
+      "out_of_scope": "No unrelated refactor, framework upgrade or backend behavior change.",
+      "status": "PLANNED",
+      "file": "tasks/Q39-visual-browser-regressions.md"
+    },
+    {
+      "id": "Q40",
+      "slug": "integrated-quality-candidate",
+      "title": "Verify the integrated app and reconcile remaining gates",
+      "group": "Acceptance",
+      "priority": "P1",
+      "estimate_hours": [
+        4,
+        6
+      ],
+      "depends_on": [
+        "Q39"
+      ],
+      "merge_locks": [
+        "integration",
+        "release-docs"
+      ],
+      "evidence": [
+        {
+          "path": "docs/release-readiness.md",
+          "finding": "Current LOCAL_PARTIAL evidence validates the prior candidate, not future quality changes."
+        },
+        {
+          "path": "docs/testing.md",
+          "finding": "Some instructions still describe already-existing T14/T18 commands as future work."
+        },
+        {
+          "path": "docs/plans/2026-11-12-two-week-sprint/execution.json",
+          "finding": "Old operational status needs reconciliation; elapsed time cannot complete a soak."
+        }
+      ],
+      "allowed_scope": [
+        "docs/feature-status.md",
+        "docs/release-readiness.md",
+        "docs/testing.md",
+        "docs/mobile-validation.md",
+        "docs/verification/Q40-quality-handoff.md (new)",
+        "docs/plans/2026-11-17-app-quality/execution.json"
+      ],
+      "change": "On the integrated revision, verify renter and owner journeys end to end, run the appropriate final local profiles and update documentation from actual results. Inspect the existing soak manifest read-only and reconcile its evidence without relabeling old-pin data. Produce separate local implementation and external acceptance statuses.",
+      "acceptance": [
+        "Renter: filter/draw/save after login/favorite/detail/compare/notification/unavailable favorite. Owner: validate/draft/preview/upload/order/publish/conflict/message/withdraw/appeal. Export and sign-out private-state cleanup also pass.",
+        "Reports identify real revision, commands, pass/fail/skip counts and actual wall-clock dates; failed targets are not waived and screenshots do not substitute for behavior.",
+        "Remaining real mail/push, map-provider, installed-device/assistive-technology, corrected-parser/72-hour collection, OLX and cloud gates have exact missing inputs and owners; no deployment or external sends happen as part of this task."
+      ],
+      "verification": [
+        "make verify; make verify-services; make verify-web on the final integrated candidate with unique run IDs.",
+        "Q39 cross-browser smoke, scripts/web_budget.py on that export, and iOS/Android JS export; retain ≤650000-byte entry and ≤200ms warm p95 unless a reviewed change explicitly revises the existing budget.",
+        "Read-only soak aggregation; do not start collectors, resend mail or modify the old experiment."
+      ],
+      "review": "strong: independent integration and evidence review",
+      "executor": "experienced",
+      "out_of_scope": "No push, deployment, live provider validation, message email rollout or claim of production readiness from local tests.",
+      "status": "PLANNED",
+      "file": "tasks/Q40-integrated-quality-candidate.md"
+    }
+  ]
+}
