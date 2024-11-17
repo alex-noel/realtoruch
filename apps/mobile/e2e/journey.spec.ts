@@ -284,3 +284,71 @@ test('a delayed saved-search removal cannot overwrite the next account draft', a
   await expect(page.getByLabel('SEARCH NAME')).toHaveValue(`Owner B draft ${info.project.name}`);
   await expect(page.getByText(`Owner A search ${info.project.name}`)).toHaveCount(0);
 });
+
+test('Q19 guest Warszawa polygon survives sign-in with exact saved filters and a city-derived name', async ({ page, context }, info) => {
+  const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
+  const blocked: string[] = [];
+  await context.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (['data:', 'blob:'].includes(url.protocol) || (url.hostname === '127.0.0.1' && allowed.has(url.port))) return route.continue();
+    blocked.push(url.origin); return route.abort('blockedbyclient');
+  });
+  const api = process.env.E2E_API_URL!;
+  await page.goto('/', { waitUntil: 'commit' });
+  const cityLoaded = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.origin === api && url.pathname === '/v1/listings' && url.searchParams.get('city') === 'Warszawa';
+  });
+  await page.getByLabel('City', { exact: true }).fill('Warszawa');
+  expect((await cityLoaded).ok()).toBe(true);
+  await page.getByRole('button', { name: 'Direct offers', exact: true }).click();
+  await page.getByRole('button', { name: 'Map view', exact: true }).click();
+  await page.getByRole('button', { name: 'Enter area coordinates', exact: true }).click();
+  const area = page.getByRole('dialog', { name: 'Search area coordinates' });
+  const points = [[52.20, 20.98], [52.20, 21.06], [52.27, 21.02]];
+  for (const [latitude, longitude] of points) {
+    await area.getByLabel('Latitude', { exact: true }).fill(String(latitude));
+    await area.getByLabel('Longitude', { exact: true }).fill(String(longitude));
+    await area.getByRole('button', { name: 'Add vertex', exact: true }).click();
+  }
+  const drawn = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.origin === api && url.pathname === '/v1/listings' && url.searchParams.has('polygon');
+  });
+  await area.getByRole('button', { name: 'Use this area', exact: true }).click();
+  const parameters = new URL((await drawn).url()).searchParams;
+  const polygon = parameters.get('polygon')!;
+  expect(JSON.parse(polygon)).toEqual(points.map(([lat, lon]) => [lon, lat]));
+  expect(parameters.get('city')).toBe('Warszawa');
+  await page.getByRole('button', { name: 'Save search', exact: true }).click();
+  await page.getByRole('button', { name: 'New here? Create a free account' }).click();
+  await page.getByPlaceholder('you@example.com').fill(`q19-warszawa-${info.project.name}@example.test`);
+  await page.getByPlaceholder('At least 12 characters').fill('synthetic-test-password-123');
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Keep this search close.' })).toBeVisible();
+  const name = page.getByLabel('SEARCH NAME');
+  await expect(name).toHaveValue(/^Warszawa ·/);
+  const expectedName = await name.inputValue();
+  await expect(page.getByText(/Applied filters: .*Direct offers.*Drawn map area/)).toBeVisible();
+  let writes = 0;
+  page.on('request', request => { if (request.url() === `${api}/v1/me/searches` && request.method() === 'POST') writes++; });
+  const saving = page.waitForResponse(response => response.url() === `${api}/v1/me/searches` && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Save search', exact: true }).last().click();
+  const saved = await saving;
+  expect(saved.status()).toBe(201);
+  const sent = saved.request().postDataJSON();
+  expect(sent.name).toBe(expectedName);
+  expect(sent.filters).toMatchObject({ city: 'Warszawa', polygon, advertiser: 'private', property_type: 'apartment' });
+  const created = await saved.json();
+  expect(created.filters).toMatchObject(sent.filters);
+  expect(created.name).toBe(expectedName);
+  await page.getByRole('button', { name: 'Saved searches', exact: true }).first().click();
+  await expect(page.getByText(expectedName, { exact: true })).toHaveCount(1);
+  const reloaded = page.waitForResponse(response => response.url() === `${api}/v1/me/searches` && response.request().method() === 'GET');
+  await page.reload({ waitUntil: 'commit' });
+  const records = (await (await reloaded).json()).items;
+  expect(records).toHaveLength(1);
+  expect(records[0]).toMatchObject({ id: created.id, name: expectedName, filters: sent.filters });
+  expect(writes).toBe(1);
+  expect(blocked).toEqual([]);
+});
