@@ -54,6 +54,41 @@ const homes: Listing[] = Array.from({ length: 100 }, (_, i) => {
   };
 });
 
+test("Q11 broken photos keep their frame and recover on source changes", async ({ page, context }, info) => {
+  const blocked = await allowOwned(context);
+  await page.route(`${web}/t20-image/001.png`, route => route.fulfill({ status: 404, body: "missing" }));
+  await page.route(`${web}/t20-image/003.png`, route => route.fulfill({ contentType: "image/png", body: "not an image" }));
+  await page.route(`${api}/v1/listings/t20-001`, route => route.fulfill({
+    json: { ...homes[0], images: [homes[0].images[0], homes[1].images[0], homes[2].images[0]] },
+    headers: { "Access-Control-Allow-Origin": web },
+  }));
+  await page.goto("/", { waitUntil: "commit" });
+  await expect(page.getByTestId("listing-photo-fallback").first()).toBeVisible();
+  const cardFrame = await page.getByTestId("listing-photo-fallback").first().boundingBox();
+  expect(cardFrame?.height).toBeGreaterThanOrEqual(202);
+  await page.getByRole("button", { name: `View ${first}`, exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByTestId("listing-photo-fallback")).toBeVisible();
+  const failedFrame = await dialog.getByTestId("listing-photo-fallback").boundingBox();
+  await dialog.getByRole("button", { name: "Photo 2", exact: true }).click();
+  const loaded = dialog.locator('img[data-testid="listing-photo"]');
+  await expect(loaded).toBeVisible();
+  await expect.poll(() => loaded.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
+  const loadedFrame = await loaded.boundingBox();
+  expect(Math.abs(loadedFrame!.height - failedFrame!.height)).toBeLessThan(1);
+  await dialog.getByRole("button", { name: "Photo 3", exact: true }).click();
+  await expect(dialog.getByTestId("listing-photo-fallback")).toBeVisible();
+  await dialog.getByRole("button", { name: "Photo 2", exact: true }).click();
+  await expect(loaded).toBeVisible();
+  await dialog.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: `Compare ${first}`, exact: true }).click();
+  await page.getByRole("button", { name: `Compare ${second}`, exact: true }).click();
+  await page.getByRole("button", { name: "Compare homes →", exact: true }).click();
+  await expect(dialog.getByTestId("listing-photo-fallback")).toBeVisible();
+  await page.screenshot({ path: info.outputPath("q11-photo-fallback.png"), fullPage: false });
+  expect(blocked).toEqual([]);
+});
+
 async function allowOwned(context: BrowserContext, fixture = true) {
   const blocked: string[] = [];
   const favorites = new Map<string, Listing>([

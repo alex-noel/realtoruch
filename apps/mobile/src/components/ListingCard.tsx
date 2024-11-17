@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Image,
   Platform,
@@ -19,19 +19,43 @@ import { Listing } from "../types";
 import { c, s } from "../theme";
 import { money } from "./UI";
 
-export function ListingPhoto({
-  uri,
-  alt,
-  width,
-  height,
-  fill = false,
-}: {
+type ListingPhotoProps = {
   uri: string;
   alt: string;
   width: number;
   height: number;
   fill?: boolean;
-}) {
+};
+
+export function ListingPhoto(props: ListingPhotoProps) {
+  // A source change gets its own load lifecycle, including when returning to a
+  // previously failed URL. Late errors from an unmounted image cannot poison it.
+  return <PhotoSource key={props.uri} {...props} />;
+}
+
+function PhotoSource({
+  uri,
+  alt,
+  width,
+  height,
+  fill = false,
+}: ListingPhotoProps) {
+  const [failed, setFailed] = useState(false);
+  if (failed || !uri) return (
+    <View
+      accessibilityRole="image"
+      accessibilityLabel={`Photo unavailable: ${alt}`}
+      testID="listing-photo-fallback"
+      style={{
+        width: "100%", height: fill ? "100%" : height,
+        position: fill ? "absolute" : "relative",
+        backgroundColor: c.pale, alignItems: "center", justifyContent: "center", gap: 8,
+      }}
+    >
+      <ScanLine size={32} color={c.muted} accessible={false} />
+      <Text style={s.muted}>Photo unavailable</Text>
+    </View>
+  );
   if (Platform.OS === "web")
     return (
       <img
@@ -42,6 +66,7 @@ export function ListingPhoto({
         height={height}
         loading="lazy"
         decoding="async"
+        onError={() => setFailed(true)}
         style={
           fill ? { position: "absolute", inset: 0, height: "100%" } : undefined
         }
@@ -51,6 +76,7 @@ export function ListingPhoto({
     <Image
       source={{ uri }}
       accessibilityLabel={alt}
+      onError={() => setFailed(true)}
       style={{
         width: "100%",
         height: fill ? "100%" : height,

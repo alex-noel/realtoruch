@@ -25,7 +25,7 @@
       "status": "VERIFIED_LOCAL",
       "assignee": "parent",
       "branch": "codex/app-quality-2026-11",
-      "commit": null,
+      "commit": "931ae30",
       "evidence": [
         "docs/verification/Q03-handoff.md"
       ],
@@ -71,22 +71,27 @@
     },
     {
       "id": "Q08",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
-      "commit": null,
-      "evidence": [],
-      "blocked_by": []
-    },
-    {
-      "id": "Q09",
       "status": "IN_PROGRESS",
       "assignee": "gpt-6.1-sol",
-      "branch": "codex/q09-map-pagination",
+      "branch": "codex/q08-sort-selector",
       "commit": null,
       "evidence": [],
       "blocked_by": [],
       "reasoning_effort": "medium"
+    },
+    {
+      "id": "Q09",
+      "status": "VERIFIED_LOCAL",
+      "assignee": "gpt-6.1-sol",
+      "branch": "codex/q09-map-pagination",
+      "commit": "2fc8b19",
+      "evidence": [
+        "docs/verification/Q09-handoff.md"
+      ],
+      "blocked_by": [],
+      "reasoning_effort": "medium",
+      "worker_commit": "b68c55c3fafdc210bab35ed19b59e35665ba127b",
+      "review": "Parent reviewed pager and stable marker focus;4browser checks on Node24 andtypecheck passed."
     },
     {
       "id": "Q10",
@@ -99,12 +104,15 @@
     },
     {
       "id": "Q11",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
+      "status": "VERIFIED_LOCAL",
+      "assignee": "parent",
+      "branch": "codex/app-quality-2026-11",
       "commit": null,
-      "evidence": [],
-      "blocked_by": []
+      "evidence": [
+        "docs/verification/Q11-handoff.md"
+      ],
+      "blocked_by": [],
+      "reasoning_effort": "high"
     },
     {
       "id": "Q12",
@@ -162,12 +170,13 @@
     },
     {
       "id": "Q18",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6.1-terra",
+      "branch": "codex/q18-private-collections",
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "high"
     },
     {
       "id": "Q19",
