@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useLayoutEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Platform,
   Pressable,
@@ -17,7 +18,7 @@ import ScanLine from "lucide-react-native/icons/scan-line";
 import ShieldAlert from "lucide-react-native/icons/shield-alert";
 import { Listing } from "../types";
 import { c, s } from "../theme";
-import { money } from "./UI";
+import { Button, Feedback, money } from "./UI";
 
 type ListingPhotoProps = {
   uri: string;
@@ -89,14 +90,59 @@ function PhotoSource({
   );
 }
 
+export type FavoriteAction = { state: "pending" | "failed"; save: boolean };
+
+export function useFavoritePress(action: FavoriteAction | undefined, onPress: () => void) {
+  const opener = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (Platform.OS !== "web" || action?.state === "pending") return;
+    const button = opener.current;
+    opener.current = null;
+    // Disabling a focused button can move Chrome's focus to the document body.
+    if (button?.isConnected && document.activeElement === document.body) {
+      button.focus({ preventScroll: true });
+    }
+  }, [action]);
+  return () => {
+    if (Platform.OS === "web" && document.activeElement instanceof HTMLElement) {
+      opener.current = document.activeElement;
+    }
+    onPress();
+  };
+}
+
+export function FavoriteRecovery({
+  action,
+  onRetry,
+  onDismiss,
+}: {
+  action?: FavoriteAction;
+  onRetry: () => void;
+  onDismiss?: () => void;
+}) {
+  if (action?.state !== "failed" || !onDismiss) return null;
+  return (
+    <View style={{ gap: 8, alignItems: "flex-start" }}>
+      <Feedback
+        kind="error"
+        message={action.save ? "Could not save this home." : "Could not remove this saved home."}
+        onDismiss={onDismiss}
+      />
+      <Button outline onPress={onRetry}>{action.save ? "Retry save" : "Retry removal"}</Button>
+    </View>
+  );
+}
+
 export function ListingCard({
   home,
   selected,
   saved,
   compared,
   seen = false,
+  favoriteAction,
   onOpen,
   onSave,
+  onDismissFavoriteError,
   onCompare,
 }: {
   home: Listing;
@@ -104,11 +150,15 @@ export function ListingCard({
   saved: boolean;
   compared: boolean;
   seen?: boolean;
+  favoriteAction?: FavoriteAction;
   onOpen: () => void;
   onSave: () => void;
+  onDismissFavoriteError?: () => void;
   onCompare: () => void;
 }) {
   const compact = useWindowDimensions().width < 620;
+  const saving = favoriteAction?.state === "pending";
+  const pressFavorite = useFavoritePress(favoriteAction, onSave);
   return (
     <View
       style={[
@@ -203,22 +253,31 @@ export function ListingCard({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
-              saved ? `Unsave ${home.title}` : `Save ${home.title}`
+              saving
+                ? `${favoriteAction.save ? "Saving" : "Removing"} ${home.title}`
+                : saved ? `Unsave ${home.title}` : `Save ${home.title}`
             }
-            accessibilityState={{ selected: saved }}
-            {...(Platform.OS === "web" ? { "aria-pressed": saved } : {})}
-            onPress={onSave}
+            accessibilityState={{ selected: saved, busy: saving, disabled: saving }}
+            {...(Platform.OS === "web" ? { "aria-pressed": saved, "aria-busy": saving || undefined } : {})}
+            disabled={saving}
+            onPress={pressFavorite}
             hitSlop={10}
             style={[s.row, { padding: 4, gap: 4 }]}
           >
-            <Heart
-              size={18}
-              color={saved ? c.orange : c.muted}
-              fill={saved ? c.orange : "none"}
-            />
-            {saved && <Text style={[s.muted, { fontSize: 11 }]}>Saved</Text>}
+            {saving ? (
+              <>
+                <ActivityIndicator size="small" color={c.green} aria-hidden accessibilityElementsHidden />
+                <Text style={s.muted}>{favoriteAction.save ? "Saving…" : "Removing…"}</Text>
+              </>
+            ) : (
+              <>
+                <Heart size={18} color={saved ? c.orange : c.muted} fill={saved ? c.orange : "none"} />
+                {saved && <Text style={[s.muted, { fontSize: 11 }]}>Saved</Text>}
+              </>
+            )}
           </Pressable>
         </View>
+        <FavoriteRecovery action={favoriteAction} onRetry={onSave} onDismiss={onDismissFavoriteError} />
         <Pressable onPress={onOpen} accessibilityRole="button">
           <Text
             style={[

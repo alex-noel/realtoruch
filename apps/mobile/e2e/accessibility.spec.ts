@@ -237,6 +237,117 @@ test("Q14 comparison keeps editable selections and aligned captured metrics", as
   expect(blocked).toEqual([]);
 });
 
+test("Q20 waits for favorite confirmation and distinguishes the saved availability filter", async ({ page, context }, info) => {
+  const blocked = await allowOwned(context);
+  const headers = { "Access-Control-Allow-Origin": web };
+  let failSave!: () => void;
+  const firstSave = new Promise<void>(resolve => { failSave = resolve; });
+  let finishRemoval!: () => void;
+  const removal = new Promise<void>(resolve => { finishRemoval = resolve; });
+  let saves = 0;
+  let removals = 0;
+  await page.route(`${api}/v1/me/favorites/${homes[0].id}`, async route => {
+    if (route.request().method() === "PUT" && ++saves === 1) {
+      await firstSave;
+      return route.fulfill({ status: 503, json: { detail: "synthetic private error" }, headers });
+    }
+    if (route.request().method() === "DELETE") {
+      removals++;
+      await removal;
+    }
+    return route.fallback();
+  });
+  await page.goto("/");
+  await register(page, `q20-favorite-${info.project.name}@example.test`);
+  const save = button(page, `Save ${first}`);
+  const details = page.getByRole("dialog", { name: "A closer look" });
+
+  await save.evaluate(node => { (node as HTMLElement).click(); (node as HTMLElement).click(); });
+  try {
+    await expect.poll(() => saves).toBe(1);
+    const pending = button(page, `Saving ${first}`);
+    await expect(pending).toBeDisabled();
+    await expect(pending).toHaveAttribute("aria-pressed", "false");
+    await button(page, `View ${first}`).click();
+    await expect(button(details, "Saving…")).toBeDisabled();
+  } finally {
+    failSave();
+  }
+  await expect(details.getByRole("alert")).toHaveText("Could not save this home.");
+  await expect(button(details, "Save this home")).toBeEnabled();
+  if (info.project.name === "mobile") {
+    await button(details, "Retry save").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath("q20-save-retry.png") });
+  }
+  await button(details, "Close dialog").click();
+  await expect(button(page, "Retry save")).toBeVisible();
+  await button(page, `View ${first}`).click();
+  await button(details, "Retry save").click();
+  await expect(button(details, "Remove from saved homes")).toBeEnabled();
+  expect(saves).toBe(2);
+  await button(details, "Close dialog").click();
+  await button(page, "Saved homes").click();
+  const delisted = "T20 delisted favorite";
+  await expect(button(page, first)).toBeVisible();
+  await expect(button(page, delisted)).toBeVisible();
+
+  await button(page, "Unavailable").click();
+  await expect(button(page, first)).toHaveCount(0);
+  await button(page, delisted).click();
+  await expect(details.getByText(/Delisted · Kept in your saved homes/)).toBeVisible();
+  await button(details, "Close dialog").click();
+  await button(page, "Available").click();
+  await expect(button(page, delisted)).toHaveCount(0);
+  await button(page, `Unsave ${first}`).click();
+  try {
+    await expect.poll(() => removals).toBe(1);
+    const pending = button(page, `Removing ${first}`);
+    await expect(pending).toBeDisabled();
+    await expect(pending).toHaveAttribute("aria-pressed", "true");
+    await expect(button(page, first)).toBeVisible();
+  } finally {
+    finishRemoval();
+  }
+  await expect(button(page, first)).toHaveCount(0);
+  await expect(page.getByText("No saved homes match this availability filter.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your shortlist starts here.", { exact: true })).toHaveCount(0);
+  await button(page, "Show all saved homes").click();
+  await expect(button(page, delisted)).toBeVisible();
+  await button(page, `Unsave ${delisted}`).click();
+  await expect(page.getByText("Your shortlist starts here.", { exact: true })).toBeVisible();
+  expect(blocked).toEqual([]);
+});
+
+test("Q20 discards a pending favorite when the account changes", async ({ page, context }, info) => {
+  const blocked = await allowOwned(context);
+  let finish!: () => void;
+  const pending = new Promise<void>(resolve => { finish = resolve; });
+  const endpoint = `${api}/v1/me/favorites/${homes[0].id}`;
+  await page.route(endpoint, async route => {
+    await pending;
+    return route.fulfill({ status: 503, json: {}, headers: { "Access-Control-Allow-Origin": web } });
+  });
+  await page.goto("/");
+  await register(page, `q20-former-${info.project.name}@example.test`);
+  try {
+    await button(page, `Save ${first}`).click();
+    await expect(button(page, `Saving ${first}`)).toBeDisabled();
+    await button(page, "Account").click();
+    await button(page, "Sign out").click();
+    await expect(button(page, "Sign in")).toBeVisible();
+    await register(page, `q20-new-${info.project.name}@example.test`);
+    const response = page.waitForResponse(endpoint);
+    finish();
+    expect((await response).status()).toBe(503);
+    await expect(button(page, `Save ${first}`)).toBeEnabled();
+    await expect(button(page, "Retry save")).toHaveCount(0);
+    await expect(page.getByText("Could not save this home.", { exact: true })).toHaveCount(0);
+  } finally {
+    finish();
+  }
+  expect(blocked).toEqual([]);
+});
+
 test("Q11 broken photos keep their frame and recover on source changes", async ({ page, context }, info) => {
   const blocked = await allowOwned(context);
   await page.route(`${web}/t20-image/001.png`, route => route.fulfill({ status: 404, body: "missing" }));
