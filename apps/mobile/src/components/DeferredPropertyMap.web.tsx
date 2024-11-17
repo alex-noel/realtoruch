@@ -1,20 +1,27 @@
-import React, { lazy, Suspense } from "react";
+import React, { lazy, Suspense, useMemo, useState } from "react";
 import { Text } from "react-native";
 import { s } from "../theme";
 import type { MapProps } from "./MapDrawing";
-
-const PropertyMap = lazy(() => import("./PropertyMap"));
+import { MapErrorBoundary, MapRecovery } from "./MapRecovery";
 
 export default function DeferredPropertyMap(props: MapProps) {
+  const [attempt, setAttempt] = useState(0);
+  const PropertyMap = useMemo(() => lazy(() => import("./PropertyMap")), [attempt]);
   return (
-    <Suspense
+    <MapErrorBoundary
+      key={attempt}
       fallback={
-        <Text aria-live="polite" style={s.muted}>
-          Loading map…
-        </Text>
+        <MapRecovery
+          reason="map"
+          onRetry={() => setAttempt((current) => current + 1)}
+          onShowList={props.onShowList}
+          canEnterPin={!!props.onPinChange}
+        />
       }
     >
-      <PropertyMap {...props} />
-    </Suspense>
+      <Suspense fallback={<Text aria-live="polite" style={s.muted}>Loading map…</Text>}>
+        <PropertyMap {...props} />
+      </Suspense>
+    </MapErrorBoundary>
   );
 }

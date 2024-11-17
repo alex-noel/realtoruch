@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import MapView, { Marker, Polygon, Polyline } from "react-native-maps";
 import { c, s } from "../theme";
+import { MapErrorBoundary, MapRecovery } from "./MapRecovery";
 import {
   cityCenter,
   DrawControls,
@@ -11,14 +12,43 @@ import {
 } from "./MapDrawing";
 
 export default function PropertyMap(props: MapProps) {
-  const { homes, selected, onSelect, city, polygon, onPolygonChange } = props;
+  const [attempt, setAttempt] = useState(0);
+  const draw = useMapDrawing(props.polygon, props.onPolygonChange);
+  const recovery = (
+    <MapRecovery
+      reason="map"
+      onRetry={() => setAttempt((current) => current + 1)}
+      onShowList={props.onShowList}
+      canEnterPin={!!props.onPinChange}
+    />
+  );
+  return (
+    <MapErrorBoundary key={attempt} fallback={recovery}>
+      <NativeMap {...props} draw={draw} recovery={recovery} />
+    </MapErrorBoundary>
+  );
+}
+
+function NativeMap(props: MapProps & {
+  draw: ReturnType<typeof useMapDrawing>;
+  recovery: React.ReactNode;
+}) {
+  const [ready, setReady] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
+  const { homes, selected, onSelect, city, polygon } = props;
   const ref = useRef<MapView>(null);
-  const draw = useMapDrawing(polygon, onPolygonChange);
+  const { draw } = props;
   const [latitude, longitude] = cityCenter(city);
   const shape = (draw.drawing ? draw.points : readPoints(polygon)).map(
     ([lon, lat]) => ({ latitude: lat, longitude: lon }),
   );
   useEffect(() => {
+    if (ready) return;
+    const timer = setTimeout(() => setTimedOut(true), 12000);
+    return () => clearTimeout(timer);
+  }, [ready]);
+  useEffect(() => {
+    if (!ready) return;
     const points = readPoints(polygon).map(([lon, lat]) => ({
       latitude: lat,
       longitude: lon,
@@ -37,14 +67,16 @@ export default function PropertyMap(props: MapProps) {
         longitudeDelta: 0.12,
       });
     }
-  }, [city, polygon]);
+  }, [ready, city, polygon]);
   return (
     <View style={{ flex: 1, minHeight: 400 }}>
       {!props.onPinChange && (
-        <DrawControls draw={draw} hasPolygon={!!polygon} />
+        <DrawControls draw={draw} hasPolygon={!!polygon} mapAvailable={ready} />
       )}
+      {!ready && (timedOut ? props.recovery : <Text style={s.muted}>Loading map…</Text>)}
       <MapView
         ref={ref}
+        onMapReady={() => setReady(true)}
         style={{ flex: 1, minHeight: 300 }}
         initialRegion={{
           latitude,

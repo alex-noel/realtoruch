@@ -10,12 +10,14 @@ export type MapProps = {
   homes: Listing[];
   selected: string | null;
   onSelect: (home: Listing) => void;
+  onShowList?: () => void;
   city: string;
   polygon?: string;
   pin?: Point;
   onPinChange?: (point: Point) => void;
   onPolygonChange: (polygon?: string) => void;
 };
+
 export function cityCenter(city: string): [number, number] {
   return city
     .normalize("NFD")
@@ -293,9 +295,11 @@ function CoordinateEditor({
 export function DrawControls({
   draw,
   hasPolygon,
+  mapAvailable = true,
 }: {
   draw: Drawing;
   hasPolygon: boolean;
+  mapAvailable?: boolean;
 }) {
   const [previous, setPrevious] = useState<{
     drawing: boolean;
@@ -335,9 +339,11 @@ export function DrawControls({
           </>
         ) : (
           <>
-            <Button outline onPress={draw.start}>
-              {hasPolygon ? "Redraw area" : "Draw area"}
-            </Button>
+            {mapAvailable && (
+              <Button outline onPress={draw.start}>
+                {hasPolygon ? "Redraw area" : "Draw area"}
+              </Button>
+            )}
             {hasPolygon ? (
               <Button outline onPress={draw.clear}>
                 Clear area
@@ -345,13 +351,13 @@ export function DrawControls({
             ) : null}
           </>
         )}
-        {Platform.OS === "web" && (
+        {(Platform.OS === "web" || !mapAvailable) && (
           <Button outline onPress={openEditor}>
             {hasPolygon ? "Edit area coordinates" : "Enter area coordinates"}
           </Button>
         )}
       </View>
-      {draw.drawing ? (
+      {draw.drawing && mapAvailable ? (
         <Text aria-live="polite" style={[s.muted, { fontSize: 11 }]}>
           Tap the map to add corners · {draw.points.length}/64 points · pan or
           zoom to adjust the map.
