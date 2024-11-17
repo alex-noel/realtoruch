@@ -49,7 +49,7 @@ import {
 } from "./types";
 import { c, controlHeight, font, s } from "./theme";
 import { Button, Chip, Field, Panel, money, Feedback, FeedbackContext } from "./components/UI";
-import { ListingCard } from "./components/ListingCard";
+import { ListingCard, type FavoriteAction } from "./components/ListingCard";
 import {
   removeFilterSummary,
   resetFiltersForCity,
@@ -149,6 +149,7 @@ function RentalApp() {
   const setFavorites = (value: Listing[] | ((previous: Listing[]) => Listing[])) => collections.set("favorites", value);
   const favoriteIds = new Set(favorites.map((home) => home.id));
   const [comparison, setComparison] = useState<Listing[]>([]);
+  const [savedAvailability, setSavedAvailability] = useState<"all" | "available" | "unavailable">("all");
   const [user, setUser] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<SessionState>("signed-out");
   const [linkFeedback, setLinkFeedback] = useState<LinkFeedback | null>(null);
@@ -178,7 +179,27 @@ function RentalApp() {
   currentUser.current = user;
   const detailRequest = useRef(0);
   const pendingFavorite = useRef<Listing | null>(null);
-  const favoriteBusy = useRef(new Set<string>());
+  const [favoriteActions, setFavoriteActions] = useState(() => new Map<string, FavoriteAction>());
+  const latestFavoriteActions = useRef(favoriteActions);
+
+  function updateFavoriteAction(id: string, action?: FavoriteAction) {
+    const next = new Map(latestFavoriteActions.current);
+    if (action) next.set(id, action);
+    else next.delete(id);
+    latestFavoriteActions.current = next;
+    setFavoriteActions(next);
+  }
+
+  function resetFavoriteActions() {
+    const empty = new Map<string, FavoriteAction>();
+    latestFavoriteActions.current = empty;
+    setFavoriteActions(empty);
+    setSavedAvailability("all");
+  }
+
+  function dismissFavoriteError(id: string) {
+    if (latestFavoriteActions.current.get(id)?.state === "failed") updateFavoriteAction(id);
+  }
 
   async function retrySession() {
     const generation = sessionGeneration.current;
@@ -210,7 +231,7 @@ function RentalApp() {
           setContact(undefined);
           pendingFavorite.current = null;
         }
-        favoriteBusy.current.clear();
+        resetFavoriteActions();
         currentUser.current = null;
         setUser(null);
         collections.reset();
@@ -452,31 +473,32 @@ function RentalApp() {
     if (currentUser.current) await collections.refreshAll();
   }
   async function toggleFavorite(home: Listing) {
-    if (!user) {
+    const owner = currentUser.current;
+    if (!owner) {
       pendingFavorite.current = home;
       setDialog("auth");
       return;
     }
-    if (favoriteBusy.current.has(home.id)) return;
-    favoriteBusy.current.add(home.id);
-    const generation = sessionGeneration.current;
-    const saved = favoriteIds.has(home.id);
+    const action = latestFavoriteActions.current.get(home.id);
+    const save = action?.state === "failed" ? action.save : !favoriteIds.has(home.id);
+    await applyFavorite(home, save, sessionGeneration.current, owner);
+  }
+
+  async function applyFavorite(home: Listing, save: boolean, generation: number, owner: string) {
+    if (!isCurrentAccount(generation, owner) || latestFavoriteActions.current.get(home.id)?.state === "pending") return;
+    updateFavoriteAction(home.id, { state: "pending", save });
     try {
-      await api.favorite(home.id, !saved);
-      if (!isCurrentAccount(generation, user)) return;
-      setFavorites((prev) =>
-        saved ? prev.filter((item) => item.id !== home.id) : [...prev, home],
-      );
+      await api.favorite(home.id, save);
+      if (!isCurrentAccount(generation, owner)) return;
+      setFavorites(previous => {
+        if (!save) return previous.filter(item => item.id !== home.id);
+        return previous.some(item => item.id === home.id) ? previous : [...previous, home];
+      });
+      updateFavoriteAction(home.id);
       if (!collections.state.favorites.loaded) void collections.refresh("favorites");
-      setToast(
-        saved
-          ? "Removed from your shortlist."
-          : "A good find. Saved to your shortlist.",
-      );
-    } catch (e) {
-      if (isCurrentAccount(generation, user)) setErrorToast((e as Error).message);
-    } finally {
-      if (isCurrentAccount(generation, user)) favoriteBusy.current.delete(home.id);
+      setToast(save ? "A good find. Saved to your shortlist." : "Removed from your shortlist.");
+    } catch {
+      if (isCurrentAccount(generation, owner)) updateFavoriteAction(home.id, { state: "failed", save });
     }
   }
   async function signedIn(token: string, email: string) {
@@ -486,6 +508,7 @@ function RentalApp() {
     const home = pendingFavorite.current;
     pendingFavorite.current = null;
     collections.reset();
+    resetFavoriteActions();
     currentUser.current = email;
     setSeenIds(new Set());
     setUser(email);
@@ -496,16 +519,7 @@ function RentalApp() {
       setComparison([]);
       setContact(undefined);
     } else if (detail) openHome(detail);
-    if (home) {
-      try {
-        await api.favorite(home.id, true);
-        if (isCurrentAccount(generation, email) && isCurrentAccessToken(token))
-          await collections.refresh("favorites");
-      } catch {
-        if (isCurrentAccount(generation, email) && isCurrentAccessToken(token))
-          setErrorToast("Signed in, but could not save this home. Please try again.");
-      }
-    }
+    if (home) await applyFavorite(home, true, generation, email);
   }
   function openHome(home: Listing, hydrate = true) {
     const request = ++detailRequest.current;
@@ -574,7 +588,12 @@ function RentalApp() {
   const showMap =
     tab === "discover" && view !== "list" && (desktop || view === "map");
   const showList = tab === "saved" || view !== "map";
-  const visibleHomes = tab === "saved" ? favorites : homes;
+  const savedHomes = savedAvailability === "all" ? favorites : favorites.filter(home =>
+    savedAvailability === "available" ? home.status === "active" : home.status !== "active");
+  const visibleHomes = tab === "saved" ? savedHomes : homes;
+  const savedCountLabel = !collections.state.favorites.loaded ? "Saved homes"
+    : savedAvailability === "all" ? `${favorites.length} saved homes`
+    : `${savedHomes.length} of ${favorites.length} saved homes`;
   const pagerDisabled = !currentPage || loading || failed;
 
   function browsePage(nextPage: number) {
@@ -1271,7 +1290,7 @@ function RentalApp() {
                     style={[s.text, { fontWeight: "600", fontSize: 16, flexShrink: 1 }]}
                   >
                     {tab === "saved"
-                      ? `${favorites.length} saved homes`
+                      ? savedCountLabel
                       : result
                         ? `${total} homes in ${filters.city || "Poland"}`
                         : `Homes in ${filters.city || "Poland"}`}
@@ -1381,6 +1400,18 @@ function RentalApp() {
                 </View>
               )}
               {tab === "saved" && user && <CollectionStatus label="saved homes" state={collections.state.favorites} retry={() => collections.refresh("favorites")} />}
+              {tab === "saved" && user && favorites.length > 0 && (
+                <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
+                  {(["all", "available", "unavailable"] as const).map(value => (
+                    <Chip
+                      key={value}
+                      label={value[0].toUpperCase() + value.slice(1)}
+                      selected={savedAvailability === value}
+                      onPress={() => setSavedAvailability(value)}
+                    />
+                  ))}
+                </View>
+              )}
               {tab === "saved" && !user ? (
                 <View style={[s.card, { padding: 40, gap: 20 }]}>
                   <Heart size={32} color={c.green} />
@@ -1409,7 +1440,13 @@ function RentalApp() {
                         gap: 16,
                       }}
                     >
-                      {((tab === "saved" && collections.state.favorites.loaded) || (tab !== "saved" && !loading && !failed)) && !visibleHomes.length && (
+                      {tab === "saved" && collections.state.favorites.loaded && favorites.length > 0 && !visibleHomes.length && (
+                        <View style={[s.card, { padding: 24, gap: 12, alignItems: "flex-start" }]}>
+                          <Text style={s.title}>No saved homes match this availability filter.</Text>
+                          <Button outline onPress={() => setSavedAvailability("all")}>Show all saved homes</Button>
+                        </View>
+                      )}
+                      {((tab === "saved" && collections.state.favorites.loaded && !favorites.length) || (tab !== "saved" && !loading && !failed)) && !visibleHomes.length && (
                         <View style={[s.card, { padding: 36, gap: 18 }]}>
                           <Search size={28} color={c.muted} />
                           <Text style={s.title}>
@@ -1443,8 +1480,10 @@ function RentalApp() {
                           saved={favoriteIds.has(home.id)}
                           compared={comparison.some((h) => h.id === home.id)}
                           seen={(user ? seenIds : guestSeenIds).has(home.id)}
+                          favoriteAction={favoriteActions.get(home.id)}
                           onOpen={() => openHome(home)}
                           onSave={() => toggleFavorite(home)}
+                          onDismissFavoriteError={detail && !dialog ? undefined : () => dismissFavoriteError(home.id)}
                           onCompare={() => toggleCompare(home)}
                         />
                       ))}
@@ -1641,6 +1680,8 @@ function RentalApp() {
             setDetail(null);
           }}
           onSave={() => toggleFavorite(detail)}
+          favoriteAction={favoriteActions.get(detail.id)}
+          onDismissFavoriteError={() => dismissFavoriteError(detail.id)}
           saved={favoriteIds.has(detail.id)}
           onReport={() => openDialog(user ? "report" : "auth")}
           onContact={(advert) => {

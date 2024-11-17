@@ -16,7 +16,7 @@ import ShieldAlert from "lucide-react-native/icons/shield-alert";
 import { api } from "../api";
 import { Filters, Listing } from "../types";
 import { c, s } from "../theme";
-import { ListingPhoto } from "./ListingCard";
+import { FavoriteRecovery, ListingPhoto, type FavoriteAction, useFavoritePress } from "./ListingCard";
 import { Button, Chip, Field, PasswordField, Panel, money } from "./UI";
 import { parseFilterNumber } from "../filterNumbers";
 
@@ -452,6 +452,8 @@ export function DetailDialog({
   home,
   onClose,
   onSave,
+  favoriteAction,
+  onDismissFavoriteError,
   saved,
   onReport,
   onContact,
@@ -461,6 +463,8 @@ export function DetailDialog({
   home: Listing;
   onClose: () => void;
   onSave: () => void;
+  favoriteAction?: FavoriteAction;
+  onDismissFavoriteError?: () => void;
   saved: boolean;
   onReport: () => void;
   onContact: (contact: NonNullable<Listing["contact_adverts"]>[number]) => void;
@@ -468,6 +472,7 @@ export function DetailDialog({
   onRetry?: () => void;
 }) {
   const narrow = useWindowDimensions().width < 700;
+  const pressFavorite = useFavoritePress(favoriteAction, onSave);
   const detailsLoaded = loadState === "loaded";
   const history = home.history ?? [];
   const latestObservations = history.slice(-8).reverse();
@@ -542,7 +547,11 @@ export function DetailDialog({
         {money(home.commission_pln)}. “Not stated” does not mean zero.
       </Text>
       <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>
-        <Button onPress={onSave}>
+        <Button
+          onPress={pressFavorite}
+          busy={favoriteAction?.state === "pending"}
+          busyLabel={favoriteAction?.save ? "Saving…" : "Removing…"}
+        >
           {saved ? "Remove from saved homes" : "Save this home"}
         </Button>
         {(detailsLoaded && home.status === "active" ? home.contact_adverts || [] : []).map((contact) => (
@@ -555,6 +564,7 @@ export function DetailDialog({
           Report a concern
         </Button>
       </View>
+      <FavoriteRecovery action={favoriteAction} onRetry={onSave} onDismiss={onDismissFavoriteError} />
       <ListingGallery key={home.id} home={home} narrow={narrow} />
       <View style={{ gap: 12 }}>
         <Text style={[s.title, { fontSize: 20 }]}>The space</Text>
