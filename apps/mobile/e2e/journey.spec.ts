@@ -97,7 +97,8 @@ test('draw and save a filtered search against a synthetic baseline', async ({ pa
   await page.getByRole('button', { name: 'View matches' }).click();
   await expect(page.getByText(`T18 synthetic home ${info.project.name}`).first()).toBeVisible();
   if (info.project.name === 'mobile') await page.getByRole('button', { name: 'Map view' }).click();
-  await expect(page.getByRole('button', { name: `T18 synthetic home ${info.project.name}, 4500 zł` })).toBeVisible();
+  const mapMarker = map.locator(`[data-listing-ids~="${id}"]`);
+  await expect(mapMarker).toBeVisible();
   if (info.project.name === 'mobile') await page.getByRole('button', { name: 'List view' }).click();
   await page.getByRole('button', { name: `T18 synthetic home ${info.project.name}`, exact: true }).click();
   await page.getByRole('button', { name: 'Save this home' }).click();
@@ -114,7 +115,8 @@ test('draw and save a filtered search against a synthetic baseline', async ({ pa
   await expect(page.getByText(`T18 baseline ${info.project.name}`).first()).toBeVisible();
   await expect(page.getByRole('button', { name: `T18 synthetic home ${info.project.name}`, exact: true })).toHaveCount(0);
   if (info.project.name === 'mobile') await page.getByRole('button', { name: 'Map view' }).click();
-  await expect(page.getByRole('button', { name: `T18 synthetic home ${info.project.name}, 4500 zł` })).toHaveCount(0);
+  await expect(map).toBeVisible();
+  await expect(mapMarker).toHaveCount(0);
   const repost = fixture('relist', info.project.name);
   expect(repost.listing_id).toBe(id);
   await expect.poll(() => fixture('state', info.project.name).pending, { timeout: 20_000 }).toBe(0);
@@ -141,6 +143,7 @@ test('draw and save a filtered search against a synthetic baseline', async ({ pa
   await expect(page.getByText(`T18 baseline ${info.project.name}`).first()).toBeVisible();
   await expect(page.getByRole('button', { name: `T18 synthetic home ${info.project.name}`, exact: true })).toHaveCount(0);
   if (info.project.name === 'mobile') await page.getByRole('button', { name: 'Map view' }).click();
-  await expect(page.getByRole('button', { name: `T18 synthetic home ${info.project.name}, 4200 zł` })).toHaveCount(0);
+  await expect(map).toBeVisible();
+  await expect(mapMarker).toHaveCount(0);
   expect(blocked).toEqual([]);
 });

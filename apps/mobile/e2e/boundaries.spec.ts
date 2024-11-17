@@ -49,8 +49,8 @@ function pagedHomes(): Listing[] {
     title: `Q09 home ${index + 1}`,
     description: 'Fictional apartment for the pagination check',
     city: 'Kraków', district: 'Krowodrza', region: 'małopolskie', address: 'Fixture street',
-    lat: 50.0647 + (index % 24 === 0 ? 0 : (index % 2 ? .018 : -.018)),
-    lon: 19.945 + (index % 24 === 0 ? 0 : ((index % 6) - 2.5) * .01),
+    lat: 50.0647 + (Math.floor((index % 24) / 4) - 2.5) * .012,
+    lon: 19.945 + ((index % 4) - 1.5) * .03,
     area_m2: 55, rooms: 2, floor: 2, rent_pln: 4000, fees_pln: 500, deposit_pln: 4000,
     commission_pln: 0, total_monthly_pln: 4500, advertiser_type: 'private',
     property_type: 'apartment', status: 'active', images: [image], amenities: [], is_demo: true,
@@ -219,6 +219,111 @@ test('results pager keeps cards and pins on the same page and preserves browsing
   await expect(previous).toBeDisabled();
   await expect(next).toBeEnabled();
   expect(blocked).toEqual([]);
+});
+
+test.describe('overlapping map homes', () => {
+  test.use({ hasTouch: true });
+
+  test('Q16 grouped pins expose every home by keyboard and touch on the current page', async ({ page, context }, info) => {
+    const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
+    const blocked: string[] = [];
+    const baseHomes = pagedHomes();
+    const homes = baseHomes.map((home, index) => {
+      if (index < 5) return { ...home, lat: baseHomes[0].lat, lon: baseHomes[0].lon };
+      if (index === 5) return { ...home, rent_pln: 500000 };
+      return home;
+    });
+    const requestedPages: number[] = [];
+    await context.route('**/*', async route => {
+      const url = new URL(route.request().url());
+      if (url.protocol === 'data:') return route.continue();
+      if (url.hostname !== '127.0.0.1' || !allowed.has(url.port)) {
+        blocked.push(url.origin);
+        return route.abort('blockedbyclient');
+      }
+      if (url.origin !== process.env.E2E_API_URL) return route.continue();
+      if (url.pathname === '/v1/listings') {
+        const number = Number(url.searchParams.get('page'));
+        const size = Number(url.searchParams.get('page_size'));
+        requestedPages.push(number);
+        const result: SearchResult = {
+          items: homes.slice((number - 1) * size, number * size),
+          total: homes.length, page: number, page_size: size, engine: 'fixture',
+        };
+        return route.fulfill({ json: result });
+      }
+      const home = homes.find(item => url.pathname === `/v1/listings/${item.id}`);
+      return home ? route.fulfill({ json: home }) : route.continue();
+    });
+
+    await page.goto('/', { waitUntil: 'commit' });
+    await page.getByRole('button', { name: 'Map view', exact: true }).click();
+    const map = page.getByRole('region', { name: 'Map of rental homes' });
+    const marker = map.getByRole('button', { name: 'Show 5 homes near this pin', exact: true });
+    const chooser = page.getByRole('dialog', { name: '5 homes near this pin', exact: true });
+    const detail = page.getByRole('dialog', { name: 'A closer look' });
+    const choice = (home: Listing) => chooser.getByRole('button', {
+      name: `${home.title} · 4000 zł`, exact: true,
+    });
+    const renderedIds = () => map.locator('[data-listing-ids]').evaluateAll(nodes =>
+      nodes.flatMap(node => (node.getAttribute('data-listing-ids') ?? '').split(' ')).sort());
+
+    await map.scrollIntoViewIfNeeded();
+    await expect(marker).toBeVisible();
+    await expect.poll(renderedIds).toEqual(homes.slice(0, 24).map(home => home.id).sort());
+    const enlargedText = await page.addStyleTag({ content: '.price-marker { font-size: 22px !important; }' });
+    const longPrice = map.getByRole('button', { name: 'Q09 home 6, 500000 zł', exact: true });
+    const priceLayout = await longPrice.evaluate(button => {
+      const style = getComputedStyle(button);
+      const markerBox = button.parentElement!.getBoundingClientRect();
+      const buttonBox = button.getBoundingClientRect();
+      return {
+        fontSize: style.fontSize,
+        clipsText: style.overflow === 'hidden' && style.textOverflow === 'ellipsis',
+        needsClipping: button.scrollWidth > button.clientWidth,
+        fitsMarker: buttonBox.width <= markerBox.width && buttonBox.height <= markerBox.height,
+      };
+    });
+    expect(priceLayout).toEqual({ fontSize: '22px', clipsText: true, needsClipping: true, fitsMarker: true });
+    await expect(marker).toHaveText('5 homes');
+    expect(await marker.evaluate(button => button.scrollWidth <= button.clientWidth && button.scrollHeight <= button.clientHeight)).toBe(true);
+    await enlargedText.evaluate(style => { style.parentNode?.removeChild(style); });
+    await marker.press('Enter');
+    await expect(chooser).toBeVisible();
+    await expect(chooser.getByText('Pins show approximate locations.')).toBeVisible();
+    for (const home of homes.slice(0, 5)) {
+      await page.keyboard.press('Tab');
+      await expect(choice(home)).toBeFocused();
+    }
+    if (info.project.name === 'mobile')
+      await page.screenshot({ path: info.outputPath('q16-group-picker.png') });
+    await page.keyboard.press('Enter');
+    await expect(detail.getByText(homes[4].title, { exact: true })).toBeVisible();
+    await detail.getByRole('button', { name: 'Close dialog' }).click();
+    await expect(marker).toBeFocused();
+    await expect(marker).toHaveClass(/selected/);
+
+    for (const home of homes.slice(0, 5)) {
+      await marker.tap();
+      await choice(home).tap();
+      await expect(detail.getByText(home.title, { exact: true })).toBeVisible();
+      await detail.getByRole('button', { name: 'Close dialog' }).click();
+    }
+    await marker.press('Enter');
+    await expect(choice(homes[4])).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Draw area', exact: true }).click();
+    await expect(map.locator('[data-listing-ids]')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Cancel drawing', exact: true }).click();
+    await expect(marker).toBeVisible();
+
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await expect(page.getByText('Page 2 of 3', { exact: true })).toBeVisible();
+    await expect(marker).toHaveCount(0);
+    await expect.poll(renderedIds).toEqual(homes.slice(24, 48).map(home => home.id).sort());
+    expect(requestedPages).toEqual([1, 2]);
+    expect(blocked).toEqual([]);
+  });
 });
 
 test.describe('explicit sort', () => {
