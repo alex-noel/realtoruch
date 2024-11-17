@@ -3,7 +3,9 @@ import { Text, View } from "react-native";
 import type * as Leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { s } from "../theme";
+import { Chip, Panel, money } from "./UI";
 import { MapRecovery } from "./MapRecovery";
+import { groupMapHomes, MAP_MARKER_SIZE, type MapGroup } from "./mapGroups";
 import {
   cityCenter,
   DrawControls,
@@ -17,36 +19,73 @@ export default function PropertyMap(props: MapProps) {
   const draw = useMapDrawing(polygon, onPolygonChange);
   const [status, setStatus] = useState<"loading" | "ready" | "map" | "tiles">("loading");
   const [attempt, setAttempt] = useState(0);
+  const [openedGroup, setOpenedGroup] = useState<{ group: MapGroup; page: typeof homes } | null>(null);
   const node = useRef<HTMLDivElement>(null);
   const map = useRef<Leaflet.Map | null>(null);
   const markers = useRef<Leaflet.LayerGroup | null>(null);
   const shapes = useRef<Leaflet.LayerGroup | null>(null);
   const library = useRef<typeof Leaflet | null>(null);
+  const markerByHome = useRef(new Map<string, HTMLButtonElement>());
   const latest = useRef({ props, draw });
   latest.current = { props, draw };
   function renderMarkers() {
-    if (!map.current || !markers.current || !library.current) return;
+    const instance = map.current;
+    if (!instance || !markers.current || !library.current) return;
     const L = library.current;
     markers.current.clearLayers();
+    markerByHome.current.clear();
+    setOpenedGroup(null);
     if (latest.current.draw.drawing) return;
-    for (const home of latest.current.props.homes) {
-      if (home.status !== "active" || home.lat === null || home.lon === null)
-        continue;
+    const page = latest.current.props.homes;
+    const groups = groupMapHomes(page, ({ latitude, longitude }) =>
+      instance.latLngToLayerPoint([latitude, longitude]));
+    for (const group of groups) {
+      const first = group.homes[0];
+      const count = group.homes.length;
+      const current = group.homes.some(home => home.id === latest.current.props.selected);
       const button = document.createElement("button");
-      button.className = `price-marker ${home.id === latest.current.props.selected ? "selected" : ""}`;
-      button.dataset.listingId = home.id;
-      button.textContent = `${new Intl.NumberFormat("pl-PL").format(home.rent_pln)} zł`;
-      button.setAttribute("aria-label", `${home.title}, ${home.rent_pln} zł`);
+      button.className = current ? "price-marker selected" : "price-marker";
+      button.style.width = `${MAP_MARKER_SIZE.width}px`;
+      button.style.height = `${MAP_MARKER_SIZE.height}px`;
+      button.style.padding = "4px";
+      button.style.overflow = "hidden";
+      button.style.textOverflow = "ellipsis";
+      button.dataset.listingIds = group.homes.map(home => home.id).join(" ");
+      if (count === 1) {
+        button.dataset.listingId = first.id;
+        button.textContent = money(first.rent_pln);
+        button.setAttribute("aria-label", `${first.title}, ${first.rent_pln} zł`);
+      } else {
+        button.style.display = "flex";
+        button.style.flexWrap = "wrap";
+        button.style.alignItems = "center";
+        button.style.alignContent = "center";
+        button.style.justifyContent = "center";
+        button.style.columnGap = "3px";
+        button.style.lineHeight = "1";
+        button.style.padding = "1px";
+        const number = document.createElement("span");
+        number.textContent = String(count);
+        const noun = document.createElement("span");
+        noun.textContent = "homes";
+        noun.style.fontSize = "clamp(11px, .72em, 100%)";
+        button.append(number, " ", noun);
+        button.setAttribute("aria-label", `Show ${count} homes near this pin`);
+        button.setAttribute("aria-haspopup", "dialog");
+      }
+      for (const home of group.homes) markerByHome.current.set(home.id, button);
+      L.DomEvent.disableClickPropagation(button);
       button.onclick = (event) => {
         event.stopPropagation();
-        latest.current.props.onSelect(home);
+        if (count === 1) latest.current.props.onSelect(first);
+        else setOpenedGroup({ group, page });
       };
-      L.marker([home.lat, home.lon], {
+      L.marker([group.coordinate.latitude, group.coordinate.longitude], {
         icon: L.divIcon({
           html: button,
           className: "marker-wrapper",
-          iconSize: [78, 32],
-          iconAnchor: [39, 16],
+          iconSize: [MAP_MARKER_SIZE.width, MAP_MARKER_SIZE.height],
+          iconAnchor: [MAP_MARKER_SIZE.width / 2, MAP_MARKER_SIZE.height / 2],
         }),
         keyboard: false,
       }).addTo(markers.current);
@@ -125,7 +164,9 @@ export default function PropertyMap(props: MapProps) {
       observer?.disconnect();
       tileLayer?.off(tileEvents);
       map.current?.off("click", onMapClick);
+      map.current?.off("zoomend", renderMarkers);
       map.current?.remove();
+      markerByHome.current.clear();
       map.current = null;
       library.current = null;
       markers.current = null;
@@ -154,6 +195,7 @@ export default function PropertyMap(props: MapProps) {
       markers.current = L.layerGroup().addTo(instance);
       shapes.current = L.layerGroup().addTo(instance);
       instance.on("click", onMapClick);
+      instance.on("zoomend", renderMarkers);
       renderMarkers();
       renderShape();
       focusArea();
@@ -173,13 +215,13 @@ export default function PropertyMap(props: MapProps) {
   useEffect(renderMarkers, [homes, draw.drawing]);
   useEffect(() => {
     // Keep the opener in the DOM so the detail dialog can restore focus.
-    node.current?.querySelectorAll<HTMLButtonElement>(".price-marker").forEach((button) => {
-      button.classList.toggle("selected", button.dataset.listingId === selected);
-    });
+    node.current?.querySelector(".price-marker.selected")?.classList.remove("selected");
+    if (selected) markerByHome.current.get(selected)?.classList.add("selected");
   }, [selected]);
   useEffect(renderShape, [polygon, draw.drawing, draw.points, props.pin]);
   useEffect(focusArea, [city, polygon]);
   const mapAvailable = status === "ready" || status === "tiles";
+  const group = !draw.drawing && openedGroup?.page === homes ? openedGroup.group : null;
   return (
     <View style={{ flex: 1, minHeight: 400 }}>
       {!props.onPinChange && (
@@ -211,6 +253,24 @@ export default function PropertyMap(props: MapProps) {
           </View>
         )}
       </View>
+      {group && (
+        <Panel title={`${group.homes.length} homes near this pin`} onClose={() => setOpenedGroup(null)}>
+          <Text style={s.muted}>Pins show approximate locations.</Text>
+          <View style={{ gap: 8, alignItems: "flex-start" }}>
+            {group.homes.map(home => (
+              <Chip
+                key={home.id}
+                label={`${home.title} · ${money(home.rent_pln)}`}
+                selected={home.id === selected}
+                onPress={() => {
+                  setOpenedGroup(null);
+                  props.onSelect(home);
+                }}
+              />
+            ))}
+          </View>
+        </Panel>
+      )}
     </View>
   );
 }
