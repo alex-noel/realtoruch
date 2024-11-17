@@ -436,6 +436,8 @@ export function DetailDialog({
 }) {
   const narrow = useWindowDimensions().width < 700;
   const detailsLoaded = loadState === "loaded";
+  const history = home.history ?? [];
+  const latestObservations = history.slice(-8).reverse();
   return (
     <Panel title="A closer look" wide onClose={onClose}>
       {!detailsLoaded && <View style={[s.card, { padding: 14, gap: 8, alignItems: "flex-start" }]}>
@@ -590,37 +592,44 @@ export function DetailDialog({
           </Text>
         )}
       </View>
-      {detailsLoaded && home.history && home.history.length > 0 && (
+      {detailsLoaded && latestObservations.length > 0 && (
         <View style={{ gap: 10 }}>
-          <Text style={[s.title, { fontSize: 20 }]}>
-            Observed price changes
+          <Text accessibilityRole="header" style={[s.title, { fontSize: 20 }]}>
+            Observed rent history
           </Text>
-          {home.history
-            .slice(-8)
-            .reverse()
-            .map((item, i) => (
-              <View
-                key={i}
-                style={[
-                  s.row,
-                  {
-                    justifyContent: "space-between",
-                    flexWrap: "wrap",
-                    gap: 6,
-                    borderBottomWidth: 1,
-                    borderColor: c.line,
-                    paddingVertical: 10,
-                  },
-                ]}
-              >
-                <Text style={s.muted}>
-                  {new Date(item.at).toLocaleDateString()}
-                </Text>
-                <Text style={s.text}>
-                  {money(item.rent_pln)} · {item.status}
-                </Text>
-              </View>
-            ))}
+          {history.length > latestObservations.length && (
+            <Text style={s.muted}>
+              Showing the latest {latestObservations.length} of {history.length} observations.
+            </Text>
+          )}
+          {latestObservations.map((item, i) => (
+            <View
+              key={i}
+              style={[
+                s.row,
+                {
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  borderBottomWidth: 1,
+                  borderColor: c.line,
+                  paddingVertical: 10,
+                },
+              ]}
+            >
+              <Text style={s.muted}>
+                {new Date(item.at).toLocaleDateString("en-GB", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                  timeZone: "Europe/Warsaw",
+                })}
+              </Text>
+              <Text style={s.text}>
+                {money(item.rent_pln)} · {item.status}
+              </Text>
+            </View>
+          ))}
         </View>
       )}
       <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>

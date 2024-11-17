@@ -432,7 +432,7 @@ test('Q10 detail failures retry locally and late responses cannot replace a diff
   await expect(dialog.getByRole('alert')).toContainText('Could not load current details');
   await expect(dialog.getByText(homes[0].title, { exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Message Synthetic owner' })).toHaveCount(0);
-  await expect(dialog.getByText('Observed price changes')).toHaveCount(0);
+  await expect(dialog.getByText('Observed rent history')).toHaveCount(0);
   mode = 'loaded';
   await dialog.getByRole('button', { name: 'Retry details' }).click();
   await expect(dialog.getByRole('button', { name: 'Message Synthetic owner' })).toBeVisible();

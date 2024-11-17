@@ -6,14 +6,39 @@ import { History } from "../types";
 import { c, s } from "../theme";
 import { Button, Chip, money } from "./UI";
 
-export default function Insights({
-  city,
-  districts,
-}: {
+const MONTH = new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
+const PERCENT = new Intl.NumberFormat("en-GB", {
+  style: "percent",
+  signDisplay: "exceptZero",
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+const SMALL_SAMPLE = 30;
+
+function monthOrdinal(month: string) {
+  const [year, number] = month.split("-").map(Number);
+  return year * 12 + number - 1;
+}
+
+function monthLabel(ordinal: number) {
+  return MONTH.format(new Date(Date.UTC(Math.floor(ordinal / 12), ordinal % 12, 1)));
+}
+
+type InsightsProps = {
   city: string;
   districts: string[];
-}) {
-  const [district, setDistrict] = useState("");
+};
+
+export default function Insights(props: InsightsProps) {
+  return <CityInsights key={props.city} {...props} />;
+}
+
+function CityInsights({
+  city,
+  districts,
+}: InsightsProps) {
+  const [selectedDistrict, setDistrict] = useState("");
+  const district = districts.includes(selectedDistrict) ? selectedDistrict : "";
   const [data, setData] = useState<History | null>(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -36,13 +61,10 @@ export default function Insights({
   const points = data?.points || [];
   const latest = points.at(-1);
   const first = points[0];
-  const min = Math.min(...points.map((p) => p.median_rent_pln)) * 0.95;
-  const max = Math.max(...points.map((p) => p.median_rent_pln)) * 1.05;
-  const x = (i: number) => 70 + (i * 660) / Math.max(1, points.length - 1);
-  const y = (v: number) => 235 - ((v - min) / (max - min || 1)) * 180;
-  const path = points
-    .map((p, i) => `${i ? "L" : "M"} ${x(i)} ${y(p.median_rent_pln)}`)
-    .join(" ");
+  const canCompare = latest && latest.month !== first.month && first.median_rent_pln > 0;
+  const change = canCompare ? PERCENT.format(latest.median_rent_pln / first.median_rent_pln - 1) : null;
+  const illustrative = points.some((point) => point.is_demo);
+  const smallSamples = points.some((point) => point.sample_size < SMALL_SAMPLE);
   return (
     <View style={{ gap: 24 }}>
       <View>
@@ -73,22 +95,25 @@ export default function Insights({
         </View>
       ) : !data ? (
         <ActivityIndicator color={c.green} />
-      ) : !points.length ? (
+      ) : !latest ? (
         <Text style={s.text}>
           No observations for this area yet. Historical data will appear as
           sources are connected.
         </Text>
       ) : (
         <>
+          {(illustrative || smallSamples) && (
+            <View style={{ backgroundColor: c.cream, padding: 14, gap: 4 }}>
+              {illustrative && <Text style={[s.text, { fontWeight: "600" }]}>Includes illustrative data</Text>}
+              {smallSamples && <Text style={s.text}>Some months have fewer than {SMALL_SAMPLE} observed homes.</Text>}
+            </View>
+          )}
           <View style={[s.row, { flexWrap: "wrap", gap: 16 }]}>
             {[
-              ["MEDIAN BASE RENT", money(latest!.median_rent_pln)],
-              ["PER SQUARE METER", `${money(latest!.median_per_m2)} / m²`],
-              ["HOMES IN LATEST SAMPLE", String(latest!.sample_size)],
-              [
-                "CHANGE IN THIS PERIOD",
-                `${((latest!.median_rent_pln / first.median_rent_pln - 1) * 100).toFixed(1)}%`,
-              ],
+              ["LATEST MEDIAN BASE RENT", money(latest.median_rent_pln)],
+              ["LATEST MEDIAN PER SQUARE METER", `${money(latest.median_per_m2)} / m²`],
+              ["HOMES IN LATEST SAMPLE", String(latest.sample_size)],
+              ...(change === null ? [] : [["CHANGE IN OBSERVED SAMPLE MEDIANS", change]]),
             ].map(([label, value]) => (
               <View
                 key={label}
@@ -103,77 +128,16 @@ export default function Insights({
             ))}
           </View>
           <View style={[s.card, { padding: 24, gap: 18 }]}>
-            <View
-              style={[
-                s.row,
-                { justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
-              ]}
-            >
-              <Text style={[s.text, { fontWeight: "600" }]}>
-                Monthly median asking rent
-              </Text>
-              {points.some((p) => p.is_demo) && (
-                <Text style={[s.label, { color: c.warning }]}>
-                  ILLUSTRATIVE DATA
-                </Text>
-              )}
-            </View>
-            <Svg
-              viewBox="0 0 800 290"
-              width="100%"
-              height={290}
-              accessibilityLabel="Monthly median base rent chart"
-              role="img"
-            >
-              {[0, 1, 2, 3].map((i) => {
-                const value = min + ((max - min) * i) / 3;
-                return (
-                  <React.Fragment key={i}>
-                    <Line
-                      x1={65}
-                      y1={y(value)}
-                      x2={745}
-                      y2={y(value)}
-                      stroke={c.line}
-                      strokeDasharray="3 5"
-                    />
-                    <SvgText
-                      x={54}
-                      y={y(value) + 4}
-                      textAnchor="end"
-                      fontSize={10}
-                      fill={c.muted}
-                    >
-                      {Math.round(value)}
-                    </SvgText>
-                  </React.Fragment>
-                );
-              })}
-              <Path
-                d={`${path} L ${x(points.length - 1)} 235 L 70 235 Z`}
-                fill="#E9EEE4"
-              />
-              <Path d={path} fill="none" stroke={c.green} strokeWidth={3} />
-              {points.map((p, i) => (
-                <React.Fragment key={p.month}>
-                  <Circle
-                    cx={x(i)}
-                    cy={y(p.median_rent_pln)}
-                    r={4}
-                    fill={c.green}
-                  />
-                  <SvgText
-                    x={x(i)}
-                    y={264}
-                    textAnchor="middle"
-                    fontSize={11}
-                    fill={c.muted}
-                  >
-                    {p.month}
-                  </SvgText>
-                </React.Fragment>
-              ))}
-            </Svg>
+            <Text accessibilityRole="header" style={[s.text, { fontWeight: "600" }]}>
+              Monthly median asking rent
+            </Text>
+            <Text style={s.text}>
+              {points.length === 1
+                ? `${monthLabel(monthOrdinal(latest.month))} · One observed month · ${money(latest.median_rent_pln)}`
+                : `${monthLabel(monthOrdinal(first.month))} to ${monthLabel(monthOrdinal(latest.month))} · ${points.length} observed months · ${money(first.median_rent_pln)} to ${money(latest.median_rent_pln)}`}
+            </Text>
+            {change !== null && <Text style={s.muted}>The homes in the monthly samples can vary.</Text>}
+            <RentChart points={points} />
             <Text style={s.muted}>{data.methodology}</Text>
           </View>
           <View style={[s.card, { padding: 22, gap: 10 }]}>
@@ -195,16 +159,89 @@ export default function Insights({
                   },
                 ]}
               >
-                <Text style={s.text}>{p.month}</Text>
+                <Text style={s.text}>{monthLabel(monthOrdinal(p.month))}</Text>
                 <Text style={s.text}>{money(p.median_rent_pln)}</Text>
                 <Text style={s.muted}>
                   {p.sample_size} homes
-                  {p.sample_size < 30 ? " · small sample" : ""}
+                  {p.sample_size < SMALL_SAMPLE ? " · small sample" : ""}
                 </Text>
               </View>
             ))}
           </View>
         </>
+      )}
+    </View>
+  );
+}
+
+const CHART_HEIGHT = 180;
+const PLOT_TOP = 16;
+const PLOT_BOTTOM = 144;
+
+function RentChart({ points }: { points: History["points"] }) {
+  const [width, setWidth] = useState(0);
+  const left = 76;
+  const right = Math.max(left + 1, width - 4);
+  const plotWidth = right - left;
+  const months = points.map((point) => monthOrdinal(point.month));
+  const firstMonth = months[0];
+  const monthSpan = months[months.length - 1] - firstMonth;
+  const x = (month: number) => monthSpan
+    ? left + ((month - firstMonth) / monthSpan) * plotWidth
+    : left + plotWidth / 2;
+  const rents = points.map((point) => point.median_rent_pln);
+  const min = Math.min(...rents);
+  const max = Math.max(...rents);
+  const y = (rent: number) => max === min
+    ? (PLOT_TOP + PLOT_BOTTOM) / 2
+    : PLOT_BOTTOM - ((rent - min) / (max - min)) * (PLOT_BOTTOM - PLOT_TOP);
+  const grid = min === max ? [min] : [min, max];
+  const tickCount = Math.min(monthSpan + 1, Math.max(2, Math.min(5, Math.floor(plotWidth / 90) + 1)));
+  const ticks = Array.from({ length: tickCount }, (_, index) =>
+    firstMonth + Math.round((index * monthSpan) / Math.max(1, tickCount - 1)));
+  const path = points.map((point, index) => {
+    const adjacent = index > 0 && months[index] === months[index - 1] + 1;
+    return `${adjacent ? "L" : "M"}${x(months[index])} ${y(point.median_rent_pln)}`;
+  }).join(" ");
+
+  return (
+    <View
+      style={{ height: CHART_HEIGHT }}
+      onLayout={({ nativeEvent }) => setWidth(Math.floor(nativeEvent.layout.width))}
+    >
+      {width > left && (
+        <Svg
+          viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
+          width="100%"
+          height={CHART_HEIGHT}
+          accessibilityLabel="Monthly median asking rent chart"
+          role="img"
+        >
+          {grid.map((value) => (
+            <React.Fragment key={value}>
+              <Line x1={left} y1={y(value)} x2={right} y2={y(value)} stroke={c.line} strokeDasharray="3 5" />
+              <SvgText x={left - 8} y={y(value) + 4} textAnchor="end" fontSize={12} fill={c.muted}>
+                {money(value)}
+              </SvgText>
+            </React.Fragment>
+          ))}
+          <Path d={path} fill="none" stroke={c.green} strokeWidth={2} />
+          {points.map((point, index) => (
+            <Circle key={point.month} cx={x(months[index])} cy={y(point.median_rent_pln)} r={3} fill={c.green} />
+          ))}
+          {ticks.map((month, index) => (
+            <SvgText
+              key={month}
+              x={x(month)}
+              y={168}
+              textAnchor={ticks.length === 1 ? "middle" : index === 0 ? "start" : index === ticks.length - 1 ? "end" : "middle"}
+              fontSize={12}
+              fill={c.muted}
+            >
+              {monthLabel(month)}
+            </SvgText>
+          ))}
+        </Svg>
       )}
     </View>
   );
