@@ -16,7 +16,8 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NotificationInbox from "./components/NotificationInbox";
 import { disablePush, listenForPush } from "./pushClient";
-import type { NotificationInbox as Inbox, RentalNotification } from "./types";
+import type { RentalNotification } from "./types";
+import { useAccountCollections, type Collection } from "./hooks/useAccountCollections";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import ArrowDownUp from "lucide-react-native/icons/arrow-down-up";
@@ -45,7 +46,6 @@ import { market } from "./marketplaceApi";
 import {
   DEFAULT_FILTERS,
   Listing,
-  SavedSearch,
 } from "./types";
 import { c, font, s } from "./theme";
 import { Button, Chip, Field, Panel, money } from "./components/UI";
@@ -136,9 +136,13 @@ function RentalApp() {
   >(null);
   const [detail, setDetail] = useState<Listing | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [favorites, setFavorites] = useState<Listing[]>([]);
+  const collections = useAccountCollections();
+  const favorites = collections.state.favorites.data;
+  const searches = collections.state.searches.data;
+  const inbox = collections.state.notifications.data;
+  const setFavorites = (value: Listing[] | ((previous: Listing[]) => Listing[])) => collections.set("favorites", value);
+  const setInbox = (value: typeof inbox | ((previous: typeof inbox) => typeof inbox)) => collections.set("notifications", value);
   const favoriteIds = new Set(favorites.map((home) => home.id));
-  const [searches, setSearches] = useState<SavedSearch[]>([]);
   const [comparison, setComparison] = useState<Listing[]>([]);
   const [user, setUser] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<SessionState>("signed-out");
@@ -159,12 +163,6 @@ function RentalApp() {
   const [formBusy, setFormBusy] = useState(false);
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
   const [guestSeenIds, setGuestSeenIds] = useState<Set<string>>(new Set());
-  const [inbox, setInbox] = useState<Inbox>({
-    items: [],
-    unread_count: 0,
-    page: 1,
-    page_size: 30,
-  });
   const sessionGeneration = useRef(0);
   const currentUser = useRef(user);
   currentUser.current = user;
@@ -205,9 +203,7 @@ function RentalApp() {
         favoriteBusy.current.clear();
         currentUser.current = null;
         setUser(null);
-        setFavorites([]);
-        setSearches([]);
-        setInbox({ items: [], unread_count: 0, page: 1, page_size: 30 });
+        collections.reset();
         setSeenIds(new Set());
         setDialog(current =>
           current === "account" || current === "marketplace" || current === "save-search" || current === "report"
@@ -437,32 +433,7 @@ function RentalApp() {
     return generation === sessionGeneration.current && currentUser.current === email;
   }
   async function refreshAccount() {
-    const expected = currentUser.current;
-    const generation = sessionGeneration.current;
-    if (!expected) return;
-    try {
-      const [saved, searches, notifications] = await Promise.all([
-        api.favorites(),
-        api.searches(),
-        api.notifications(),
-      ]);
-      if (!isCurrentAccount(generation, expected)) return;
-      setFavorites(saved.items);
-      setSearches(searches.items);
-      setInbox((previous) => ({
-        ...notifications,
-        page: previous.page,
-        items: [
-          ...notifications.items,
-          ...previous.items.filter(
-            (item) =>
-              !notifications.items.some((newer) => newer.id === item.id),
-          ),
-        ],
-      }));
-    } catch (e) {
-      if (isCurrentAccount(generation, expected)) setToast((e as Error).message);
-    }
+    if (currentUser.current) await collections.refreshAll();
   }
   async function toggleFavorite(home: Listing) {
     if (!user) {
@@ -480,6 +451,7 @@ function RentalApp() {
       setFavorites((prev) =>
         saved ? prev.filter((item) => item.id !== home.id) : [...prev, home],
       );
+      if (!collections.state.favorites.loaded) void collections.refresh("favorites");
       setToast(
         saved
           ? "Removed from your shortlist."
@@ -493,16 +465,23 @@ function RentalApp() {
   }
   async function signedIn(token: string, email: string) {
     if (!isCurrentAccessToken(token)) return;
-    if (pendingFavorite.current) {
-      const home = pendingFavorite.current;
-      pendingFavorite.current = null;
-      await api.favorite(home.id, true);
-    }
-    if (!isCurrentAccessToken(token)) return;
-    sessionGeneration.current++;
+    const generation = ++sessionGeneration.current;
+    const home = pendingFavorite.current;
+    pendingFavorite.current = null;
+    collections.reset();
     currentUser.current = email;
     setSeenIds(new Set());
     setUser(email);
+    if (home) {
+      try {
+        await api.favorite(home.id, true);
+        if (isCurrentAccount(generation, email) && isCurrentAccessToken(token))
+          await collections.refresh("favorites");
+      } catch {
+        if (isCurrentAccount(generation, email) && isCurrentAccessToken(token))
+          setToast("Signed in, but could not save this home. Please try again.");
+      }
+    }
   }
   function openHome(home: Listing, hydrate = true) {
     const request = ++detailRequest.current;
@@ -852,7 +831,9 @@ function RentalApp() {
             </View>
           )}
           {tab === "notifications" ? (
-            <NotificationInbox
+            <>
+            {user && <CollectionStatus label="notifications" state={collections.state.notifications} retry={() => collections.refresh("notifications")} />}
+            {(!user || collections.state.notifications.loaded) && <NotificationInbox
               user={user}
               inbox={inbox}
               onSignIn={() => setDialog("auth")}
@@ -894,7 +875,8 @@ function RentalApp() {
                   if (isCurrentAccount(generation, user)) setToast((e as Error).message);
                 }
               }}
-            />
+            />}
+            </>
           ) : tab === "insights" ? (
             <Insights
               city={filters.city}
@@ -908,11 +890,12 @@ function RentalApp() {
                 Your saved area and filters run in the background. New homes
                 appear in Notifications; existing matches start quietly.
               </Text>
+              {user && <CollectionStatus label="saved searches" state={collections.state.searches} retry={() => collections.refresh("searches")} />}
               {!user ? (
                 <Button onPress={() => setDialog("auth")}>
                   Sign in to save searches
                 </Button>
-              ) : !searches.length ? (
+              ) : !collections.state.searches.loaded ? null : !searches.length ? (
                 <Text style={s.text}>
                   Find a search you like, then choose “Save search”.
                 </Text>
@@ -1371,6 +1354,7 @@ function RentalApp() {
                   </Button>
                 </View>
               )}
+              {tab === "saved" && user && <CollectionStatus label="saved homes" state={collections.state.favorites} retry={() => collections.refresh("favorites")} />}
               {tab === "saved" && !user ? (
                 <View style={[s.card, { padding: 40, gap: 20 }]}>
                   <Heart size={32} color={c.green} />
@@ -1399,7 +1383,7 @@ function RentalApp() {
                         gap: 16,
                       }}
                     >
-                      {(tab === "saved" || (!loading && !failed)) && !visibleHomes.length && (
+                      {((tab === "saved" && collections.state.favorites.loaded) || (tab !== "saved" && !loading && !failed)) && !visibleHomes.length && (
                         <View style={[s.card, { padding: 36, gap: 18 }]}>
                           <Search size={28} color={c.muted} />
                           <Text style={s.title}>
@@ -1861,4 +1845,13 @@ function RentalApp() {
       )}
     </View>
   );
+}
+
+function CollectionStatus<T>({ label, state, retry }: { label: string; state: Collection<T>; retry: () => void }) {
+  if (!state.loading && !state.failed && state.loaded) return null;
+  return <View style={[s.card, { padding: 14, gap: 8, alignItems: "flex-start" }]}>
+    {(state.loading || (!state.loaded && !state.failed)) && <Text accessibilityRole="status" style={s.muted}>Loading {label}…</Text>}
+    {state.failed && <Text accessibilityRole="alert" style={s.text}>Could not load {label}.{state.loaded ? " Showing previously loaded data; it may be out of date." : ""}</Text>}
+    {state.failed && <Button disabled={state.loading} onPress={retry}>Retry {label}</Button>}
+  </View>;
 }
