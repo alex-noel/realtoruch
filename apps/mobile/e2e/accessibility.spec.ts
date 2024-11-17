@@ -151,6 +151,92 @@ test("Q04 feedback stays inside details and outside comparison controls", async 
   await page.screenshot({ path: info.outputPath("q04-feedback.png") });
 });
 
+test("Q14 comparison keeps editable selections and aligned captured metrics", async ({ page, context }, info) => {
+  const blocked = await allowOwned(context);
+  const narrow = info.project.name === "mobile";
+  await page.setViewportSize({ width: narrow ? 320 : 1440, height: 850 });
+  const longTitle = "CourtyardApartmentWithTwoRoomsAndASeparateKitchenNearCentralKrakow";
+  const longSource = "IndependentSyntheticListingPublisherWithALongSourceName";
+  const candidates: Listing[] = [
+    { ...homes[0], title: longTitle, fees_pln: null, total_monthly_pln: 4000, sources: [{
+      name: longSource, url: `${web}/synthetic-offer`, rent_pln: 4000, fees_pln: null,
+      commission_pln: null, advertiser_type: "private", status: "active", last_checked: timestamp,
+      match_reason: "Synthetic fixture",
+    }] },
+    { ...homes[1], images: [] },
+    { ...homes[2], status: "inactive" },
+    homes[3],
+  ];
+  const headers = { "Access-Control-Allow-Origin": web };
+  let updated = false;
+  let detailRequests = 0;
+  await page.route(`${api}/v1/listings?*`, route => route.fulfill({
+    json: {
+      items: updated ? [{ ...candidates[0], rent_pln: 7700, total_monthly_pln: 7700 }, ...candidates.slice(1)] : candidates,
+      total: candidates.length, page: 1, page_size: 24, engine: "fixture",
+    },
+    headers,
+  }));
+  await page.route(`${api}/v1/listings/${candidates[0].id}`, route => {
+    detailRequests++;
+    return route.fulfill({ status: 503, json: {}, headers });
+  });
+
+  await page.goto("/", { waitUntil: "commit" });
+  for (const home of candidates) await button(page, `Compare ${home.title}`).click();
+  await expect(page.getByText("Compare up to three homes at a time.", { exact: true })).toBeVisible();
+  await button(page, "Dismiss message").click();
+  const openCompare = button(page, "Compare homes →");
+  const dialog = page.getByRole("dialog", { name: "Side by side" });
+
+  await button(page, `View ${longTitle}`).click();
+  const detail = page.getByRole("dialog", { name: "A closer look" });
+  await expect(detail.getByText(/Could not load current details/)).toBeVisible();
+  await button(detail, "Close dialog").click();
+  updated = true;
+  await button(page, "Find a home →").click();
+  await expect(page.getByText(/7700 zł/).first()).toBeVisible();
+
+  await openCompare.click();
+  await expect(dialog).toBeVisible();
+  if (narrow) await page.screenshot({ path: info.outputPath("q14-comparison-320px.png") });
+  await expect(dialog.getByText(/Listing snapshots from when each home was added/)).toBeVisible();
+  expect(detailRequests).toBe(1);
+  const table = dialog.getByRole("table", { name: "Home comparison" });
+  const row = (name: string) => table.getByRole("row").filter({
+    has: page.getByRole("rowheader", { name, exact: true }),
+  });
+  const base = row("Base rent").getByRole("cell");
+  await expect(base).toHaveText(["4000 zł", "4020 zł", "4040 zł"]);
+  await expect(row("Availability when selected").getByRole("cell")).toHaveText(["Listed", "Listed", "Delisted"]);
+  await expect(row("Building fees").getByRole("cell").first()).toHaveText("Not stated");
+  await expect(row("Known monthly costs").getByRole("cell").first()).toHaveText("4000 zł");
+  await expect(row("Commission").getByRole("cell").first()).toHaveText("Not stated");
+  await expect(row("Sources").getByText(longSource)).toBeVisible();
+  await expect(table.getByText("No photo available")).toHaveCount(1);
+  const cells = await base.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON()));
+  const widest = await table.boundingBox();
+  expect(widest).not.toBeNull();
+  for (const [index, cell] of cells.entries()) {
+    expect(cell.top).toBeCloseTo(cells[0].top, 1);
+    expect(cell.left).toBeGreaterThanOrEqual(widest!.x);
+    expect(cell.right).toBeLessThanOrEqual(widest!.x + widest!.width + 1);
+    if (index > 0) expect(cell.left).toBeGreaterThan(cells[index - 1].right);
+  }
+  const sources = await row("Sources").getByRole("cell").first().evaluate(node => ({
+    width: node.clientWidth, scrollWidth: node.scrollWidth,
+  }));
+  expect(sources.scrollWidth).toBeLessThanOrEqual(sources.width + 1);
+
+  await button(dialog, "Close dialog").click();
+  await button(page, `Remove ${candidates[1].title} from comparison`).click();
+  await expect(page.getByText("2 of 3 selected", { exact: true })).toBeVisible();
+  await openCompare.click();
+  await expect(base).toHaveText(["4000 zł", "4040 zł"]);
+  expect(detailRequests).toBe(1);
+  expect(blocked).toEqual([]);
+});
+
 test("Q11 broken photos keep their frame and recover on source changes", async ({ page, context }, info) => {
   const blocked = await allowOwned(context);
   await page.route(`${web}/t20-image/001.png`, route => route.fulfill({ status: 404, body: "missing" }));

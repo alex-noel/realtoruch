@@ -790,67 +790,90 @@ export function CompareDialog({
   onClose: () => void;
 }) {
   const narrow = useWindowDimensions().width < 700;
+  const imageHeight = narrow ? 80 : 140;
   const rows: [string, (home: Listing) => string][] = [
+    ["Availability when selected", (h) => h.status === "active" ? "Listed" : h.status === "inactive" ? "Delisted" : "Availability unconfirmed"],
     ["Base rent", (h) => money(h.rent_pln)],
     ["Building fees", (h) => money(h.fees_pln)],
-    ["Monthly total", (h) => money(h.total_monthly_pln)],
+    ["Known monthly costs", (h) => money(h.total_monthly_pln)],
     ["Deposit", (h) => money(h.deposit_pln)],
     ["Commission", (h) => money(h.commission_pln)],
     ["Size", (h) => `${h.area_m2} m² · ${h.rooms} rooms`],
-    ["Advertiser", (h) => h.advertiser_type],
+    ["Advertiser", (h) => h.advertiser_type === "private" ? "Direct offer" : h.advertiser_type === "agency" ? "Agency" : "Type unconfirmed"],
     ["Risk signals", (h) => `${h.risk_flags.length}`],
-    ["Sources", (h) => h.sources.map((s) => s.name).join(", ")],
+    ["Sources", (h) => h.sources.map((source) => source.name).join(", ") || "Not stated"],
   ];
+  const valueColumn = { flex: 1, minWidth: 0 };
+  const labelColumn = narrow ? {} : { width: "22%" as const };
   return (
     <Panel title="Side by side" wide onClose={onClose}>
+      <Text style={s.muted}>
+        Listing snapshots from when each home was added. Prices, sources and availability can change.
+      </Text>
       <View
-        style={{
-          flexDirection: narrow ? "column" : "row",
-          alignItems: "stretch",
-          gap: 22,
-        }}
+        role="table"
+        accessibilityLabel="Home comparison"
+        {...(Platform.OS === "web" ? { "aria-colcount": homes.length + 1 } : {})}
+        style={{ gap: 12 }}
       >
-        {homes.map((home) => (
+        <View role="row" style={[s.row, { alignItems: "stretch", gap: 10 }]}>
+          {!narrow && <View role="columnheader" style={labelColumn}><Text style={s.label}>FEATURE</Text></View>}
+          {homes.map((home, index) => (
+            <View
+              key={home.id}
+              role="columnheader"
+              {...(Platform.OS === "web" ? { "aria-colindex": index + 2 } : {})}
+              style={[valueColumn, { gap: 8 }]}
+            >
+              {home.images[0] ? (
+                <ListingPhoto
+                  uri={home.images[0]}
+                  alt={home.is_demo ? "Illustrative apartment interior" : `Photo of ${home.title}`}
+                  height={imageHeight}
+                  width={300}
+                />
+              ) : (
+                <View style={{
+                  backgroundColor: c.pale, height: imageHeight, padding: 4,
+                  justifyContent: "center", alignItems: "center",
+                }}>
+                  <Text style={[s.muted, { textAlign: "center" }]}>No photo available</Text>
+                </View>
+              )}
+              <Text numberOfLines={narrow ? 3 : undefined} style={[s.text, { fontWeight: "700" }]}>
+                {home.title}
+              </Text>
+            </View>
+          ))}
+        </View>
+        {rows.map(([label, value]) => (
           <View
-            key={home.id}
-            style={{ flex: narrow ? undefined : 1, minWidth: 0, gap: 12 }}
+            key={label}
+            role="row"
+            style={{
+              flexDirection: narrow ? "column" : "row",
+              gap: 10, borderTopWidth: 1, borderColor: c.line, paddingTop: 12,
+            }}
           >
-            {!!home.images[0] && (
-              <ListingPhoto
-                uri={home.images[0]}
-                alt={
-                  home.is_demo
-                    ? "Illustrative apartment interior"
-                    : `Photo of ${home.title}`
-                }
-                height={140}
-                width={300}
-              />
-            )}
-            <Text style={[s.text, { fontWeight: "600", minHeight: 66 }]}>
-              {home.title}
-            </Text>
-            {rows.map(([label, value]) => (
-              <View
-                key={label}
-                style={{
-                  borderTopWidth: 1,
-                  borderColor: c.line,
-                  paddingTop: 12,
-                  minHeight: 64,
-                }}
-              >
-                <Text style={[s.label, { fontSize: 9, letterSpacing: 0.5 }]}>
-                  {label.toUpperCase()}
-                </Text>
-                <Text style={[s.text, { marginTop: 4, fontSize: 12 }]}>
-                  {value(home)}
-                </Text>
-              </View>
-            ))}
+            <View role="rowheader" style={labelColumn}>
+              <Text style={[s.text, { fontWeight: "600" }]}>{label}</Text>
+            </View>
+            <View role="presentation" style={[s.row, { flex: narrow ? undefined : 1, alignItems: "stretch", gap: 10 }]}>
+              {homes.map((home, index) => (
+                <View
+                  key={home.id}
+                  role="cell"
+                  {...(Platform.OS === "web" ? { "aria-colindex": index + 2 } : {})}
+                  style={valueColumn}
+                >
+                  <Text style={s.text}>{value(home)}</Text>
+                </View>
+              ))}
+            </View>
           </View>
         ))}
       </View>
+      <Text style={s.muted}>Known monthly costs include rent and stated building fees. Utilities may be additional.</Text>
     </Panel>
   );
 }
