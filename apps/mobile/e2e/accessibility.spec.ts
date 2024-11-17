@@ -7,7 +7,7 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
-import type { Listing } from "../src/types";
+import type { History, Listing, Summary } from "../src/types";
 
 const web = process.env.E2E_WEB_URL!;
 const api = process.env.E2E_API_URL!;
@@ -167,6 +167,119 @@ test("Q12 gallery bounds photo loading and keeps keyboard navigation inside its 
   await expect(dialog.getByText("No photos available", { exact: true })).toBeVisible();
   await expect(frame).toHaveCount(0);
   await expect(next).toHaveCount(0);
+  expect(blocked).toEqual([]);
+});
+
+test("Q17 rent history is readable for empty, single, flat and 24-month samples", async ({ page, context }, info) => {
+  const blocked = await allowOwned(context);
+  const narrow = info.project.name === "mobile";
+  await page.setViewportSize({ width: narrow ? 320 : 1440, height: 900 });
+  const methodology = "Synthetic methodology. Months without observations are not interpolated.";
+  const points: History["points"] = Array.from({ length: 24 }, (_, index) => ({
+    month: `${2024 + Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, "0")}`,
+    median_rent_pln: 4000 + 40 * index,
+    median_per_m2: 69,
+    sample_size: index === 23 ? 12 : 50,
+    is_demo: index === 3,
+  }));
+  const historyRequests: URLSearchParams[] = [];
+  const headers = { "Access-Control-Allow-Origin": web };
+  await page.route(`${api}/v1/market/history?*`, route => {
+    const params = new URL(route.request().url()).searchParams;
+    historyRequests.push(params);
+    const district = params.get("district");
+    let sample = points;
+    if (params.get("city") === "Warszawa") sample = [points[23]];
+    else if (district === "Stare Miasto") sample = [];
+    else if (district === "Krowodrza") sample = points.map(point => ({ ...point, median_rent_pln: 4200 }));
+    return route.fulfill({ json: { points: sample, methodology }, headers });
+  });
+  await page.route(`${api}/v1/market/summary?*`, route => {
+    const warsaw = new URL(route.request().url()).searchParams.get("city") === "Warszawa";
+    const summary: Summary = {
+      homes: 100, source_listings: 100, duplicates_removed: 0, private_homes: 100,
+      median_rent_pln: 4000, demo: false, cities: ["Kraków", "Warszawa"],
+      districts: warsaw ? ["Mokotów"] : ["Stare Miasto", "Krowodrza"],
+    };
+    return route.fulfill({ json: summary, headers });
+  });
+  const history: Listing["history"] = Array.from({ length: 12 }, (_, index) => ({
+    at: `2026-01-${String(index + 1).padStart(2, "0")}T12:00:00Z`,
+    rent_pln: 12000 + 100 * index,
+    fees_pln: 500,
+    status: "active",
+  }));
+  await page.route(`${api}/v1/listings/${homes[0].id}`, route => route.fulfill({
+    json: { ...homes[0], history }, headers,
+  }));
+
+  await page.goto("/", { waitUntil: "commit" });
+  const insights = button(page, "Rent insights");
+  await insights.click();
+  const chart = page.getByRole("img", { name: /Monthly median (base|asking) rent chart/ });
+  await chart.scrollIntoViewIfNeeded();
+  if (narrow) await page.screenshot({ path: info.outputPath("q17-insights-320px.png") });
+  await expect(page.getByText(/Jan 2024 to Dec 2025 · 24 observed months/)).toBeVisible();
+  await expect(page.getByText("Includes illustrative data", { exact: true })).toBeVisible();
+  await expect(page.getByText("Some months have fewer than 30 observed homes.", { exact: true })).toBeVisible();
+  await expect(page.getByText("CHANGE IN OBSERVED SAMPLE MEDIANS", { exact: true })).toBeVisible();
+  await expect(page.getByText("+23.0%", { exact: true })).toBeVisible();
+  await expect(page.getByText(methodology, { exact: true })).toBeVisible();
+  const labels = await chart.locator("text").evaluateAll(nodes =>
+    nodes.filter(node => /[A-Z][a-z]+ \d{4}/.test(node.textContent ?? "")).map(node => ({
+      label: node.textContent,
+      font: parseFloat(getComputedStyle(node).fontSize),
+      left: node.getBoundingClientRect().left,
+      right: node.getBoundingClientRect().right,
+    })),
+  );
+  expect(labels).toHaveLength(narrow ? 2 : 5);
+  expect(labels[0].label).toBe("Jan 2024");
+  expect(labels.at(-1)?.label).toBe("Dec 2025");
+  for (const [index, label] of labels.entries()) {
+    expect(label.font).toBeGreaterThanOrEqual(12);
+    expect(label.left).toBeGreaterThanOrEqual(0);
+    expect(label.right).toBeLessThanOrEqual(narrow ? 320 : 1440);
+    if (index > 0) expect(label.left).toBeGreaterThan(labels[index - 1].right);
+  }
+  await expect(chart.locator("circle")).toHaveCount(24);
+  for (const point of points) {
+    const month = new Date(`${point.month}-01T00:00:00Z`).toLocaleDateString("en-GB", {
+      month: "short", year: "numeric", timeZone: "UTC",
+    });
+    await expect(page.getByText(month, { exact: true }).last()).toBeVisible();
+  }
+
+  await button(page, "Krowodrza").click();
+  await expect(page.getByText("0.0%", { exact: true })).toBeVisible();
+  const flatY = await chart.locator("circle").evaluateAll(nodes => nodes.map(node => node.getAttribute("cy")));
+  expect(new Set(flatY).size).toBe(1);
+  await button(page, "Stare Miasto").click();
+  await expect(page.getByText(/No observations for this area yet/)).toBeVisible();
+  await expect(chart).toHaveCount(0);
+  await expect(page.getByText("CHANGE IN OBSERVED SAMPLE MEDIANS", { exact: true })).toHaveCount(0);
+
+  await button(page, "Discover homes").click();
+  await button(page, first).click();
+  const dialog = page.getByRole("dialog", { name: "A closer look" });
+  await expect(dialog.getByText("Showing the latest 8 of 12 observations.", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("12 Jan 2026", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("5 Jan 2026", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("4 Jan 2026", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText(/13\s100 zł · active/)).toBeVisible();
+  await button(dialog, "Close dialog").click();
+
+  const city = page.getByRole("textbox", { name: "City", exact: true });
+  await city.fill("Warszawa");
+  await city.press("Enter");
+  await insights.click();
+  await expect(page.getByText(/Dec 2025 · One observed month/)).toBeVisible();
+  await expect(chart.locator("circle")).toHaveCount(1);
+  await expect(page.getByText("CHANGE IN OBSERVED SAMPLE MEDIANS", { exact: true })).toHaveCount(0);
+  await expect(button(page, "Whole city")).toHaveAttribute("aria-pressed", "true");
+  await expect(button(page, "Stare Miasto")).toHaveCount(0);
+  expect(historyRequests.at(-1)?.get("city")).toBe("Warszawa");
+  expect(historyRequests.at(-1)?.get("district")).toBeFalsy();
   expect(blocked).toEqual([]);
 });
 
