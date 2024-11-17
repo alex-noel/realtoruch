@@ -1447,6 +1447,7 @@ function RentalApp() {
                           homes={homes}
                           selected={selected}
                           onSelect={openHome}
+                          onShowList={() => setView("list")}
                           city={filters.city}
                           polygon={filters.polygon}
                           onPolygonChange={(polygon) =>

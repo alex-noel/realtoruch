@@ -380,6 +380,135 @@ test("Q17 rent history is readable for empty, single, flat and 24-month samples"
   expect(blocked).toEqual([]);
 });
 
+test("Q15 retry recovers the map component and engine chunks independently", async ({ page, context }, info) => {
+  const blocked = await allowOwned(context);
+  let allowMap = false;
+  let allowEngine = false;
+  let mapAttempts = 0;
+  let engineAttempts = 0;
+  await page.route(/\/PropertyMap-[^/]+\.js$/, route => {
+    mapAttempts++;
+    return allowMap ? route.continue() : route.abort("failed");
+  });
+  await page.route(/\/leaflet-src-[^/]+\.js$/, route => {
+    engineAttempts++;
+    return allowEngine ? route.continue() : route.abort("failed");
+  });
+  await page.goto("/", { waitUntil: "commit" });
+  if (info.project.name === "mobile") await button(page, "Map view").click();
+  const map = page.getByRole("region", { name: "Map of rental homes" });
+  const failure = page.getByRole("alert").filter({ hasText: "The map couldn't load." });
+  await expect(failure).toBeVisible();
+  await expect(map).toHaveCount(0);
+  expect(mapAttempts).toBe(1);
+  expect(engineAttempts).toBe(0);
+
+  allowMap = true;
+  await button(page, "Retry map").click();
+  await expect.poll(() => engineAttempts).toBe(1);
+  await expect(failure).toBeVisible();
+  expect(mapAttempts).toBe(2);
+  allowEngine = true;
+  await button(page, "Retry map").click();
+  await expect(map.locator("img.leaflet-tile-loaded").first()).toBeVisible();
+  await expect(failure).toHaveCount(0);
+  await expect(map.getByRole("link", { name: "OpenStreetMap" })).toBeVisible();
+  expect(mapAttempts).toBe(2);
+  expect(engineAttempts).toBe(2);
+  expect(blocked).toEqual([]);
+});
+
+test("Q15 tile recovery preserves the area and offers list and owner coordinate fallbacks", async ({ page, context }, info) => {
+  const blocked = await allowOwned(context);
+  let failTiles = true;
+  let tileAttempts = 0;
+  // The loopback fixture serves one tile URL. Give requests distinct URLs as
+  // with a real tile grid so success and failure batches cannot share a decode.
+  await page.addInitScript(() => {
+    let sequence = 0;
+    const source = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src")!;
+    Object.defineProperty(HTMLImageElement.prototype, "src", {
+      ...source,
+      set(value: string) {
+        const url = new URL(value, location.href);
+        if (url.origin === location.origin && url.pathname === "/tile.png") {
+          url.searchParams.set("fixture-tile", String(++sequence));
+          source.set!.call(this, url.href);
+        } else {
+          source.set!.call(this, value);
+        }
+      },
+    });
+  });
+  await page.route(url => url.origin === web && url.pathname === "/tile.png", route => {
+    tileAttempts++;
+    return failTiles && tileAttempts % 8 !== 1 ? route.fulfill({ status: 503 }) : route.continue();
+  });
+  await page.goto("/", { waitUntil: "commit" });
+  const direct = button(page, "Direct offers");
+  await direct.click();
+  if (info.project.name === "mobile") await button(page, "Map view").click();
+  const map = page.getByRole("region", { name: "Map of rental homes" });
+  const tileFailure = page.getByRole("alert").filter({ hasText: "Map tiles couldn't load." });
+  await expect(tileFailure).toBeVisible();
+  expect(tileAttempts).toBeGreaterThan(1);
+  const firstPane = await map.locator(".leaflet-map-pane").elementHandle();
+
+  await button(page, "Enter area coordinates").click();
+  const editor = page.getByRole("dialog", { name: "Search area coordinates" });
+  for (const [lat, lon] of [["50.03", "19.90"], ["50.09", "19.92"], ["50.05", "20.00"]]) {
+    await editor.getByLabel("Latitude", { exact: true }).fill(lat);
+    await editor.getByLabel("Longitude", { exact: true }).fill(lon);
+    await button(editor, "Add vertex").click();
+  }
+  const search = page.waitForRequest(request => new URL(request.url()).searchParams.has("polygon"));
+  await button(editor, "Use this area").click();
+  const query = new URL((await search).url()).searchParams;
+  expect(query.get("advertiser")).toBe("private");
+  expect(JSON.parse(query.get("polygon")!)).toEqual([[19.90, 50.03], [19.92, 50.09], [20.00, 50.05]]);
+  await expect(button(page, "Drawn area ×")).toBeVisible();
+  await expect(tileFailure).toBeVisible();
+  if (info.project.name === "mobile")
+    await page.screenshot({ path: info.outputPath("q15-tile-failure.png") });
+
+  failTiles = false;
+  await button(page, "Retry map").click();
+  await expect(map.locator("img.leaflet-tile-loaded").first()).toBeVisible();
+  await expect(tileFailure).toHaveCount(0);
+  await expect(map.getByRole("link", { name: "OpenStreetMap" })).toBeVisible();
+  await expect(map.locator(".leaflet-map-pane")).toHaveCount(1);
+  expect(await firstPane.evaluate(node => node.isConnected)).toBe(false);
+  await expect(button(page, "Drawn area ×")).toBeVisible();
+  await expect(direct).toHaveAttribute("aria-pressed", "true");
+  await button(page, "Redraw area").click();
+  await map.click({ position: { x: 90, y: 120 } });
+  await expect(page.getByText(/1\/64 points/)).toBeVisible();
+  await button(page, "Cancel drawing").click();
+
+  failTiles = true;
+  await map.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await expect(tileFailure).toBeVisible();
+  await button(page, "Show homes as a list").click();
+  await expect(map).toHaveCount(0);
+  await expect(button(page, first)).toBeVisible();
+  await expect(button(page, "Drawn area ×")).toBeVisible();
+  await expect(direct).toHaveAttribute("aria-pressed", "true");
+
+  await register(page, `q15-owner-${info.project.name}@example.test`);
+  await button(page, "Account").click();
+  await button(page, "My rental adverts").click();
+  const desk = page.getByRole("dialog", { name: "Your rental desk." });
+  await desk.getByLabel("PUBLIC NAME").fill("Synthetic Q15 owner");
+  await button(desk, "Save profile").click();
+  await button(desk, "Create rental advert").click();
+  await expect(desk.getByText("Map tiles couldn't load.", { exact: true })).toBeVisible();
+  await expect(desk.getByText("Enter latitude and longitude in the location fields.", { exact: true })).toBeVisible();
+  await desk.getByLabel("Location latitude").fill("50,0647");
+  await desk.getByLabel("Location longitude").fill("19,945");
+  await expect(desk.getByText("Location set", { exact: true })).toBeVisible();
+  expect(blocked).toEqual([]);
+});
+
 async function allowOwned(context: BrowserContext, fixture = true) {
   const blocked: string[] = [];
   const favorites = new Map<string, Listing>([
