@@ -457,7 +457,6 @@ export function DetailDialog({
           SAMPLE HOME · Fictional listing and illustrative photography
         </Text>
       )}
-      <ListingGallery key={home.id} home={home} narrow={narrow} />
       <View style={{ gap: 8 }}>
         <Text style={s.label}>
           {[home.district, home.city].filter(Boolean).join(" · ").toUpperCase()}
@@ -498,17 +497,32 @@ export function DetailDialog({
           </Text>
         </View>
         <View>
-          <Text style={s.label}>MONTHLY TOTAL*</Text>
+          <Text style={s.label}>{home.fees_pln === null ? "KNOWN COSTS · FEES UNSTATED" : "RENT + BUILDING FEES*"}</Text>
           <Text style={[s.text, { marginTop: 10, fontWeight: "700" }]}>
             {money(home.total_monthly_pln)}
           </Text>
         </View>
       </View>
       <Text style={s.muted}>
-        * Base rent + stated building fees. Utilities may be additional.
+        * This is not a complete monthly bill. Utilities may be additional. When building fees are unstated, the displayed known cost excludes them.
         Deposit: {money(home.deposit_pln)}. Commission:{" "}
         {money(home.commission_pln)}. “Not stated” does not mean zero.
       </Text>
+      <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>
+        <Button onPress={onSave}>
+          {saved ? "Remove from saved homes" : "Save this home"}
+        </Button>
+        {(detailsLoaded && home.status === "active" ? home.contact_adverts || [] : []).map((contact) => (
+          <Button key={contact.id} onPress={() => onContact(contact)}>Message {contact.name}</Button>
+        ))}
+        {detailsLoaded && home.status === "active" && home.sources.filter(source => source.name !== "realtoruch" && source.status === "active").map((source, index) => (
+          <Button key={`${source.name}-${index}`} outline onPress={() => Linking.openURL(source.url)}>View on {source.name}</Button>
+        ))}
+        <Button variant="quiet" onPress={onReport}>
+          Report a concern
+        </Button>
+      </View>
+      <ListingGallery key={home.id} home={home} narrow={narrow} />
       <View style={{ gap: 12 }}>
         <Text style={[s.title, { fontSize: 20 }]}>The space</Text>
         <Text style={s.text}>{home.description}</Text>
@@ -527,11 +541,6 @@ export function DetailDialog({
         </View>
       </View>
       <View style={{ gap: 12 }}>
-        {(detailsLoaded && home.status === "active" ? home.contact_adverts || [] : []).map((contact) => (
-          <Button key={contact.id} onPress={() => onContact(contact)}>
-            Message {contact.name}
-          </Button>
-        ))}
         <Text style={[s.title, { fontSize: 20 }]}>One home. Every source.</Text>
         {home.sources.map((source, i) => (
           <View key={source.name + i} style={[s.card, { padding: 16, gap: 6 }]}>
@@ -632,14 +641,7 @@ export function DetailDialog({
           ))}
         </View>
       )}
-      <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>
-        <Button onPress={onSave}>
-          {saved ? "Remove from saved homes" : "Save this home"}
-        </Button>
-        <Button outline onPress={onReport}>
-          Report a concern
-        </Button>
-      </View>
+
     </Panel>
   );
 }

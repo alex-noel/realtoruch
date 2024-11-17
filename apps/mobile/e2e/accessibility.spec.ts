@@ -54,6 +54,48 @@ const homes: Listing[] = Array.from({ length: 100 }, (_, i) => {
   };
 });
 
+test("Q13 costs distinguish unknown and zero and primary actions precede descriptions", async ({ page, context }, info) => {
+  await allowOwned(context);
+  await page.setViewportSize({ width: info.project.name === "mobile" ? 390 : 1440, height: 844 });
+  let fees: number | null = null;
+  let active = true;
+  await page.route(`${api}/v1/listings/t20-001`, route => route.fulfill({ json: {
+    ...homes[0], fees_pln: fees, total_monthly_pln: fees === null ? null : homes[0].rent_pln,
+    status: active ? "active" : "inactive", description: "A long description. ".repeat(100),
+    sources: [{ name: "fixture", url: "https://example.test/listing", rent_pln: 4000, fees_pln: fees, commission_pln: null, advertiser_type: "private", status: "active", last_checked: timestamp, match_reason: "fixture" }],
+  }, headers: { "Access-Control-Allow-Origin": web } }));
+  await page.goto("/");
+  const open = () => page.getByRole("button", { name: `View ${first}`, exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await open();
+  await expect(dialog.getByText("KNOWN COSTS · FEES UNSTATED", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Not stated", { exact: true })).toHaveCount(2);
+  await expect(dialog.getByRole("button", { name: "Message Synthetic owner" })).toHaveCount(0);
+  const source = dialog.getByRole("button", { name: "View on fixture", exact: true });
+  await expect(source).toBeVisible();
+  for (const scale of [1, 2]) {
+    if (scale === 2) await doubleText(page);
+    await reachable(source);
+    const order = await source.evaluate(node => {
+      const root = node.closest("dialog")!;
+      const description = Array.from(root.querySelectorAll("div")).find(item => item.textContent === "The space");
+      return !!description && !!(node.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    expect(order).toBe(true);
+    await reachable(dialog.getByRole("button", { name: "Save this home", exact: true }));
+  }
+  await page.screenshot({ path: info.outputPath("q13-actions.png") });
+  await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
+  fees = 0; await open();
+  await expect(dialog.getByText("RENT + BUILDING FEES*", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("0 zł", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
+  active = false; await open();
+  await expect(dialog.getByText(/Delisted · Kept/)).toBeVisible();
+  await expect(source).toHaveCount(0);
+  await expect(dialog.getByRole("link", { name: "Visit fixture" })).toBeDisabled();
+});
+
 test("Q10 delayed notification cannot reopen a closed listing", async ({ page, context }, info) => {
   await allowOwned(context);
   await page.route(`${api}/v1/me/notifications*`, route => route.fulfill({ json: {

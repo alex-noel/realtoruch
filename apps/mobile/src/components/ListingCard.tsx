@@ -262,13 +262,12 @@ export function ListingCard({
               ]}
             >
               {money(home.rent_pln)}
-              <Text style={[s.muted, { fontWeight: "400" }]}> / month</Text>
+              <Text style={[s.muted, { fontWeight: "400" }]}> base rent / month</Text>
             </Text>
-            <Text style={[s.muted, { fontSize: 10 }]}>
-              +{" "}
+            <Text style={[s.muted, { fontSize: 12 }]}>
               {home.fees_pln === null
                 ? "fees not stated"
-                : `${money(home.fees_pln)} building fees`}
+                : `+ ${money(home.fees_pln)} building fees`}
             </Text>
           </View>
           <Pressable
