@@ -47,7 +47,7 @@ import {
   DEFAULT_FILTERS,
   Listing,
 } from "./types";
-import { c, font, s } from "./theme";
+import { c, controlHeight, font, s } from "./theme";
 import { Button, Chip, Field, Panel, money, Feedback, FeedbackContext } from "./components/UI";
 import { ListingCard } from "./components/ListingCard";
 import {
@@ -528,10 +528,15 @@ function RentalApp() {
       });
   }
   function toggleCompare(home: Listing) {
-    if (comparison.some((item) => item.id === home.id))
-      setComparison((prev) => prev.filter((item) => item.id !== home.id));
-    else if (comparison.length < 3) setComparison((prev) => [...prev, home]);
-    else setErrorToast("Compare up to three homes at a time.");
+    if (comparison.length >= 3 && !comparison.some((item) => item.id === home.id)) {
+      setErrorToast("Compare up to three homes at a time.");
+      return;
+    }
+    setComparison((previous) => {
+      if (previous.some((item) => item.id === home.id))
+        return previous.filter((item) => item.id !== home.id);
+      return previous.length < 3 ? [...previous, home] : previous;
+    });
   }
   function openDialog(value: typeof dialog) {
     setFormError("");
@@ -1581,36 +1586,46 @@ function RentalApp() {
         </ScrollView>
         {comparison.length > 0 && (
           <View
-            style={[
-              s.row,
-              {
-                paddingHorizontal: 24,
-                paddingVertical: 12,
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-                gap: 14,
-                backgroundColor: c.green,
-              },
-            ]}
+            style={{ paddingHorizontal: mobile ? 12 : 24, paddingVertical: 10, gap: 8, backgroundColor: c.green }}
           >
-            <Text style={{ color: "white", fontSize: 12 }}>
-              {comparison.length} {comparison.length === 1 ? "home" : "homes"}{" "}
-              to compare
-            </Text>
-            <View style={[s.row, { gap: 15, flexWrap: "wrap" }]}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setComparison([])}
-              >
-                <Text style={{ color: "#CBDAC3", fontSize: 12 }}>Clear</Text>
-              </Pressable>
-              <Button
-                outline
-                disabled={comparison.length < 2}
-                onPress={() => setDialog("compare")}
-              >
-                Compare homes →
-              </Button>
+            <View style={[s.row, { gap: 6, flexWrap: "wrap" }]}>
+              {comparison.map((home) => (
+                <Pressable
+                  key={home.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${home.title} from comparison`}
+                  onPress={() => setComparison((previous) => previous.filter((item) => item.id !== home.id))}
+                  style={[s.row, {
+                    gap: 8, paddingHorizontal: 10, minHeight: controlHeight, minWidth: 0,
+                    maxWidth: mobile ? "100%" : 260, borderWidth: 1, borderColor: "#CBDAC3",
+                  }]}
+                >
+                  <Text numberOfLines={1} style={[s.text, { color: c.paper, flexShrink: 1 }]}>{home.title}</Text>
+                  <X size={16} color={c.paper} accessible={false} />
+                </Pressable>
+              ))}
+            </View>
+            <View style={[s.row, { gap: 8, flexWrap: "wrap", justifyContent: "space-between" }]}>
+              <Text aria-live="polite" style={[s.muted, { color: c.paper }]}>
+                {comparison.length} of 3 selected
+              </Text>
+              <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear comparison"
+                  onPress={() => setComparison([])}
+                  style={[s.row, { minHeight: controlHeight, minWidth: controlHeight, justifyContent: "center" }]}
+                >
+                  <Text style={{ color: "#CBDAC3", fontSize: 12 }}>Clear</Text>
+                </Pressable>
+                <Button
+                  outline
+                  disabled={comparison.length < 2}
+                  onPress={() => setDialog("compare")}
+                >
+                  Compare homes →
+                </Button>
+              </View>
             </View>
           </View>
         )}
