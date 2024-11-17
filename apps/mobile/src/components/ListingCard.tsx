@@ -25,6 +25,7 @@ type ListingPhotoProps = {
   width: number;
   height: number;
   fill?: boolean;
+  thumbnail?: boolean;
 };
 
 export function ListingPhoto(props: ListingPhotoProps) {
@@ -39,6 +40,7 @@ function PhotoSource({
   width,
   height,
   fill = false,
+  thumbnail = false,
 }: ListingPhotoProps) {
   const [failed, setFailed] = useState(false);
   if (failed || !uri) return (
@@ -52,8 +54,8 @@ function PhotoSource({
         backgroundColor: c.pale, alignItems: "center", justifyContent: "center", gap: 8,
       }}
     >
-      <ScanLine size={32} color={c.muted} accessible={false} />
-      <Text style={s.muted}>Photo unavailable</Text>
+      <ScanLine size={thumbnail ? 16 : 32} color={c.muted} accessible={false} />
+      {!thumbnail && <Text style={s.muted}>Photo unavailable</Text>}
     </View>
   );
   if (Platform.OS === "web")
