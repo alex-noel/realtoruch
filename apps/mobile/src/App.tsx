@@ -46,7 +46,9 @@ import { AccountDialog, ResetPasswordDialog } from "./components/DeferredAccount
 import { market } from "./marketplaceApi";
 import {
   DEFAULT_FILTERS,
-  Listing,
+  type Filters,
+  type Listing,
+  type SavedSearch,
 } from "./types";
 import { c, controlHeight, font, s } from "./theme";
 import { Button, Chip, Field, Panel, money, Feedback, FeedbackContext } from "./components/UI";
@@ -94,6 +96,14 @@ const SORT_OPTIONS = [
   { value: "price_desc", label: "Highest rent" },
   { value: "area_desc", label: "Largest first" },
 ] as const;
+
+function defaultSearchName(filters: Filters) {
+  const details = summarizeFilters(filters).items
+    .filter(({ key }) => key !== "property_type")
+    .slice(0, 2)
+    .map(({ label }) => label);
+  return [filters.city.trim() || "Poland", ...details].join(" · ").slice(0, 120);
+}
 
 export default function App() {
   return (
@@ -171,6 +181,13 @@ function RentalApp() {
   const setErrorToast = (message: string) => setFeedback({ id: ++feedbackSequence.current, message, kind: "error" });
   const feedbackProps = feedback ? { ...feedback, onDismiss: () => setFeedback(null), announce: announcedFeedback.current !== feedback.id, onAnnounced: () => { announcedFeedback.current = feedback.id; } } : null;
   const [searchName, setSearchName] = useState("My Kraków shortlist");
+  const [searchDraftFilters, setSearchDraftFilters] = useState<Filters>(filters);
+  const [deleteSearchCandidate, setDeleteSearchCandidate] =
+    useState<SavedSearch | null>(null);
+  const [searchDeleteBusy, setSearchDeleteBusy] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [searchDeleteErrors, setSearchDeleteErrors] = useState<Record<string, string>>({});
   const [reportReason, setReportReason] = useState("");
   const [formError, setFormError] = useState("");
   const [formBusy, setFormBusy] = useState(false);
@@ -180,6 +197,8 @@ function RentalApp() {
   const currentUser = useRef(user);
   const renderedSessionRevision = getSessionRevision();
   currentUser.current = user;
+  const currentDialog = useRef(dialog);
+  currentDialog.current = dialog;
   const detailRequest = useRef(0);
   const pendingFavorite = useRef<Listing | null>(null);
   const [favoriteActions, setFavoriteActions] = useState(() => new Map<string, FavoriteAction>());
@@ -203,6 +222,32 @@ function RentalApp() {
   function dismissFavoriteError(id: string) {
     if (latestFavoriteActions.current.get(id)?.state === "failed") updateFavoriteAction(id);
   }
+  const pendingSearchSave = useRef<Filters | null>(null);
+  const resumeSearchAfterAuth = useRef(false);
+  const searchSaveOperation = useRef<object | null>(null);
+  const searchDeleteOperations = useRef(new Map<string, object>());
+  const deleteSearchCandidateRef = useRef<SavedSearch | null>(null);
+
+  function setDeleteCandidate(candidate: SavedSearch | null) {
+    deleteSearchCandidateRef.current = candidate;
+    setDeleteSearchCandidate(candidate);
+  }
+
+  function resetSearchWork(preserveGuestIntent: boolean) {
+    deleteSearchCandidateRef.current = null;
+    setDeleteSearchCandidate(null);
+    setSearchDeleteErrors({});
+    setSearchDeleteBusy(new Set());
+    searchDeleteOperations.current.clear();
+    searchSaveOperation.current = null;
+    setFormBusy(false);
+    if (!preserveGuestIntent) {
+      pendingSearchSave.current = null;
+      resumeSearchAfterAuth.current = false;
+      setSearchName(defaultSearchName(filters));
+      setSearchDraftFilters(filters);
+    }
+  }
 
   async function retrySession() {
     const generation = sessionGeneration.current;
@@ -225,7 +270,13 @@ function RentalApp() {
     const unsubscribe = subscribeSession((state) => {
       setSessionState(state);
       if (state === "reauth" || state === "signed-out" || state === "storage-cleanup") {
+        const preserveGuestIntent =
+          state === "signed-out" &&
+          !currentUser.current &&
+          !!pendingSearchSave.current &&
+          currentDialog.current === "auth";
         sessionGeneration.current++;
+        resetSearchWork(preserveGuestIntent);
         if (currentUser.current) {
           detailRequest.current++;
           setDetail(null);
@@ -516,7 +567,16 @@ function RentalApp() {
     currentUser.current = email;
     setSeenIds(new Set());
     setUser(email);
+    if (pendingSearchSave.current) {
+      const draft = pendingSearchSave.current;
+      pendingSearchSave.current = null;
+      setSearchDraftFilters(draft);
+      setSearchName(defaultSearchName(draft));
+      setFormError("");
+      resumeSearchAfterAuth.current = true;
+    }
     if (previousOwner && previousOwner !== email) {
+      resetSearchWork(false);
       detailRequest.current++;
       setDetail(null);
       setSelected(null);
@@ -560,18 +620,106 @@ function RentalApp() {
     setFormError("");
     setDialog(value);
   }
+  function beginSearchSave() {
+    const draft = { ...filters };
+    setSearchDraftFilters(draft);
+    setSearchName(defaultSearchName(draft));
+    setFormError("");
+    if (user) setDialog("save-search");
+    else {
+      pendingSearchSave.current = draft;
+      setDialog("auth");
+    }
+  }
   async function submitSearch() {
+    const owner = currentUser.current;
+    const generation = sessionGeneration.current;
+    if (!owner || searchSaveOperation.current) return;
+    const operation = {};
+    searchSaveOperation.current = operation;
+    const name = searchName.trim();
+    const draft = searchDraftFilters;
     setFormBusy(true);
     setFormError("");
     try {
-      await api.saveSearch(searchName.trim(), filters);
-      await refreshAccount();
-      setDialog(null);
+      await api.saveSearch(name, draft);
+      if (
+        searchSaveOperation.current !== operation ||
+        !isCurrentAccount(generation, owner)
+      ) return;
+      await collections.refresh("searches");
+      if (
+        searchSaveOperation.current !== operation ||
+        !isCurrentAccount(generation, owner)
+      ) return;
+      if (currentDialog.current === "save-search") setDialog(null);
       setToast("Search saved. New matches will appear in Notifications.");
     } catch (e) {
-      setFormError((e as Error).message);
+      if (
+        searchSaveOperation.current === operation &&
+        isCurrentAccount(generation, owner)
+      ) setFormError((e as Error).message);
     } finally {
-      setFormBusy(false);
+      if (searchSaveOperation.current === operation) {
+        searchSaveOperation.current = null;
+        if (isCurrentAccount(generation, owner)) setFormBusy(false);
+      }
+    }
+  }
+  async function removeSavedSearch(search: SavedSearch) {
+    const owner = currentUser.current;
+    const generation = sessionGeneration.current;
+    if (
+      !owner ||
+      searchDeleteOperations.current.has(search.id) ||
+      !collections.state.searches.data.some(
+        (entry) => entry.id === search.id && entry.name === search.name,
+      )
+    ) return;
+    const operation = {};
+    searchDeleteOperations.current.set(search.id, operation);
+    setSearchDeleteBusy((current) => new Set(current).add(search.id));
+    setSearchDeleteErrors((current) => {
+      const next = { ...current };
+      delete next[search.id];
+      return next;
+    });
+    try {
+      await api.deleteSearch(search.id);
+      if (
+        searchDeleteOperations.current.get(search.id) !== operation ||
+        !isCurrentAccount(generation, owner)
+      ) return;
+      await collections.refresh("searches");
+      if (
+        searchDeleteOperations.current.get(search.id) !== operation ||
+        !isCurrentAccount(generation, owner)
+      ) return;
+      if (deleteSearchCandidateRef.current?.id === search.id)
+        setDeleteCandidate(null);
+      setToast(`“${search.name}” was removed.`);
+    } catch (error) {
+      if (
+        searchDeleteOperations.current.get(search.id) === operation &&
+        isCurrentAccount(generation, owner)
+      ) {
+        if (deleteSearchCandidateRef.current?.id === search.id)
+          setDeleteCandidate(null);
+        setSearchDeleteErrors((current) => ({
+          ...current,
+          [search.id]: (error as Error).message,
+        }));
+      }
+    } finally {
+      if (searchDeleteOperations.current.get(search.id) === operation) {
+        searchDeleteOperations.current.delete(search.id);
+        if (isCurrentAccount(generation, owner))
+          setSearchDeleteBusy((current) => {
+            const next = new Set(current);
+            next.delete(search.id);
+            return next;
+          });
+      }
     }
   }
   async function submitReport() {
@@ -966,18 +1114,27 @@ function RentalApp() {
                       </Button>
                       <Button
                         outline
-                        onPress={async () => {
-                          try {
-                            await api.deleteSearch(search.id);
-                            await refreshAccount();
-                          } catch (e) {
-                            setErrorToast((e as Error).message);
-                          }
-                        }}
+                        label={`Remove ${search.name}`}
+                        disabled={searchDeleteBusy.has(search.id)}
+                        onPress={() => setDeleteCandidate(search)}
                       >
-                        Remove
+                        {searchDeleteBusy.has(search.id) ? "Removing…" : "Remove"}
                       </Button>
                     </View>
+                    {!!searchDeleteErrors[search.id] && (
+                      <View style={{ gap: 8 }}>
+                        <Text accessibilityRole="alert" style={{ color: "#A3422D" }}>
+                          Could not remove “{search.name}”: {searchDeleteErrors[search.id]}
+                        </Text>
+                        <Button
+                          outline
+                          disabled={searchDeleteBusy.has(search.id)}
+                          onPress={() => void removeSavedSearch(search)}
+                        >
+                          {searchDeleteBusy.has(search.id) ? "Removing…" : "Retry removal"}
+                        </Button>
+                      </View>
+                    )}
                   </View>
                 ))
               )}
@@ -1214,10 +1371,7 @@ function RentalApp() {
                     </View>
                     <Pressable
                       accessibilityRole="button"
-                      onPress={() => {
-                        setSearchName(`My ${filters.city} shortlist`);
-                        openDialog(user ? "save-search" : "auth");
-                      }}
+                      onPress={beginSearchSave}
                       style={[s.row, { gap: 6, minHeight: 38 }]}
                     >
                       <Bookmark size={14} color={c.green} />
@@ -1791,6 +1945,13 @@ function RentalApp() {
       {dialog === "auth" && (
         <AuthDialog
           onClose={() => {
+            if (resumeSearchAfterAuth.current) {
+              resumeSearchAfterAuth.current = false;
+              setDialog("save-search");
+              pendingFavorite.current = null;
+              return;
+            }
+            pendingSearchSave.current = null;
             setDialog(null);
             pendingFavorite.current = null;
             if (!currentUser.current) links.current?.clearPending();
@@ -1844,9 +2005,14 @@ function RentalApp() {
             onChange={setSearchName}
           />
           <Text style={s.muted}>
-            Your current filters{filters.polygon ? " and drawn map area" : ""}{" "}
+            These filters{searchDraftFilters.polygon ? " and drawn map area" : ""}{" "}
             will be saved. New matches go to your notification inbox. Enable
             email alerts there to receive updates when the app is closed.
+          </Text>
+          <Text style={s.muted}>
+            Applied filters: {summarizeFilters(searchDraftFilters).items
+              .map(({ label }) => label)
+              .join(" · ") || "none"}
           </Text>
           {!!formError && (
             <Text accessibilityRole="alert" style={{ color: "#A3422D" }}>
@@ -1859,6 +2025,29 @@ function RentalApp() {
           >
             {formBusy ? "Saving…" : "Save search"}
           </Button>
+        </Panel>
+      )}
+      {deleteSearchCandidate && (
+        <Panel
+          title="Remove saved search?"
+          onClose={() => setDeleteCandidate(null)}
+        >
+          <Text style={s.text}>
+            Remove “{deleteSearchCandidate.name}”? This only removes this saved search.
+          </Text>
+          <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>
+            <Button outline onPress={() => setDeleteCandidate(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={searchDeleteBusy.has(deleteSearchCandidate.id)}
+              onPress={() => void removeSavedSearch(deleteSearchCandidate)}
+            >
+              {searchDeleteBusy.has(deleteSearchCandidate.id)
+                ? "Removing…"
+                : "Remove search"}
+            </Button>
+          </View>
         </Panel>
       )}
       {dialog === "report" && (
