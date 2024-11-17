@@ -68,16 +68,17 @@ test("Q11 broken photos keep their frame and recover on source changes", async (
   expect(cardFrame?.height).toBeGreaterThanOrEqual(202);
   await page.getByRole("button", { name: `View ${first}`, exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByTestId("listing-photo-fallback")).toBeVisible();
-  const failedFrame = await dialog.getByTestId("listing-photo-fallback").boundingBox();
+  const frame = dialog.getByTestId("gallery-photo-frame");
+  await expect(frame.getByTestId("listing-photo-fallback")).toBeVisible();
+  const failedFrame = await frame.getByTestId("listing-photo-fallback").boundingBox();
   await dialog.getByRole("button", { name: "Photo 2", exact: true }).click();
-  const loaded = dialog.locator('img[data-testid="listing-photo"]');
+  const loaded = frame.locator('img[data-testid="listing-photo"]');
   await expect(loaded).toBeVisible();
   await expect.poll(() => loaded.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
   const loadedFrame = await loaded.boundingBox();
   expect(Math.abs(loadedFrame!.height - failedFrame!.height)).toBeLessThan(1);
   await dialog.getByRole("button", { name: "Photo 3", exact: true }).click();
-  await expect(dialog.getByTestId("listing-photo-fallback")).toBeVisible();
+  await expect(frame.getByTestId("listing-photo-fallback")).toBeVisible();
   await dialog.getByRole("button", { name: "Photo 2", exact: true }).click();
   await expect(loaded).toBeVisible();
   await dialog.getByRole("button", { name: "Close dialog" }).click();
@@ -86,6 +87,86 @@ test("Q11 broken photos keep their frame and recover on source changes", async (
   await page.getByRole("button", { name: "Compare homes →", exact: true }).click();
   await expect(dialog.getByTestId("listing-photo-fallback")).toBeVisible();
   await page.screenshot({ path: info.outputPath("q11-photo-fallback.png"), fullPage: false });
+  expect(blocked).toEqual([]);
+});
+
+test("Q12 gallery bounds photo loading and keeps keyboard navigation inside its controls", async ({ page, context }, info) => {
+  const blocked = await allowOwned(context);
+  if (info.project.name === "mobile") await page.setViewportSize({ width: 320, height: 800 });
+  const photoUrl = (number: number) => `${web}/t20-image/gallery-${number}.png`;
+  const urls = Array.from({ length: 30 }, (_, index) => photoUrl(index + 1));
+  const requested = new Set<string>();
+  page.on("request", request => {
+    if (urls.includes(request.url())) requested.add(request.url());
+  });
+  await page.route(photoUrl(6), route => route.fulfill({ status: 404, body: "missing" }));
+  const detail = (home: Listing, images: string[]) => page.route(`${api}/v1/listings/${home.id}`, route => route.fulfill({
+    json: { ...home, images },
+    headers: { "Access-Control-Allow-Origin": web },
+  }));
+  await detail(homes[0], urls);
+  await detail(homes[2], []);
+  await page.goto("/", { waitUntil: "commit" });
+  const dialog = page.getByRole("dialog", { name: "A closer look" });
+  const frame = dialog.getByTestId("gallery-photo-frame");
+  const previous = button(dialog, "Previous photo");
+  const next = button(dialog, "Next photo");
+  const closeDialog = button(dialog, "Close dialog");
+  const position = (index: number, count: number) => dialog.getByText(`Photo ${index} of ${count}`, { exact: true });
+  const thumbnails = dialog.getByRole("button", { name: /^Photo \d+$/ });
+  const thumbnail = (number: number) => button(dialog, `Photo ${number}`);
+
+  await button(page, first).click();
+  await expect(position(1, 30)).toBeVisible();
+  await expect(previous).toBeDisabled();
+  await expect(thumbnails).toHaveCount(5);
+  await expect(thumbnail(1)).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => [...requested].sort()).toEqual(urls.slice(0, 5).sort());
+  await expect(thumbnails.last()).toBeInViewport({ ratio: 1 });
+  if (info.project.name === "mobile")
+    await page.screenshot({ path: info.outputPath("q12-gallery-320px.png") });
+
+  await closeDialog.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(position(1, 30)).toBeVisible();
+  await next.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(position(2, 30)).toBeVisible();
+  await expect(next).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(position(1, 30)).toBeVisible();
+
+  await thumbnail(1).focus();
+  for (let number = 2; number <= 6; number++) {
+    await page.keyboard.press("ArrowRight");
+    await expect(thumbnail(number)).toBeFocused();
+  }
+  await expect(position(6, 30)).toBeVisible();
+  await expect(frame.getByText("Photo unavailable", { exact: true })).toBeVisible();
+  await expect(thumbnails).toHaveCount(5);
+  expect([...requested].every(url => urls.indexOf(url) < 8)).toBe(true);
+  await next.click();
+  await expect(frame.locator("img")).toHaveAttribute("src", photoUrl(7));
+  await expect.poll(() => frame.locator("img").evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
+
+  for (let number = 9; number <= 29; number += 2) await thumbnail(number).click();
+  await next.click();
+  await expect(position(30, 30)).toBeVisible();
+  await expect(next).toBeDisabled();
+  await expect(thumbnail(30)).toHaveAttribute("aria-pressed", "true");
+  await closeDialog.click();
+
+  await button(page, second).click();
+  await expect(position(1, 1)).toBeVisible();
+  await expect(frame.locator("img")).toHaveAttribute("src", homes[1].images[0]);
+  await expect(previous).toHaveCount(0);
+  await expect(next).toHaveCount(0);
+  await expect(thumbnails).toHaveCount(0);
+  await closeDialog.click();
+  await button(page, homes[2].title).click();
+  await expect(dialog.getByText("No photos available", { exact: true })).toBeVisible();
+  await expect(frame).toHaveCount(0);
+  await expect(next).toHaveCount(0);
   expect(blocked).toEqual([]);
 });
 

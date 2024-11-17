@@ -1,6 +1,8 @@
-import React, { useId, useState } from "react";
+import React, { type ComponentRef, useId, useLayoutEffect, useRef, useState } from "react";
 import {
+  type KeyDownEvent,
   Linking,
+  Platform,
   Pressable,
   Text,
   View,
@@ -352,7 +354,6 @@ export function DetailDialog({
   onReport: () => void;
   onContact: (contact: NonNullable<Listing["contact_adverts"]>[number]) => void;
 }) {
-  const [photo, setPhoto] = useState(0);
   const narrow = useWindowDimensions().width < 700;
   return (
     <Panel title="A closer look" wide onClose={onClose}>
@@ -368,30 +369,7 @@ export function DetailDialog({
           SAMPLE HOME · Fictional listing and illustrative photography
         </Text>
       )}
-      {home.images[photo] && (
-        <ListingPhoto
-          uri={home.images[photo]}
-          alt={
-            home.is_demo
-              ? "Illustrative apartment interior"
-              : `Photo ${photo + 1} of ${home.title}`
-          }
-          width={narrow ? 560 : 1000}
-          height={narrow ? 230 : 340}
-        />
-      )}
-      {home.images.length > 1 && (
-        <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
-          {home.images.map((_, i) => (
-            <Chip
-              key={i}
-              label={`Photo ${i + 1}`}
-              selected={photo === i}
-              onPress={() => setPhoto(i)}
-            />
-          ))}
-        </View>
-      )}
+      <ListingGallery key={home.id} home={home} narrow={narrow} />
       <View style={{ gap: 8 }}>
         <Text style={s.label}>
           {[home.district, home.city].filter(Boolean).join(" · ").toUpperCase()}
@@ -566,6 +544,109 @@ export function DetailDialog({
         </Button>
       </View>
     </Panel>
+  );
+}
+
+const THUMBNAIL_LIMIT = 5;
+
+function ListingGallery({ home, narrow }: { home: Listing; narrow: boolean }) {
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const selectedThumbnail = useRef<ComponentRef<typeof Pressable>>(null);
+  const restoreThumbnailFocus = useRef(false);
+  const count = home.images.length;
+  const photo = Math.max(0, Math.min(photoIndex, count - 1));
+  if (photo !== photoIndex) setPhotoIndex(photo);
+
+  useLayoutEffect(() => {
+    if (restoreThumbnailFocus.current) selectedThumbnail.current?.focus();
+    restoreThumbnailFocus.current = false;
+  }, [photo]);
+
+  if (!count) {
+    return (
+      <View style={{ alignItems: "center", justifyContent: "center", minHeight: 100, padding: 16, backgroundColor: c.pale }}>
+        <Text style={s.muted}>No photos available</Text>
+      </View>
+    );
+  }
+
+  function handleArrow(event: KeyDownEvent, fromThumbnail: boolean) {
+    const { key, altKey, ctrlKey, metaKey, shiftKey } = event.nativeEvent;
+    if (altKey || ctrlKey || metaKey || shiftKey) return;
+    if (key !== "ArrowLeft" && key !== "ArrowRight") return;
+    event.preventDefault();
+    const step = key === "ArrowLeft" ? -1 : 1;
+    const next = Math.max(0, Math.min(photo + step, count - 1));
+    if (next !== photo) {
+      restoreThumbnailFocus.current = fromThumbnail;
+      setPhotoIndex(next);
+    }
+  }
+
+  const web = Platform.OS === "web";
+  // Keep a complete strip of five near the current photo, including at either end.
+  const start = Math.max(0, Math.min(photo - 2, count - THUMBNAIL_LIMIT));
+  const position = `Photo ${photo + 1} of ${count}`;
+  return (
+    <View style={{ gap: 12 }}>
+      <View testID="gallery-photo-frame">
+        <ListingPhoto
+          uri={home.images[photo]}
+          alt={home.is_demo ? "Illustrative apartment interior" : `${position} for ${home.title}`}
+          width={narrow ? 560 : 1000}
+          height={narrow ? 230 : 340}
+        />
+      </View>
+      <View
+        onKeyDown={web ? (event) => handleArrow(event, false) : undefined}
+        style={[s.row, { justifyContent: "space-between", gap: 8, flexWrap: "wrap" }]}
+      >
+        {count > 1 && (
+          <Button outline label="Previous photo" disabled={photo === 0} onPress={() => setPhotoIndex(photo - 1)}>
+            Previous
+          </Button>
+        )}
+        <Text aria-live="polite" style={s.muted}>{position}</Text>
+        {count > 1 && (
+          <Button outline label="Next photo" disabled={photo === count - 1} onPress={() => setPhotoIndex(photo + 1)}>
+            Next
+          </Button>
+        )}
+      </View>
+      {count > 1 && (
+        <View
+          onKeyDown={web ? (event) => handleArrow(event, true) : undefined}
+          style={[s.row, { gap: 4, flexWrap: "wrap" }]}
+        >
+          {home.images.slice(start, start + THUMBNAIL_LIMIT).map((uri, offset) => {
+            const index = start + offset;
+            const selected = photo === index;
+            return (
+              <Pressable
+                key={index}
+                ref={selected ? selectedThumbnail : undefined}
+                accessibilityRole="button"
+                accessibilityLabel={`Photo ${index + 1}`}
+                accessibilityState={{ selected }}
+                {...(web ? { "aria-pressed": selected, tabIndex: selected ? 0 : -1 } : {})}
+                onPress={() => setPhotoIndex(index)}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderWidth: 1,
+                  borderColor: selected ? c.green : c.line,
+                  backgroundColor: c.pale,
+                }}
+              >
+                <View aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                  <ListingPhoto uri={uri} alt="" width={42} height={42} thumbnail />
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+    </View>
   );
 }
 
