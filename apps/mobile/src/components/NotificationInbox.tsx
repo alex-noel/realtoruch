@@ -30,12 +30,6 @@ export default function NotificationInbox({
   const [enabled, setEnabled] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const [email, setEmail] = useState<{
-    enabled: boolean;
-    verified: boolean;
-    confirmation_pending?: boolean;
-  }>({ enabled: false, verified: false });
-  const [emailBusy, setEmailBusy] = useState(false);
   useEffect(() => {
     let active = true;
     pushEnabled()
@@ -43,31 +37,10 @@ export default function NotificationInbox({
         if (active) setEnabled(value);
       })
       .catch(() => {});
-    if (user)
-      request<typeof email>("/v1/me/email-notifications")
-        .then((value) => {
-          if (active) setEmail(value);
-        })
-        .catch(() => {});
     return () => {
       active = false;
     };
   }, [user]);
-  async function toggleEmail() {
-    setEmailBusy(true);
-    setError("");
-    try {
-      const result = await request<typeof email>("/v1/me/email-notifications", {
-        method: "PUT",
-        body: JSON.stringify({ enabled: !email.enabled }),
-      });
-      setEmail(result);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setEmailBusy(false);
-    }
-  }
   async function toggle() {
     setBusy(true);
     setError("");
@@ -100,15 +73,7 @@ export default function NotificationInbox({
         <>
           <View style={[s.row, { gap: 12, flexWrap: "wrap" }]}>
             <Text style={s.text}>{inbox.unread_count} unread</Text>
-            <Button disabled={emailBusy} onPress={toggleEmail}>
-              {emailBusy
-                ? "Please wait…"
-                : email.enabled
-                  ? "Disable email alerts"
-                  : email.confirmation_pending
-                    ? "Resend confirmation email"
-                    : "Enable email alerts"}
-            </Button>
+            <EmailPreference key={user} user={user} />
             <Button outline disabled={busy} onPress={toggle}>
               {busy
                 ? "Please wait…"
@@ -117,13 +82,6 @@ export default function NotificationInbox({
                   : "Enable device alerts"}
             </Button>
           </View>
-          {email.enabled ? (
-            <Text style={s.muted}>Email alerts are on for {user}.</Text>
-          ) : email.confirmation_pending ? (
-            <Text accessibilityRole="status" style={s.muted}>
-              Check {user} for a confirmation link. It expires in one hour.
-            </Text>
-          ) : null}
           {error ? (
             <Text accessibilityRole="alert" style={{ color: c.warning }}>
               {error}
@@ -188,6 +146,164 @@ export default function NotificationInbox({
             </Button>
           ) : null}
         </>
+      )}
+    </View>
+  );
+}
+
+
+type EmailValue = {
+  configured?: boolean;
+  enabled: boolean;
+  verified: boolean;
+  confirmation_pending?: boolean;
+};
+export type EmailPreferenceState = {
+  value: EmailValue | null;
+  loading: boolean;
+  busy: boolean;
+  loadFailed: boolean;
+  updateFailed: boolean;
+};
+const emptyEmail = (): EmailPreferenceState => ({
+  value: null,
+  loading: false,
+  busy: false,
+  loadFailed: false,
+  updateFailed: false,
+});
+
+// The controller belongs to one mounted account; disposal fences every result.
+export function createEmailPreference(
+  load: () => Promise<EmailValue>,
+  save: (enabled: boolean) => Promise<EmailValue>,
+  changed: (state: EmailPreferenceState) => void,
+) {
+  let state = emptyEmail();
+  let epoch = 0;
+  const publish = (next: EmailPreferenceState) => {
+    state = next;
+    changed(state);
+  };
+  async function refresh() {
+    if (state.loading || state.busy) return;
+    const intent = ++epoch;
+    publish({ ...state, loading: true, loadFailed: false });
+    try {
+      const value = await load();
+      if (epoch === intent)
+        publish({
+          value,
+          loading: false,
+          busy: false,
+          loadFailed: false,
+          updateFailed: false,
+        });
+    } catch {
+      if (epoch === intent) publish({ ...state, loading: false, loadFailed: true });
+    }
+  }
+  async function toggle() {
+    if (
+      !state.value ||
+      state.value.configured === false ||
+      state.busy ||
+      state.loading ||
+      state.loadFailed
+    ) return;
+    const intent = epoch;
+    publish({ ...state, busy: true, updateFailed: false });
+    try {
+      const value = await save(!state.value.enabled);
+      if (epoch === intent) publish({ ...state, value, busy: false, updateFailed: false });
+    } catch {
+      if (epoch === intent) publish({ ...state, busy: false, updateFailed: true });
+    }
+  }
+  return {
+    refresh,
+    toggle,
+    dispose: () => {
+      epoch++;
+    },
+  };
+}
+
+function EmailPreference({ user }: { user: string }) {
+  const [email, setEmail] = useState<EmailPreferenceState>(emptyEmail);
+  const [controller] = useState(() =>
+    createEmailPreference(
+      () => request<EmailValue>("/v1/me/email-notifications"),
+      (enabled) =>
+        request<EmailValue>("/v1/me/email-notifications", {
+          method: "PUT",
+          body: JSON.stringify({ enabled }),
+        }),
+      setEmail,
+    ),
+  );
+  useEffect(() => {
+    void controller.refresh();
+    return controller.dispose;
+  }, [controller]);
+  return (
+    <View style={{ gap: 8, alignItems: "flex-start" }}>
+      {email.loading && (
+        <Text accessibilityRole="status" style={s.muted}>
+          {email.value
+            ? "Refreshing email alert settings…"
+            : "Loading email alert settings…"}
+        </Text>
+      )}
+      {email.loadFailed && (
+        <>
+          <Text accessibilityRole="alert" style={{ color: c.warning }}>
+            Could not load email alert settings.
+          </Text>
+          <Button outline disabled={email.loading} onPress={controller.refresh}>
+            Retry email settings
+          </Button>
+        </>
+      )}
+      {email.value && email.value.configured !== false && (
+        <Button
+          disabled={email.busy || email.loading || email.loadFailed}
+          onPress={controller.toggle}
+        >
+          {email.busy
+            ? "Please wait…"
+            : email.value.enabled
+              ? "Disable email alerts"
+              : email.value.confirmation_pending
+                ? "Resend confirmation email"
+                : "Enable email alerts"}
+        </Button>
+      )}
+      {email.value?.configured === false ? (
+        <Text style={s.muted}>
+          Email alerts are unavailable right now. In-app notifications remain available.
+        </Text>
+      ) : email.value?.enabled ? (
+        <Text style={s.muted}>
+          {email.loadFailed
+            ? `Email alerts were last confirmed on for ${user}.`
+            : `Email alerts are on for ${user}.`}
+        </Text>
+      ) : email.value?.confirmation_pending ? (
+        <Text accessibilityRole="status" style={s.muted}>
+          Check {user} for a confirmation link. It expires in one hour.
+        </Text>
+      ) : email.value ? (
+        <Text style={s.muted}>
+          {email.loadFailed
+            ? "Email alerts were last confirmed off."
+            : "Email alerts are off."}
+        </Text>
+      ) : null}
+      {email.updateFailed && (
+        <Text accessibilityRole="alert" style={{ color: c.warning }}>
+          Could not update email alerts. Please try again.
+        </Text>
       )}
     </View>
   );

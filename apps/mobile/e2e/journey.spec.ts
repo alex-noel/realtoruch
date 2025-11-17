@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 
 // Start the fault trace only after token-bearing links have been consumed.
 test.use({ trace: 'off' });
@@ -12,8 +12,14 @@ function fixture(action: string, profile: string) {
 
 async function mailFor(email: string) {
   const files = await readdir(process.env.E2E_MAIL_DIR!).catch(() => []);
-  const contents = await Promise.all(files.filter(f => f.endsWith('.eml')).map(f => readFile(join(process.env.E2E_MAIL_DIR!, f), 'utf8')));
-  return contents.filter(content => content.includes(email)).map(content => content.replace(/=\r?\n/g, '').replace(/=3D/gi, '='));
+  const messages = await Promise.all(files.filter(f => f.endsWith('.eml')).map(async file => ({
+    modified: (await stat(join(process.env.E2E_MAIL_DIR!, file))).mtimeMs,
+    content: await readFile(join(process.env.E2E_MAIL_DIR!, file), 'utf8'),
+  })));
+  return messages.sort((a, b) => a.modified - b.modified)
+    .map(({ content }) => content)
+    .filter(content => content.includes(email))
+    .map(content => content.replace(/=\r?\n/g, '').replace(/=3D/gi, '='));
 }
 function rentalMail(contents: string[]) {
   return contents.filter(content => !content.includes('Verify your Realtoruch email') && !content.includes('Confirm your Realtoruch email alerts'));
@@ -60,9 +66,21 @@ test('draw and save a filtered search against a synthetic baseline', async ({ pa
   const email = `journey-${info.project.name}@example.test`;
   await page.getByRole('button', { name: 'Notifications', exact: true }).first().click();
   await page.getByRole('button', { name: 'Enable email alerts' }).click();
+  await expect(page.getByRole('button', { name: 'Resend confirmation email' })).toBeVisible();
+  await page.getByRole('button', { name: 'Resend confirmation email' }).click();
+  await expect.poll(async () =>
+    (await mailFor(email)).filter(content =>
+      content.includes('Confirm your Realtoruch email alerts'),
+    ).length,
+  ).toBe(1);
+  await expect(page.getByRole('status').filter({ hasText: `Check ${email} for a confirmation link.` })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('q22-email-confirmation-pending.png'), fullPage: true });
   let confirmation = '';
   await expect.poll(async () => {
-    confirmation = (await mailFor(email)).join('\n').match(/#confirm_email=([^\s]+)/)?.[1] || '';
+    const confirmations = (await mailFor(email)).filter(content =>
+      content.includes('Confirm your Realtoruch email alerts'),
+    );
+    confirmation = confirmations.at(-1)?.match(/#confirm_email=([^\s]+)/)?.[1] || '';
     return !!confirmation;
   }, { timeout: 20_000 }).toBe(true);
   await page.evaluate(token => { window.location.hash = `confirm_email=${token}`; }, confirmation);
@@ -145,5 +163,9 @@ test('draw and save a filtered search against a synthetic baseline', async ({ pa
   if (info.project.name === 'mobile') await page.getByRole('button', { name: 'Map view' }).click();
   await expect(map).toBeVisible();
   await expect(mapMarker).toHaveCount(0);
+  await page.getByRole('button', { name: 'Notifications', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Disable email alerts' }).click();
+  await expect(page.getByText('Email alerts are off.', { exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('q22-email-disabled.png'), fullPage: true });
   expect(blocked).toEqual([]);
 });
