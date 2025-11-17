@@ -266,6 +266,38 @@ test("a rental desk lookup cannot open a detail after sign-out", async ({
   }
 });
 
+test("a delayed reset cannot sign out a newly registered account", async ({ page, context }, info) => {
+  await allowLoopback(context);
+  const token = "D".repeat(43);
+  let release!: () => void;
+  let started!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const requestStarted = new Promise<void>(resolve => { started = resolve; });
+  await page.route(`${AUTH_URL}/v1/auth/reset-password`, async route => {
+    started();
+    await gate;
+    await route.fulfill({ json: { message: "Password changed. Sign in again on your devices." } });
+  });
+  try {
+    await page.goto(`/#reset_password=${token}`);
+    await page.getByLabel("NEW PASSWORD", { exact: true }).fill("synthetic-new-password-123");
+    await page.getByLabel("REPEAT NEW PASSWORD", { exact: true }).fill("synthetic-new-password-123");
+    await page.getByRole("button", { name: "Change password", exact: true }).click();
+    await requestStarted;
+    await page.getByRole("dialog").getByRole("button", { name: "Close dialog" }).click();
+    await page.locator('button[aria-label="Sign in"]').click();
+    await register(page, `reset-late-${info.project.name}`);
+    const account = page.getByRole("button", { name: "Account", exact: true });
+    await expect(account).toBeVisible();
+    const response = page.waitForResponse(`${AUTH_URL}/v1/auth/reset-password`);
+    release();
+    await (await response).finished();
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(account).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Welcome back." })).toHaveCount(0);
+  } finally { release(); }
+});
+
 test("account link errors are safe and retryable, with token fragments removed", async ({
   page,
   context,

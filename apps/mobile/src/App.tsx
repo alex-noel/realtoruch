@@ -1930,14 +1930,15 @@ function RentalApp() {
       {resetToken && (
         <ResetPasswordDialog
           token={resetToken}
+          ticket={links.current?.resetTicket() ?? -1}
           onClose={() => { links.current?.finishReset(resetToken, false); }}
-          onComplete={(message) => {
-            const activeLink = links.current?.finishReset(resetToken, true);
+          onComplete={(message, ticket, revision) => {
+            if (!links.current?.finishResetForSession(resetToken, ticket, revision, getSessionRevision())) return;
             setToken(null);
             currentUser.current = null;
             setUser(null);
             setToast(message);
-            if (activeLink) setDialog("auth");
+            setDialog("auth");
           }}
         />
       )}

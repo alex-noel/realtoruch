@@ -1,6 +1,6 @@
 import React, { type ComponentRef, useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Text, TextInput, View } from "react-native";
-import { api } from "../api";
+import { api, getSessionRevision } from "../api";
 import { s } from "../theme";
 import { AccountExport } from "./AccountExport";
 import { Button, PasswordField, Panel } from "./UI";
@@ -126,10 +126,10 @@ export function AccountDialog({ onClose, onSignOut, onDeleted, onMarketplace, ve
   </Panel>;
 }
 
-export function ResetPasswordDialog(props: { token: string; onClose: () => void; onComplete: (message: string) => void }) {
-  return <ResetPasswordForm key={props.token} {...props} />;
+export function ResetPasswordDialog(props: { token: string; ticket: number; onClose: () => void; onComplete: (message: string, ticket: number, revision: number) => void }) {
+  return <ResetPasswordForm key={`${props.token}:${props.ticket}`} {...props} />;
 }
-function ResetPasswordForm({ token, onClose, onComplete }: { token: string; onClose: () => void; onComplete: (message: string) => void }) {
+function ResetPasswordForm({ token, ticket, onClose, onComplete }: { token: string; ticket: number; onClose: () => void; onComplete: (message: string, ticket: number, revision: number) => void }) {
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
@@ -144,11 +144,12 @@ function ResetPasswordForm({ token, onClose, onComplete }: { token: string; onCl
     setSubmitted(true);
     if (passwordError) { passwordRef.current?.focus(); return; }
     if (confirmationError) { confirmationRef.current?.focus(); return; }
+    const revision = getSessionRevision();
     setBusy(true); setError("");
     try {
       const result = await api.resetPassword(token, password);
       setPassword(""); setConfirmation("");
-      onComplete(result.message);
+      onComplete(result.message, ticket, revision);
     } catch (e) { setError((e as Error).message); passwordRef.current?.focus(); }
     finally { setBusy(false); }
   }

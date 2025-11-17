@@ -437,6 +437,49 @@ describe("incoming link delivery lifecycle", () => {
     lifecycle.receive(action, "guest");
     expect(handlers.reset).toHaveBeenCalledTimes(4);
   });
+
+  it("fences a delayed reset completion after dismissal and a new login", async () => {
+    const { lifecycle, handlers } = lifecycleFixture();
+    const response = barrier<void>();
+    lifecycle.receive({ type: "reset-password", token: fixtureToken }, "guest");
+    const ticket = lifecycle.resetTicket();
+    const completion = response.promise.then(() => lifecycle.finishResetForSession(fixtureToken, ticket, 1, 2));
+    lifecycle.finishReset(fixtureToken, false);
+    response.resolve();
+    expect(await completion).toBe(false);
+    expect(handlers.reset).toHaveBeenLastCalledWith(null);
+  });
+
+  it("leaves a newer reset link open when the older request completes", async () => {
+    const { lifecycle, handlers } = lifecycleFixture();
+    const response = barrier<void>();
+    const newer = "B".repeat(43);
+    lifecycle.receive({ type: "reset-password", token: fixtureToken }, "authenticated");
+    const ticket = lifecycle.resetTicket();
+    const completion = response.promise.then(() => lifecycle.finishResetForSession(fixtureToken, ticket, 1, 1));
+    lifecycle.receive({ type: "reset-password", token: newer }, "authenticated");
+    response.resolve();
+    expect(await completion).toBe(false);
+    expect(handlers.reset).toHaveBeenLastCalledWith(newer);
+    expect(lifecycle.finishResetForSession(newer, lifecycle.resetTicket(), 1, 1)).toBe(true);
+  });
+
+  it("does not invalidate a replacement session even when the reset link remains active", () => {
+    const { lifecycle } = lifecycleFixture();
+    lifecycle.receive({ type: "reset-password", token: fixtureToken }, "authenticated");
+    expect(lifecycle.finishResetForSession(fixtureToken, lifecycle.resetTicket(), 1, 2)).toBe(false);
+  });
+
+  it("keeps a reopened instance of the same link when its earlier request returns", () => {
+    const { lifecycle, handlers } = lifecycleFixture();
+    const action = { type: "reset-password", token: fixtureToken } as const;
+    lifecycle.receive(action, "guest");
+    const oldTicket = lifecycle.resetTicket();
+    lifecycle.finishReset(fixtureToken, false);
+    lifecycle.receive(action, "guest");
+    expect(lifecycle.finishResetForSession(fixtureToken, oldTicket, 1, 1)).toBe(false);
+    expect(handlers.reset).toHaveBeenLastCalledWith(fixtureToken);
+  });
 });
 
 async function startRevokedRestore(

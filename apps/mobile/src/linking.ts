@@ -387,9 +387,15 @@ export function createLinkLifecycle(handlers: LinkHandlers) {
     return true;
   }
 
+  function finishResetForSession(token: string, ticket: number, revision: number, currentRevision: number) {
+    if (ticket !== generation) return false;
+    const activeLink = finishReset(token, true);
+    return activeLink && revision === currentRevision;
+  }
+
   function clearPending() {
     pendingDestination = null;
   }
 
-  return { receive, resolveSession, clearPending, finishReset, close };
+  return { receive, resolveSession, clearPending, finishReset, finishResetForSession, resetTicket: () => generation, close };
 }
