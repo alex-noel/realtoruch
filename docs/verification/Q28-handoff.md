@@ -1,0 +1,7 @@
+# Q28 owner form validation
+
+Implemented and locally verified 2026-11-17. The editor groups Basics, Location, Costs and Photos. Number inputs remain raw strings while editing; validation mirrors AdvertBody text and numeric bounds, accepts comma area decimals and negative valid floors, and preserves optional blank versus zero. Coordinates must lie within the backend's Poland bounds. The invalid summary can focus the first invalid field. Labelled amenity selections retain unknown stored values. Photo links remain compatible and are validated as credential-free HTTPS with the 30-image cap.
+
+A narrow shared Field `inputRef` extension provides the summary's focus target; no existing caller changed. Q29 can observe raw draft, numbers, coordinate and photo-link state for its shared exit guard. Q34 will replace/extend the photo section and must preserve this validation plus the combined media count.
+
+Node24 typecheck and 24 table-driven tests passed. `q28-editor-20261117`: responsive accessibility TC01 passed 2/2 at the established widths/200% text; the new owner checks failed only because the test expected 200 instead of the API's documented creation status 201. Corrected run `q28-editor-20261117-02` passed 2/2 at 320px, including first-invalid focus, globally valid but out-of-Poland coordinates, raw `50,`, decimal `50,5`, zero fees, negative floor and retaining unknown amenities through an edit. No installed native keyboard testing is claimed.

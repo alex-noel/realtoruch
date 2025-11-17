@@ -98,3 +98,49 @@ test('owner publishes, edits, messages a renter and withdraws', async ({ page, c
     expect(blocked).toEqual([]);
   } finally { await renter.close(); }
 });
+
+test('Q28 owner fields retain raw decimals and validate Poland bounds before saving', async ({ page, context }, info) => {
+  await blockOutside(context, []);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await createVerified(page, `q28-${info.project.name}@example.test`);
+  await page.route(`${process.env.E2E_API_URL}/v1/me/adverts`, async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch(); const data = await response.json();
+    for (const item of data.items || []) item.advert.amenities = ['historic-unknown'];
+    await route.fulfill({ response, json: data });
+  });
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('button', { name: 'My rental adverts' }).click();
+  await page.getByLabel('PUBLIC NAME').fill('Q28 owner');
+  await page.getByRole('button', { name: 'Save profile' }).click();
+  await page.getByRole('button', { name: 'Create rental advert' }).click();
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: /Check \d+ fields/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Go to first invalid field' }).click();
+  await expect(page.getByLabel('TITLE', { exact: true })).toBeFocused();
+  await page.getByLabel('TITLE', { exact: true }).fill('Q28 synthetic rental');
+  await page.getByLabel('DESCRIPTION', { exact: true }).fill('A sufficiently long synthetic rental description.');
+  await page.getByLabel('STREET AND BUILDING').fill('Testowa 28');
+  await page.getByLabel('Location latitude').fill('40');
+  await page.getByLabel('Location longitude').fill('19.94');
+  await expect(page.getByLabel('Location latitude')).toHaveAccessibleDescription(/from 49 to 55/);
+  await page.getByLabel('AREA (M²)').fill('50,');
+  await expect(page.getByLabel('AREA (M²)')).toHaveValue('50,');
+  await page.getByLabel('AREA (M²)').fill('50,5');
+  await page.getByLabel('FEES (PLN; LEAVE BLANK IF UNKNOWN)').fill('0');
+  await page.getByLabel('FLOOR', { exact: true }).fill('-2');
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await page.getByRole('button', { name: 'Go to first invalid field' }).click();
+  await expect(page.getByLabel('Location latitude')).toBeFocused();
+  await page.getByLabel('Location latitude').fill('50.06');
+  const saved = page.waitForResponse(response => response.url().endsWith('/v1/me/adverts') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  const response = await saved; expect(response.status()).toBe(201);
+  expect((await response.json()).advert).toMatchObject({ area_m2: 50.5, fees_pln: 0, floor: -2 });
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.getByText('Other saved amenity: historic-unknown', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Pets welcome', exact: true }).click();
+  const edited = page.waitForRequest(request => request.url().includes('/v1/me/adverts/') && request.method() === 'PUT');
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  expect((await edited).postDataJSON().advert.amenities).toEqual(['historic-unknown', 'pets']);
+});

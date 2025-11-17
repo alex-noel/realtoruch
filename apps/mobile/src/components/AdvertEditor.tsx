@@ -1,13 +1,21 @@
-import React, { useId, useState } from "react";
-import { Text, View } from "react-native";
+import React, { type ComponentRef, useRef, useState } from "react";
+import { Text, TextInput, View } from "react-native";
 import { Advert, Draft } from "../marketplaceApi";
 import { c, s } from "../theme";
 import { Button, Chip, Field } from "./UI";
 import PropertyMap from "./DeferredPropertyMap";
-import { readCoordinate } from "./coordinates";
+import {
+  ownerNumbersFrom,
+  ownerNumberRules,
+  validateOwner,
+  type OwnerField,
+  type OwnerNumberKey,
+} from "../ownerValidation";
 
 // Reserved for the unified parent-close/dirty-state contract; currently unused.
-export type AdvertEditorExitGuardRegistration = (guard: (() => boolean) | null) => void;
+export type AdvertEditorExitGuardRegistration = (
+  guard: (() => boolean) | null,
+) => void;
 export interface AdvertEditorProps {
   initial?: Advert;
   busy: boolean;
@@ -36,6 +44,14 @@ const emptyDraft: Draft = {
   amenities: [],
   images: [],
 };
+const knownAmenities = [
+  "balcony",
+  "pets",
+  "parking",
+  "furnished",
+  "lift",
+  "dishwasher",
+];
 export function AdvertEditor({
   initial,
   busy,
@@ -45,32 +61,138 @@ export function AdvertEditor({
   const [draft, setDraft] = useState<Draft>(
     () => initial?.advert || { ...emptyDraft },
   );
+  const [numbers, setNumbers] = useState(() => ownerNumbersFrom(draft));
   const [latitude, setLatitude] = useState(initial ? String(draft.lat) : "");
   const [longitude, setLongitude] = useState(initial ? String(draft.lon) : "");
-  const lat = readCoordinate(latitude, 90);
-  const lon = readCoordinate(longitude, 180);
-  const pinned = lat !== null && lon !== null;
-  const invalidLat = !!latitude.trim() && lat === null;
-  const invalidLon = !!longitude.trim() && lon === null;
-  const locationErrorId = useId();
+  const [photoLinks, setPhotoLinks] = useState(draft.images.join("\n"));
+  const [submitted, setSubmitted] = useState(false);
+  const refs = useRef<
+    Partial<Record<OwnerField, { focus: () => void } | null>>
+  >({});
+  const validation = validateOwner(
+    draft,
+    numbers,
+    latitude,
+    longitude,
+    photoLinks,
+  );
+  const errors = validation.errors;
+  const invalid = Object.keys(errors) as OwnerField[];
+  const pinned = !errors.lat && !errors.lon;
+  const coordinate = (value: string) => Number(value.trim().replace(",", "."));
   const change = <K extends keyof Draft>(key: K, value: Draft[K]) =>
-    setDraft((d) => ({ ...d, [key]: value }));
+    setDraft((current) => ({ ...current, [key]: value }));
+  const fieldProps = (key: OwnerField) => ({
+    inputRef: (ref: ComponentRef<typeof TextInput> | null) => {
+      refs.current[key] = ref;
+    },
+    error: submitted ? errors[key] : undefined,
+  });
+  const heading = (title: string) => (
+    <Text accessibilityRole="header" style={[s.title, { fontSize: 20 }]}>
+      {title}
+    </Text>
+  );
+  function submit() {
+    setSubmitted(true);
+    if (validation.value) onSave(validation.value);
+  }
   return (
     <>
       <Text style={[s.title, { fontSize: 23 }]}>
         {initial ? "Edit rental" : "A new place to call home."}
       </Text>
+      {submitted && invalid.length > 0 && (
+        <View
+          style={[s.card, { padding: 14, gap: 8, alignItems: "flex-start" }]}
+        >
+          <Text accessibilityRole="alert" style={s.text}>
+            Check {invalid.length} {invalid.length === 1 ? "field" : "fields"}{" "}
+            before saving.
+          </Text>
+          <Button outline onPress={() => refs.current[invalid[0]]?.focus()}>
+            Go to first invalid field
+          </Button>
+        </View>
+      )}
+      {heading("Basics")}
       <Field
         label="TITLE"
         value={draft.title}
-        onChange={(v) => change("title", v)}
+        onChange={(value) => change("title", value)}
+        {...fieldProps("title")}
+        helperText="5–240 characters"
       />
       <Field
         label="DESCRIPTION"
         multiline
         value={draft.description}
-        onChange={(v) => change("description", v)}
+        onChange={(value) => change("description", value)}
+        {...fieldProps("description")}
+        helperText="20–20,000 characters"
       />
+      <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
+        {(["apartment", "house", "room"] as const).map((type) => (
+          <Chip
+            key={type}
+            label={type}
+            selected={draft.property_type === type}
+            onPress={() => change("property_type", type)}
+          />
+        ))}
+      </View>
+      {(["area_m2", "rooms", "floor"] as OwnerNumberKey[]).map((key) => (
+        <Field
+          key={key}
+          label={ownerNumberRules[key].label}
+          numeric
+          value={numbers[key]}
+          onChange={(value) =>
+            setNumbers((current) => ({ ...current, [key]: value }))
+          }
+          {...fieldProps(key)}
+        />
+      ))}
+      <View
+        ref={(ref) => {
+          refs.current.amenities = ref;
+        }}
+        focusable
+        tabIndex={-1}
+        style={{ gap: 8 }}
+      >
+        <Text style={s.label}>AMENITIES</Text>
+        <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
+          {knownAmenities.map((amenity) => (
+            <Chip
+              key={amenity}
+              label={amenity === "pets" ? "Pets welcome" : amenity}
+              selected={draft.amenities.includes(amenity)}
+              onPress={() =>
+                change(
+                  "amenities",
+                  draft.amenities.includes(amenity)
+                    ? draft.amenities.filter((value) => value !== amenity)
+                    : [...draft.amenities, amenity],
+                )
+              }
+            />
+          ))}
+        </View>
+        {draft.amenities
+          .filter((value) => !knownAmenities.includes(value))
+          .map((value, index) => (
+            <Text key={`${value}-${index}`} style={s.muted}>
+              Other saved amenity: {value}
+            </Text>
+          ))}
+        {submitted && errors.amenities && (
+          <Text accessibilityRole="alert" style={s.text}>
+            {errors.amenities}
+          </Text>
+        )}
+      </View>
+      {heading("Location")}
       {(
         [
           ["CITY", "city"],
@@ -83,33 +205,29 @@ export function AdvertEditor({
           key={key}
           label={label}
           value={draft[key]}
-          onChange={(v) => change(key, v)}
+          onChange={(value) => change(key, value)}
+          {...fieldProps(key)}
         />
       ))}
-      <Text style={s.label}>ENTER COORDINATES OR PIN THE HOME ON THE MAP</Text>
+      <Text style={s.muted}>
+        Enter coordinates or pin the home on the map. Rentals must be in Poland.
+      </Text>
       <Field
         label="Location latitude"
         value={latitude}
         onChange={setLatitude}
         numeric
-        errorId={invalidLat ? locationErrorId : undefined}
+        {...fieldProps("lat")}
+        error={submitted || latitude.trim() ? errors.lat : undefined}
       />
       <Field
         label="Location longitude"
         value={longitude}
         onChange={setLongitude}
         numeric
-        errorId={invalidLon ? locationErrorId : undefined}
+        {...fieldProps("lon")}
+        error={submitted || longitude.trim() ? errors.lon : undefined}
       />
-      {(invalidLat || invalidLon) && (
-        <Text
-          nativeID={locationErrorId}
-          accessibilityRole="alert"
-          style={{ color: c.warning }}
-        >
-          Enter a latitude from −90 to 90 and a longitude from −180 to 180.
-        </Text>
-      )}
       <Text aria-live="polite" style={s.muted}>
         {pinned ? "Location set" : "Location required to save the advert"}
       </Text>
@@ -120,93 +238,54 @@ export function AdvertEditor({
           onSelect={() => {}}
           city={draft.city}
           onPolygonChange={() => {}}
-          pin={pinned ? [lon, lat] : undefined}
+          pin={
+            pinned ? [coordinate(longitude), coordinate(latitude)] : undefined
+          }
           onPinChange={([lon, lat]) => {
             setLongitude(String(lon));
             setLatitude(String(lat));
           }}
         />
       </View>
-      <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
-        {(["apartment", "house", "room"] as const).map((type) => (
-          <Chip
-            key={type}
-            label={type}
-            selected={draft.property_type === type}
-            onPress={() => change("property_type", type)}
-          />
-        ))}
-      </View>
+      {heading("Costs")}
+      <Text style={s.muted}>
+        Base rent is required. Leave optional costs blank if unknown; zero means
+        no charge. Enter whole PLN amounts.
+      </Text>
       {(
         [
-          ["MONTHLY BASE RENT (PLN)", "rent_pln"],
-          ["FEES (PLN; LEAVE BLANK IF UNKNOWN)", "fees_pln"],
-          ["DEPOSIT (PLN)", "deposit_pln"],
-          ["COMMISSION (PLN; 0 IF NONE)", "commission_pln"],
-          ["AREA (M²)", "area_m2"],
-          ["ROOMS", "rooms"],
-          ["FLOOR", "floor"],
-        ] as const
-      ).map(([label, key]) => (
+          "rent_pln",
+          "fees_pln",
+          "deposit_pln",
+          "commission_pln",
+        ] as OwnerNumberKey[]
+      ).map((key) => (
         <Field
           key={key}
-          label={label}
+          label={ownerNumberRules[key].label}
           numeric
-          value={draft[key] === null ? "" : String(draft[key])}
-          onChange={(v) =>
-            change(
-              key,
-              (v.trim() ? Number(v.replace(",", ".")) : null) as never,
-            )
+          value={numbers[key]}
+          onChange={(value) =>
+            setNumbers((current) => ({ ...current, [key]: value }))
           }
+          {...fieldProps(key)}
         />
       ))}
-      <Field
-        label="AMENITIES (COMMA SEPARATED)"
-        value={draft.amenities.join(", ")}
-        onChange={(v) =>
-          change(
-            "amenities",
-            v.split(",").map((a) => a.trim()),
-          )
-        }
-      />
+      {heading("Photos")}
       <Field
         label="PHOTO LINKS (HTTPS; ONE PER LINE)"
         multiline
-        value={draft.images.join("\n")}
-        onChange={(v) => change("images", v.split("\n"))}
+        value={photoLinks}
+        onChange={setPhotoLinks}
+        {...fieldProps("images")}
       />
       <Text style={s.muted}>
-        Use photos you own or have permission to publish. Empty fees mean
-        unknown; zero means no charge.
+        Use up to 30 photos you own or have permission to publish.
       </Text>
-      <Button
-        disabled={
-          busy ||
-          !pinned ||
-          draft.title.trim().length < 5 ||
-          draft.description.trim().length < 20 ||
-          !draft.rent_pln ||
-          !draft.area_m2 ||
-          !draft.rooms
-        }
-        onPress={() =>
-          pinned &&
-          onSave({
-            ...draft,
-            lat,
-            lon,
-            images: draft.images.map((v) => v.trim()).filter(Boolean),
-            amenities: draft.amenities.filter(Boolean),
-          })
-        }
-      >
-        {busy
-          ? "Saving…"
-          : initial?.state === "published"
-            ? "Save and update advert"
-            : "Save draft"}
+      <Button busy={busy} busyLabel="Saving…" onPress={submit}>
+        {initial?.state === "published"
+          ? "Save and update advert"
+          : "Save draft"}
       </Button>
       <Button outline disabled={busy} onPress={onCancel}>
         Back to adverts

@@ -151,6 +151,7 @@ export function Field({
   error,
   onSubmitEditing,
   submitBehavior,
+  inputRef,
 }: {
   label: string;
   value: string;
@@ -168,6 +169,7 @@ export function Field({
   errorId?: string;
   onSubmitEditing?: () => void;
   submitBehavior?: "submit" | "blurAndSubmit" | "newline";
+  inputRef?: React.Ref<ComponentRef<typeof TextInput>>;
 }) {
   const labelId = useId();
   const helperId = helperText ? `${labelId}-helper` : undefined;
@@ -183,6 +185,7 @@ export function Field({
         {label}
       </Text>
       <TextInput
+        ref={inputRef}
         accessibilityLabel={label}
         {...(Platform.OS === "web"
           ? {
