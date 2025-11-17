@@ -362,8 +362,8 @@ export const api = {
       body: JSON.stringify({ listing_ids: ids }),
       signal,
     }),
-  notifications: (page = 1) =>
-    request<NotificationInbox>(`/v1/me/notifications?page=${page}`),
+  notifications: (cursor?: string) =>
+    request<NotificationInbox>(`/v1/me/notifications${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
   readNotification: (id: string) =>
     request(`/v1/me/notifications/${id}/read`, { method: "PUT" }),
   saveSearch: (name: string, filters: Filters) =>

@@ -13,6 +13,7 @@ export default function NotificationInbox({
   onRead,
   onMore,
   onSignIn,
+  morePending, moreFailed, reading, readFailed,
 }: {
   user: string | null;
   message?: string;
@@ -21,6 +22,10 @@ export default function NotificationInbox({
   onRead: (id: string) => void;
   onMore: () => void;
   onSignIn: () => void;
+  morePending: boolean;
+  moreFailed: boolean;
+  reading: string[];
+  readFailed: string[];
 }) {
   const [enabled, setEnabled] = useState(false),
     [busy, setBusy] = useState(false),
@@ -168,16 +173,18 @@ export default function NotificationInbox({
               <View style={[s.row, { gap: 10, flexWrap: "wrap" }]}>
                 <Button onPress={() => onOpen(item)}>View home</Button>
                 {!item.read_at ? (
-                  <Button outline onPress={() => onRead(item.id)}>
-                    Mark as read
+                  <Button outline disabled={reading.includes(item.id)} onPress={() => onRead(item.id)}>
+                    {reading.includes(item.id) ? "Marking as read…" : "Mark as read"}
                   </Button>
                 ) : null}
               </View>
+              {readFailed.includes(item.id) && <Text accessibilityRole="alert" style={{ color: c.warning }}>Could not mark this notification as read. Please try again.</Text>}
             </View>
           ))}
-          {inbox.items.length >= inbox.page * inbox.page_size ? (
-            <Button outline onPress={onMore}>
-              Older notifications
+          {moreFailed && <Text accessibilityRole="alert" style={{ color: c.warning }}>Could not load older notifications. Please try again.</Text>}
+          {inbox.has_more ? (
+            <Button outline disabled={morePending} onPress={onMore}>
+              {morePending ? "Loading older notifications…" : moreFailed ? "Retry older notifications" : "Older notifications"}
             </Button>
           ) : null}
         </>

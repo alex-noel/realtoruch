@@ -3,12 +3,12 @@ vi.mock("../src/api", () => ({ api: {} }));
 import { createAccountCollections } from "../src/hooks/useAccountCollections";
 import type { Listing, NotificationInbox, SavedSearch } from "../src/types";
 
-const inbox = (ids: string[], page = 1): NotificationInbox => ({ items: ids.map(id => ({ id } as NotificationInbox["items"][number])), unread_count: ids.length, page, page_size: 30 });
+const inbox = (ids: string[], page = 1): NotificationInbox => ({ items: ids.map(id => ({ id } as NotificationInbox["items"][number])), unread_count: ids.length, page, page_size: 30, has_more: true, next_cursor: "cursor" });
 const home = (id: string) => ({ id } as Listing);
 const search = (id: string) => ({ id } as SavedSearch);
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
 function setup() {
-  const loaders = { favorites: vi.fn(async () => [home("one")]), searches: vi.fn(async () => [search("one")]), notifications: vi.fn(async () => inbox(["one"])) };
+  const loaders = { favorites: vi.fn(async () => [home("one")]), searches: vi.fn(async () => [search("one")]), notifications: vi.fn(async () => inbox(["one"])), moreNotifications: vi.fn(async (_cursor: string) => inbox([])), readNotification: vi.fn(async (_id: string) => ({})) };
   let state: Parameters<Parameters<typeof createAccountCollections>[1]>[0];
   const controller = createAccountCollections(loaders, next => { state = next; });
   return { loaders, controller, get state() { return state; } };
@@ -81,4 +81,89 @@ describe("private collection lifecycle", () => {
     await t.controller.refresh("notifications");
     expect(t.state.notifications.data).toMatchObject({ page: 2, items: [{ id: "new" }, { id: "one" }, { id: "older" }] });
   });
+  it("adopts a new continuation when the previously loaded inbox was empty", async () => {
+    const t = setup();
+    t.loaders.notifications.mockResolvedValueOnce({ ...inbox([]), has_more: false, next_cursor: null });
+    await t.controller.refresh("notifications");
+    t.loaders.notifications.mockResolvedValueOnce({ ...inbox(["new"]), has_more: true, next_cursor: "new-cursor" });
+    await t.controller.refresh("notifications");
+    expect(t.state.notifications.data).toMatchObject({ has_more: true, next_cursor: "new-cursor" });
+  });
+  it("preserves the continuation and older rows during a head refresh", async () => {
+    const t = setup();
+    t.loaders.notifications.mockResolvedValueOnce({ ...inbox(["head"]), next_cursor: "head-cursor" });
+    await t.controller.refresh("notifications");
+    t.loaders.moreNotifications.mockResolvedValueOnce({ ...inbox(["tail"], 2), next_cursor: "tail-cursor" });
+    await t.controller.moreNotifications();
+    t.loaders.notifications.mockResolvedValueOnce({ ...inbox(["new", "head"]), next_cursor: "new-head-cursor" });
+    await t.controller.refresh("notifications");
+    expect(t.state.notifications.data).toMatchObject({ next_cursor: "tail-cursor", has_more: true, items: [{ id: "new" }, { id: "head" }, { id: "tail" }] });
+  });
+  it("fills a multi-page burst after an exhausted head and sorts retained rows", async () => {
+    const t = setup();
+    const row = (id: string, date: string) => ({ id, created_at: date, read_at: null } as NotificationInbox["items"][number]);
+    const old = row("old", "2026-01-01T00:00:00");
+    t.loaders.notifications.mockResolvedValueOnce({ ...inbox([]), items: [old], has_more: false, next_cursor: null });
+    await t.controller.refresh("notifications");
+    const burst = Array.from({ length: 40 }, (_, index) => row(String(index).padStart(2, "0"), "2026-02-01T00:00:00"));
+    t.loaders.notifications.mockResolvedValueOnce({ ...inbox([]), items: burst.slice(0, 30), has_more: true, next_cursor: "gap" });
+    await t.controller.refresh("notifications");
+    expect(t.state.notifications.data).toMatchObject({ has_more: true, next_cursor: "gap" });
+    t.loaders.moreNotifications.mockResolvedValueOnce({ ...inbox([]), items: [...burst.slice(30), old], has_more: false, next_cursor: null });
+    await t.controller.moreNotifications();
+    expect(t.state.notifications.data.items.map(item => item.id)).toEqual([...burst.map(item => item.id), "old"]);
+    expect(t.state.notifications.data.has_more).toBe(false);
+  });
+  it("keeps a restarted cursor if an older page completes after a disconnected head", async () => {
+    const t = setup(); await t.controller.refresh("notifications");
+    const oldPage = deferred<NotificationInbox>(); t.loaders.moreNotifications.mockReturnValueOnce(oldPage.promise);
+    const pending = t.controller.moreNotifications();
+    t.loaders.notifications.mockResolvedValueOnce({ ...inbox(["new"]), next_cursor: "gap" });
+    await t.controller.refresh("notifications");
+    oldPage.resolve({ ...inbox(["tail"]), next_cursor: "old-tail" }); await pending;
+    expect(t.state.notifications.data).toMatchObject({ next_cursor: "gap", has_more: true });
+    expect(t.state.notifications.data.items.map(item => item.id)).toEqual(["new", "one", "tail"]);
+  });
+  it("guards duplicate load-more and retains its cursor on failure for retry", async () => {
+    const t = setup(); await t.controller.refresh("notifications");
+    const pending = deferred<NotificationInbox>(); t.loaders.moreNotifications.mockReturnValueOnce(pending.promise);
+    const first = t.controller.moreNotifications(); await t.controller.moreNotifications();
+    expect(t.loaders.moreNotifications).toHaveBeenCalledTimes(1);
+    pending.resolve({ ...inbox(["tail"]), has_more: true, next_cursor: "next" }); await first;
+    t.loaders.moreNotifications.mockRejectedValueOnce(Error("offline"));
+    await t.controller.moreNotifications();
+    expect(t.state.inboxActivity.moreFailed).toBe(true);
+    expect(t.state.notifications.data).toMatchObject({ next_cursor: "next", items: [{ id: "one" }, { id: "tail" }] });
+    t.loaders.moreNotifications.mockResolvedValueOnce({ ...inbox(["last"]), has_more: false, next_cursor: null });
+    await t.controller.moreNotifications();
+    expect(t.loaders.moreNotifications).toHaveBeenLastCalledWith("next");
+    expect(t.state.notifications.data).toMatchObject({ has_more: false, next_cursor: null, items: [{ id: "one" }, { id: "tail" }, { id: "last" }] });
+  });
+  it("keeps unread rows on failure and fences old head responses after a successful read", async () => {
+    const t = setup();
+    t.loaders.notifications.mockResolvedValueOnce(inbox(["one", "two"])); await t.controller.refresh("notifications");
+    t.loaders.readNotification.mockRejectedValueOnce(Error("offline")); await t.controller.readNotification("one");
+    expect(t.state.inboxActivity.readFailed).toContain("one");
+    expect(t.state.notifications.data.items[0].read_at).toBeUndefined();
+    const pendingHead = deferred<NotificationInbox>(); t.loaders.notifications.mockReturnValueOnce(pendingHead.promise);
+    const head = t.controller.refresh("notifications");
+    const read = deferred<{}>(); t.loaders.readNotification.mockReturnValueOnce(read.promise);
+    const first = t.controller.readNotification("one"); await t.controller.readNotification("one");
+    expect(t.loaders.readNotification).toHaveBeenCalledTimes(2);
+    read.resolve({}); await first; pendingHead.resolve(inbox(["one", "two"])); await head;
+    expect(t.state.notifications.data.items[0].read_at).toBeTruthy();
+    expect(t.state.notifications.data.items[1].read_at).toBeUndefined();
+    expect(t.state.notifications.data.unread_count).toBe(1);
+  });
+  it("drops pending page and read results when the account resets", async () => {
+    const t = setup(); await t.controller.refresh("notifications");
+    const page = deferred<NotificationInbox>(), read = deferred<{}>();
+    t.loaders.moreNotifications.mockReturnValueOnce(page.promise); t.loaders.readNotification.mockReturnValueOnce(read.promise);
+    const more = t.controller.moreNotifications(), marking = t.controller.readNotification("one");
+    t.controller.reset(); await t.controller.refresh("notifications");
+    page.resolve(inbox(["old-private"])); read.resolve({}); await Promise.all([more, marking]);
+    expect(t.state.notifications.data.items).toEqual([{ id: "one" }]);
+    expect(t.state.inboxActivity).toEqual({ more: false, moreFailed: false, reading: [], readFailed: [] });
+  });
+
 });
