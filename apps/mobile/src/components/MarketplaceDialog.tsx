@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Platform, ScrollView, Text, View } from "react-native";
 import { market } from "../marketplaceApi";
 import { c, s } from "../theme";
 import { Listing } from "../types";
-import { Chip, Panel } from "./UI";
+import { Button, Chip, Panel } from "./UI";
 import { MessagesPanel } from "./MessagesPanel";
 import { InboxModel } from "./messagesState";
 import { AdvertDesk } from "./AdvertDesk";
@@ -11,6 +11,9 @@ import { ReviewDesk } from "./ReviewDesk";
 
 type Mode = "adverts" | "messages" | "review";
 type Contact = NonNullable<Listing["contact_adverts"]>[number];
+export type ExitGuard = { dirty: () => boolean; canSave: () => boolean; save: () => Promise<boolean>; focus: () => void; discard?: () => void };
+export type RegisterExitGuard = (guard: ExitGuard | null) => void;
+export type RequestExit = (action: () => void) => void;
 export default function MarketplaceDialog({
   mode: initialMode,
   contact,
@@ -26,6 +29,51 @@ export default function MarketplaceDialog({
   const [moderator, setModerator] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const guard = useRef<ExitGuard | null>(null);
+  const savingLeave = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; pendingRef.current = null; }; }, []);
+  const [pendingExit, setPendingExit] = useState<(() => void) | null>(null);
+  const pendingRef = useRef<(() => void) | null>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
+  const promptRef = useRef<React.ComponentRef<typeof View>>(null);
+  const registerExitGuard = useCallback<RegisterExitGuard>((value) => { guard.current = value; }, []);
+  const requestExit: RequestExit = (action) => {
+    if (busy || pendingRef.current) return;
+    if (!guard.current?.dirty()) { action(); return; }
+    if (Platform.OS === "web" && document.activeElement instanceof HTMLElement) previousFocus.current = document.activeElement;
+    pendingRef.current = action;
+    setPendingExit(() => action);
+  };
+  function keepEditing() {
+    if (savingLeave.current) return;
+    pendingRef.current = null; setPendingExit(null);
+    requestAnimationFrame(() => {
+      const prior = previousFocus.current;
+      if (Platform.OS === "web" && prior?.isConnected && prior.matches("input, textarea, select")) prior.focus();
+      else guard.current?.focus();
+    });
+  }
+  function discard() {
+    if (savingLeave.current) return;
+    guard.current?.discard?.();
+    const action = pendingRef.current;
+    pendingRef.current = null; setPendingExit(null);
+    action?.();
+  }
+  async function saveAndLeave() {
+    const current = guard.current, action = pendingRef.current;
+    if (!current || !action || busy || savingLeave.current || !current.canSave()) return;
+    savingLeave.current = true;
+    try {
+      const saved = await current.save();
+      savingLeave.current = false;
+      if (saved && mounted.current && pendingRef.current === action) {
+        pendingRef.current = null; setPendingExit(null); action();
+      }
+    } finally { savingLeave.current = false; }
+  }
+  useLayoutEffect(() => { if (pendingExit) promptRef.current?.focus?.(); }, [pendingExit]);
   const [inbox] = useState(
     () =>
       new InboxModel(
@@ -39,8 +87,11 @@ export default function MarketplaceDialog({
   const onMessagesScroll = useRef<(() => void) | null>(null);
   const stopMessages = useRef<(() => void) | null>(null);
   const changeMode = (next: Mode) => {
-    if (mode === "messages" && next !== mode) stopMessages.current?.();
-    setMode(next);
+    if (next === mode) return;
+    requestExit(() => {
+      if (mode === "messages") stopMessages.current?.();
+      setMode(next);
+    });
   };
   useEffect(() => {
     let active = true;
@@ -61,8 +112,10 @@ export default function MarketplaceDialog({
     setError("");
     try {
       await action();
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -72,8 +125,8 @@ export default function MarketplaceDialog({
       title="Your rental desk."
       wide
       onClose={() => {
-        stopMessages.current?.();
-        onClose();
+        if (pendingRef.current) { keepEditing(); return; }
+        requestExit(() => { stopMessages.current?.(); onClose(); });
       }}
       inboxViewport={
         mode === "messages"
@@ -84,6 +137,21 @@ export default function MarketplaceDialog({
           : undefined
       }
     >
+      {pendingExit && <View ref={promptRef} focusable tabIndex={-1} accessibilityRole="alert" style={[s.card, { padding: 18, gap: 12, alignItems: "flex-start" }]}>
+        <Text style={s.title}>Discard unsaved changes?</Text>
+        <Text style={s.muted}>Your changes have not been saved.</Text>
+        <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
+          <Button onPress={keepEditing} disabled={busy}>Keep editing</Button>
+          <Button outline onPress={discard} disabled={busy}>Discard changes</Button>
+          {guard.current?.canSave() && <Button outline onPress={saveAndLeave} disabled={busy}>Save and leave</Button>}
+        </View>
+      </View>}
+      {!!error && (
+        <Text accessibilityRole="alert" style={{ color: c.warning }}>
+          {error}
+        </Text>
+      )}
+      <View style={{ display: pendingExit ? "none" : "flex", gap: 20 }}>
       <View style={[s.row, { flexWrap: "wrap", gap: 8 }]}>
         <Chip
           label="My adverts"
@@ -103,13 +171,8 @@ export default function MarketplaceDialog({
           />
         )}
       </View>
-      {!!error && (
-        <Text accessibilityRole="alert" style={{ color: c.warning }}>
-          {error}
-        </Text>
-      )}
       {mode === "adverts" ? (
-        <AdvertDesk run={run} busy={busy} onOpenHome={onOpenHome} />
+        <AdvertDesk run={run} busy={busy} onOpenHome={onOpenHome} registerExitGuard={registerExitGuard} requestExit={requestExit} />
       ) : mode === "messages" ? (
         <MessagesPanel
           model={inbox}
@@ -122,11 +185,12 @@ export default function MarketplaceDialog({
       ) : (
         <ReviewDesk run={run} busy={busy} />
       )}
+      </View>
     </Panel>
   );
 }
 
 export interface RentalDeskWork {
-  run: (action: () => Promise<void>) => Promise<void>;
+  run: (action: () => Promise<void>) => Promise<boolean>;
   busy: boolean;
 }

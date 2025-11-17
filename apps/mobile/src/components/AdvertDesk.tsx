@@ -1,14 +1,15 @@
-import React, { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Text, TextInput, View } from "react-native";
 import { market, Advert, Profile } from "../marketplaceApi";
 import { s } from "../theme";
 import { Button, Chip, Field, money } from "./UI";
-import { AdvertEditor, type AdvertEditorExitGuardRegistration } from "./AdvertEditor";
-import type { RentalDeskWork } from "./MarketplaceDialog";
+import { AdvertEditor } from "./AdvertEditor";
+import type { RegisterExitGuard, RequestExit, RentalDeskWork } from "./MarketplaceDialog";
 
 export interface AdvertDeskProps extends RentalDeskWork {
   onOpenHome: (id: string) => void;
-  registerExitGuard?: AdvertEditorExitGuardRegistration;
+  registerExitGuard: RegisterExitGuard;
+  requestExit: RequestExit;
 }
 
 const emptyProfile = { name: "", kind: "private" as const, description: "" };
@@ -17,7 +18,9 @@ export function AdvertDesk({
   busy,
   onOpenHome,
   registerExitGuard,
+  requestExit,
 }: AdvertDeskProps) {
+  const profileName = useRef<React.ComponentRef<typeof TextInput>>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileDraft, setProfileDraft] =
     useState<Omit<Profile, "id">>(emptyProfile);
@@ -44,23 +47,38 @@ export function AdvertDesk({
   async function reload() {
     setAdverts((await market.adverts()).items);
   }
+  const profileFields = (value: Omit<Profile, "id">) => ({ name: value.name, kind: value.kind, description: value.description });
+  const profileDirty = JSON.stringify(profileFields(profileDraft)) !== JSON.stringify(profileFields(profile || emptyProfile));
+  const profileValid = profileDraft.name.trim().length >= 2 && profileDraft.name.length <= 100 && profileDraft.description.length <= 2000;
+  async function saveProfile() {
+    return run(async () => {
+      const r = await market.saveProfile(profileFields(profileDraft));
+      setProfile(r.profile); setProfileDraft(r.profile); setProfileOpen(false);
+    });
+  }
+  useEffect(() => {
+    if (editing || !profileOpen) return;
+    registerExitGuard({ dirty: () => profileDirty, canSave: () => profileValid, save: saveProfile,
+      focus: () => profileName.current?.focus(),
+      discard: () => { setProfileDraft(profile || emptyProfile); setProfileOpen(false); } });
+    return () => registerExitGuard(null);
+  }, [editing, profileOpen, profileDirty, profileValid, profileDraft, profile, registerExitGuard]);
   if (editing)
     return (
       <AdvertEditor
         registerExitGuard={registerExitGuard}
+        requestExit={requestExit}
         initial={editing === "new" ? undefined : editing}
         busy={busy}
         onCancel={() => setEditing(null)}
-        onSave={(draft) =>
-          run(async () => {
-            await market.saveAdvert(
-              draft,
-              editing === "new" ? undefined : editing,
-            );
-            await reload();
+        onSave={async (draft) => {
+          const saved = await run(async () => {
+            await market.saveAdvert(draft, editing === "new" ? undefined : editing);
             setEditing(null);
-          })
-        }
+          });
+          if (saved) void run(reload);
+          return saved;
+        }}
       />
     );
   return (
@@ -72,7 +90,7 @@ export function AdvertDesk({
       <Button
         outline
         expanded={profileOpen}
-        onPress={() => setProfileOpen(!profileOpen)}
+        onPress={() => profileOpen ? requestExit(() => setProfileOpen(false)) : setProfileOpen(true)}
       >
         {profile
           ? `${profile.name} · Edit profile`
@@ -82,6 +100,7 @@ export function AdvertDesk({
         <View style={{ gap: 16 }}>
           <Field
             label="PUBLIC NAME"
+            inputRef={profileName}
             value={profileDraft.name}
             onChange={(name) => setProfileDraft((p) => ({ ...p, name }))}
           />
@@ -108,21 +127,15 @@ export function AdvertDesk({
             }
           />
           <Button
-            disabled={busy || profileDraft.name.trim().length < 2}
-            onPress={() =>
-              run(async () => {
-                const r = await market.saveProfile(profileDraft);
-                setProfile(r.profile);
-                setProfileOpen(false);
-              })
-            }
+            disabled={busy || !profileValid}
+            onPress={() => { void saveProfile(); }}
           >
             Save profile
           </Button>
         </View>
       )}
       {profile && (
-        <Button disabled={busy} onPress={() => setEditing("new")}>
+        <Button disabled={busy} onPress={() => requestExit(() => setEditing("new"))}>
           Create rental advert
         </Button>
       )}
@@ -134,7 +147,7 @@ export function AdvertDesk({
             · {money(advert.advert.rent_pln)} · {advert.advert.city}
           </Text>
           <View style={[s.row, { flexWrap: "wrap", gap: 8 }]}>
-            <Button disabled={busy} outline onPress={() => setEditing(advert)}>
+            <Button disabled={busy} outline onPress={() => requestExit(() => setEditing(advert))}>
               Edit
             </Button>
             {advert.state === "published" ? (
@@ -164,7 +177,7 @@ export function AdvertDesk({
               </Button>
             )}
             {advert.listing_id && !advert.hidden && (
-              <Button outline onPress={() => onOpenHome(advert.listing_id!)}>
+              <Button outline onPress={() => requestExit(() => onOpenHome(advert.listing_id!))}>
                 View home
               </Button>
             )}
