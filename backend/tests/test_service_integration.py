@@ -939,3 +939,21 @@ def test_t04_postgres_conditional_response_checks_representation_and_lease_at_co
         assert db.scalar(select(CollectionFetchState)).validators["etag"] == initial_tag
         if race != "payload_changed":
             assert db.get(SourcePollState, "otodom").lease_id == new_owner
+
+
+def test_notification_cursor_on_postgres(pg_engine, record, auth_client):
+    from fastapi.testclient import TestClient
+    from realtoruch.api import app
+    from realtoruch.db import get_session
+    from realtoruch.auth import validate_claims
+    from test_notification_cursors import exercise_notification_cursor
+
+    with Session(pg_engine, expire_on_commit=False) as session:
+        app.state.validate_claims = validate_claims
+        app.dependency_overrides[get_session] = lambda: session
+        try:
+            with TestClient(app) as client:
+                exercise_notification_cursor(session, record, client, auth_client)
+        finally:
+            app.dependency_overrides.clear()
+            del app.state.validate_claims

@@ -1,4 +1,8 @@
+import base64
+import binascii
 import hmac
+import json
+from datetime import datetime
 from contextlib import asynccontextmanager
 from time import monotonic
 from typing import Annotated
@@ -7,7 +11,7 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from .alerts import baseline_search, insert_once, notification_data, unread_count
@@ -357,26 +361,50 @@ def listing_state(body: ListingStateBody, user_id=Depends(require_user), session
     return {"seen_ids": ids}
 
 
+def _notification_cursor(item):
+    payload = json.dumps([item.created_at.isoformat(timespec="microseconds"), item.id], separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
+def _parse_notification_cursor(cursor):
+    try:
+        raw = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+        values = json.loads(raw)
+        if not isinstance(values, list) or len(values) != 2 or not all(isinstance(v, str) for v in values):
+            raise ValueError()
+        created = datetime.fromisoformat(values[0])
+        if created.tzinfo is not None or not values[1] or len(values[1]) > 36:
+            raise ValueError()
+        return created, values[1]
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error, OverflowError):
+        raise HTTPException(400, "Invalid notification cursor")
+
+
 @app.get("/v1/me/notifications", tags=["Account"])
 def notifications(
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
+    cursor: str | None = Query(None, min_length=1, max_length=512),
     user_id=Depends(require_user),
     session=Depends(get_session),
 ):
-    rows = session.execute(
-        select(Notification, Listing.status)
-        .join(Listing)
-        .where(Notification.user_id == user_id)
-        .order_by(Notification.created_at.desc(), Notification.id)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    query = select(Notification, Listing.status).join(Listing).where(Notification.user_id == user_id)
+    if cursor is not None:
+        created, identifier = _parse_notification_cursor(cursor)
+        query = query.where(or_(Notification.created_at < created,
+            and_(Notification.created_at == created, Notification.id > identifier)))
+    else:
+        query = query.offset((page - 1) * page_size)
+    rows = session.execute(query.order_by(Notification.created_at.desc(), Notification.id.asc()).limit(page_size + 1)).all()
+    has_more = len(rows) > page_size
+    rows = rows[:page_size]
     return {
         "items": [notification_data(n, status) for n, status in rows],
         "unread_count": unread_count(session, user_id),
         "page": page,
         "page_size": page_size,
+        "has_more": has_more,
+        "next_cursor": _notification_cursor(rows[-1][0]) if has_more else None,
     }
 
 

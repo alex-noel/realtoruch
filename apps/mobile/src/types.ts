@@ -147,6 +147,8 @@ export type NotificationInbox = {
   unread_count: number;
   page: number;
   page_size: number;
+  has_more: boolean;
+  next_cursor: string | null;
 };
 export const DEFAULT_FILTERS: Filters = {
   city: "Kraków",

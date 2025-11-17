@@ -142,7 +142,6 @@ function RentalApp() {
   const searches = collections.state.searches.data;
   const inbox = collections.state.notifications.data;
   const setFavorites = (value: Listing[] | ((previous: Listing[]) => Listing[])) => collections.set("favorites", value);
-  const setInbox = (value: typeof inbox | ((previous: typeof inbox) => typeof inbox)) => collections.set("notifications", value);
   const favoriteIds = new Set(favorites.map((home) => home.id));
   const [comparison, setComparison] = useState<Listing[]>([]);
   const [user, setUser] = useState<string | null>(null);
@@ -862,34 +861,13 @@ function RentalApp() {
                     if (isCurrentAccount(generation, user)) setErrorToast(e.message);
                   });
               }}
-              onRead={async (id) => {
-                const generation = sessionGeneration.current;
-                try {
-                  await api.readNotification(id);
-                  if (isCurrentAccount(generation, user)) await refreshAccount();
-                } catch (e) {
-                  if (isCurrentAccount(generation, user)) setErrorToast((e as Error).message);
-                }
-              }}
-              onMore={async () => {
-                const generation = sessionGeneration.current;
-                try {
-                  const next = await api.notifications(inbox.page + 1);
-                  if (!isCurrentAccount(generation, user)) return;
-                  setInbox((previous) => ({
-                    ...next,
-                    items: [
-                      ...previous.items,
-                      ...next.items.filter(
-                        (item) =>
-                          !previous.items.some((old) => old.id === item.id),
-                      ),
-                    ],
-                  }));
-                } catch (e) {
-                  if (isCurrentAccount(generation, user)) setErrorToast((e as Error).message);
-                }
-              }}
+              onRead={collections.readNotification}
+              onMore={collections.moreNotifications}
+              morePending={collections.state.inboxActivity.more}
+              moreFailed={collections.state.inboxActivity.moreFailed}
+              reading={collections.state.inboxActivity.reading}
+              readFailed={collections.state.inboxActivity.readFailed}
+
             />}
             </>
           ) : tab === "insights" ? (
