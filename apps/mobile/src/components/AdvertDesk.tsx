@@ -71,13 +71,15 @@ export function AdvertDesk({
         initial={editing === "new" ? undefined : editing}
         busy={busy}
         onCancel={() => setEditing(null)}
-        onSave={async (draft) => {
+        onSave={async (draft, base) => {
+          let error: unknown;
           const saved = await run(async () => {
-            await market.saveAdvert(draft, editing === "new" ? undefined : editing);
+            try { await market.saveAdvert(draft, editing === "new" ? undefined : base || editing); }
+            catch (cause) { error = cause; throw cause; }
             setEditing(null);
           });
           if (saved) void run(reload);
-          return saved;
+          return { ok: saved, error };
         }}
       />
     );
