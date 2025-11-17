@@ -332,3 +332,29 @@ describe("session resilience", () => {
     await expect(client.restoreToken()).rejects.toMatchObject({ kind: "storage" }); expect(f.store.has("realtoruch_refresh")).toBe(false);
   });
 });
+
+describe("account export authorization", () => {
+  it.each([
+    ["/v1/me/export", "Export reauthentication required", "export_reauth"],
+    ["/v1/auth/reauthenticate", "Email or password is incorrect", "export_password"],
+  ])("keeps the access session for a known operation-specific 401 on %s", async (path, detail, code) => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(result("valid-session"))).mockResolvedValueOnce(response({ detail }, 401));
+    vi.stubGlobal("fetch", fetch); const client = await load();
+    await client.api.signIn("synthetic@example.test", "synthetic-password", false);
+    await expect(client.request(path)).rejects.toMatchObject({ kind: "http", code });
+    expect(fetch).toHaveBeenCalledTimes(2); expect(client.getSessionState()).toBe("active"); expect(client.isCurrentAccessToken("valid-session")).toBe(true);
+  });
+  it("still revokes an invalid access session on the export endpoint", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(result("invalid-session"))).mockResolvedValue(response({ detail: "Session expired or revoked" }, 401));
+    vi.stubGlobal("fetch", fetch); const client = await load();
+    await client.api.signIn("synthetic@example.test", "synthetic-password", false);
+    await expect(client.api.exportAccount("purpose-token")).rejects.toMatchObject({ kind: "invalid" });
+    expect(client.getSessionState()).toBe("reauth"); expect(client.isCurrentAccessToken("invalid-session")).toBe(false);
+  });
+  it("sends export credentials only in a no-store request header", async () => {
+    const fetch = vi.fn().mockResolvedValue(response({ version: 1 })); vi.stubGlobal("fetch", fetch);
+    const client = await load(); await client.api.exportAccount("purpose-token");
+    expect(fetch.mock.calls[0][0]).not.toContain("purpose-token");
+    expect(fetch.mock.calls[0][1]).toMatchObject({ cache: "no-store", headers: { "X-Account-Export-Token": "purpose-token" } });
+  });
+});

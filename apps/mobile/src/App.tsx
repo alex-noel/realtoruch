@@ -42,7 +42,7 @@ import TrendingUp from "lucide-react-native/icons/trending-up";
 import User from "lucide-react-native/icons/user";
 import X from "lucide-react-native/icons/x";
 import { api, API_URL, restoreToken, setToken, subscribeSession, SessionState, SessionError, getSessionState, getSessionRevision, isCurrentAccessToken } from "./api";
-import { AccountDialog, ResetPasswordDialog } from "./components/AccountDialog";
+import { AccountDialog, ResetPasswordDialog } from "./components/DeferredAccountDialog";
 import { market } from "./marketplaceApi";
 import {
   DEFAULT_FILTERS,

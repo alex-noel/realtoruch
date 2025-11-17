@@ -34,7 +34,7 @@ export function getSessionRevision() { return generation; }
 export function isCurrentAccessToken(token: string) { return accessToken === token; }
 export type RequestErrorCode = "unknown" | "validation" | "version_conflict" | "verification_required" |
   "rate_limited" | "search_limit" | "advert_limit" | "profile_required" | "profile_type_conflict" |
-  "conversation_blocked" | "message_retry_conflict" | "appeal_pending" | "already_reviewed" | "moderation_hidden";
+  "conversation_blocked" | "message_retry_conflict" | "appeal_pending" | "already_reviewed" | "moderation_hidden" | "export_reauth" | "export_password" | "export_too_large" | "export_data_invalid";
 export class SessionError extends Error {
   constructor(public kind: "invalid" | "forbidden" | "transient" | "http" | "storage" | "superseded", message: string, public status?: number,
     public code: RequestErrorCode = "unknown", public fields: string[] = []) {
@@ -288,6 +288,19 @@ export async function request<T>(path: string, options: RequestInit & { anonymou
       headers: { "Content-Type": "application/json", ...(usedToken ? { Authorization: `Bearer ${usedToken}` } : {}), ...init.headers },
     });
     checkResponse();
+    let errorData: unknown;
+    if (!response.ok) { try { errorData = await response.json(); } catch { errorData = null; } checkResponse(); }
+    const detail = (errorData as { detail?: unknown } | null)?.detail;
+    // These errors occur only after access-session validation. They authorize a
+    // narrower operation and must never revoke a valid account session.
+    if (response.status === 401 && path === "/v1/me/export" && detail === "Export reauthentication required")
+      throw new SessionError("http", "Export authorization expired. Enter your password again.", 401, "export_reauth");
+    if (response.status === 401 && path === "/v1/auth/reauthenticate" && detail === "Email or password is incorrect")
+      throw new SessionError("http", "That password is incorrect. Try again.", 401, "export_password");
+    if (response.status === 413 && path === "/v1/me/export")
+      throw new SessionError("http", "Your account export exceeds the 10 MiB download limit. Contact support for a larger export.", 413, "export_too_large");
+    if (response.status === 422 && path === "/v1/me/export" && detail === "export_data_invalid: contact support")
+      throw new SessionError("http", "Some account data could not be exported. Contact support.", 422, "export_data_invalid");
     if (response.status === 401 && mayRetry && usedToken && path !== "/v1/auth/refresh") {
       if (accessToken !== usedToken) return send(false, true);
       const refresh = refreshSession(intent, lockHeld);
@@ -298,7 +311,7 @@ export async function request<T>(path: string, options: RequestInit & { anonymou
     }
     if (!response.ok) {
       const kind = response.status === 401 ? "invalid" : response.status === 403 ? "forbidden" : response.status >= 500 ? "transient" : "http";
-      let data: unknown; try { data = await response.json(); } catch { data = null; }
+      const data = errorData;
       checkResponse();
       if (kind === "invalid" && usedToken && (mayRetry || didRetry) && path !== "/v1/auth/refresh") await invalidate(intent);
       const linkMessage = linkValidationMessage(path, response.status, data);
@@ -474,6 +487,10 @@ export const api = {
     }>("/v1/auth/sessions", {}, true),
   revokeSession: (id: string) =>
     request(`/v1/auth/sessions/${id}`, { method: "DELETE" }, true),
+  authorizeExport: (password: string, signal?: AbortSignal) => request<{ export_token: string; expires_in: number }>(
+    "/v1/auth/reauthenticate", { method: "POST", body: JSON.stringify({ password }), signal, cache: "no-store" }, true),
+  exportAccount: (token: string, signal?: AbortSignal) => request<Record<string, unknown>>(
+    "/v1/me/export", { headers: { "X-Account-Export-Token": token }, signal, cache: "no-store" }),
   deleteAccount: async (password: string) => {
     const intent = generation;
     return withAuthCookieLock(async () => {

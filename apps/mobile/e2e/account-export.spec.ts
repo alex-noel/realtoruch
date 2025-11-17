@@ -1,0 +1,48 @@
+import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+const auth = process.env.E2E_AUTH_URL!, api = process.env.E2E_API_URL!;
+
+test('Q26 export reauth recovery, private download and keyboard terminal-action fence', async ({ page, context }, info) => {
+  const ports = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
+  await context.route('**/*', route => { const url = new URL(route.request().url()); return url.protocol === 'data:' || (url.hostname === '127.0.0.1' && ports.has(url.port)) ? route.continue() : route.abort(); });
+  await page.goto('/'); await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'New here? Create a free account', exact: true }).click();
+  const email = `q26-${info.project.name}@example.test`, password = 'synthetic-q26-password-123';
+  await page.getByLabel('EMAIL', { exact: true }).fill(email); await page.getByLabel('PASSWORD', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Your account.' });
+  await dialog.getByRole('button', { name: 'Export my data', exact: true }).click();
+  const field = dialog.getByLabel('EXPORT PASSWORD', { exact: true });
+  const submit = dialog.getByRole('button', { name: 'Download my JSON data', exact: true });
+  await field.fill('incorrect-password-123'); await submit.click();
+  await expect(dialog.getByText('That password is incorrect. Try again.', { exact: true })).toBeVisible(); await expect(field).toHaveValue('');
+  const headers = { 'Access-Control-Allow-Origin': process.env.E2E_WEB_URL!, 'Access-Control-Allow-Credentials': 'true' };
+  let fault = 'expired';
+  await page.route(`${api}/v1/me/export`, route => {
+    if (fault === 'expired') return route.fulfill({ status: 401, json: { detail: 'Export reauthentication required' }, headers });
+    if (fault === 'large') return route.fulfill({ status: 413, json: {}, headers });
+    if (fault === 'offline') return route.abort();
+    return route.fallback();
+  });
+  await field.fill(password); await submit.click(); await expect(dialog.getByText('Export authorization expired. Enter your password again.', { exact: true })).toBeVisible();
+  await expect(dialog.getByText(email, { exact: true })).toBeVisible(); await expect(field).toHaveValue('');
+  fault = 'large'; await field.fill(password); await submit.click(); await expect(dialog.getByText(/exceeds the 10 MiB download limit/)).toBeVisible();
+  fault = 'offline'; await field.fill(password); await submit.click(); await expect(dialog.getByText('Cannot reach the service. Check your connection and try again.', { exact: true })).toBeVisible();
+  fault = ''; await field.fill(password);
+  const request = page.waitForRequest(`${api}/v1/me/export`); const download = page.waitForEvent('download');
+  await submit.click(); const exported = await download; const exportRequest = await request;
+  expect(exported.suggestedFilename()).toMatch(/^realtoruch-account-\d{4}-\d{2}-\d{2}\.json$/);
+  const content = JSON.parse(await readFile((await exported.path())!, 'utf8'));
+  expect(content.account.email).toBe(email); expect(content.version).toBe(1);
+  expect(JSON.stringify(content)).not.toContain(password); expect(exportRequest.url()).not.toContain('token');
+  expect(exportRequest.headers()['x-account-export-token']).toBeTruthy();
+  await expect(dialog.getByText('Your JSON download has started.', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Export my data', exact: true }).click(); await field.fill(password);
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route(`${auth}/v1/auth/logout`, async route => { await gate; await route.fulfill({ status: 503, json: {}, headers }); });
+  let reauths = 0; page.on('request', request => { if (request.url() === `${auth}/v1/auth/reauthenticate`) reauths++; });
+  await dialog.getByRole('button', { name: 'Sign out', exact: true }).click(); await expect(submit).toBeDisabled();
+  await field.press('Enter'); await page.waitForTimeout(150); expect(reauths).toBe(0); release();
+  await expect(dialog.getByRole('button', { name: 'Retry sign out', exact: true })).toBeVisible();
+});

@@ -2,6 +2,7 @@ import React, { type ComponentRef, useCallback, useEffect, useRef, useState } fr
 import { AppState, Platform, Text, TextInput, View } from "react-native";
 import { api } from "../api";
 import { s } from "../theme";
+import { AccountExport } from "./AccountExport";
 import { Button, PasswordField, Panel } from "./UI";
 
 const loadDevices = async () => (await api.sessions()).items;
@@ -107,6 +108,7 @@ export function AccountDialog({ onClose, onSignOut, onDeleted, onMarketplace, ve
       {devices.loaded && <Button outline disabled={devices.loading || terminal} onPress={() => void devices.refresh()}>Refresh devices</Button>}
       {Object.entries(feedback).filter(([key, value]) => value.message === "Device signed out." && !devices.data.some(device => device.id === key)).map(([key, value]) => <Text key={key} accessibilityRole="status" style={s.text}>{value.message}</Text>)}
     </View>
+    <AccountExport disabled={terminal} />
     <Button busy={pending.includes("signout")} busyLabel="Signing out…" disabled={pending.includes("delete")} onPress={() => void run("signout", onSignOut)}>{feedback.signout?.failed ? "Retry sign out" : "Sign out"}</Button>
     {notice("signout")}
     <View style={[s.card, { padding: 16, gap: 12 }]}>
