@@ -120,18 +120,21 @@ describe("email alert preference recovery", () => {
 
   it("does not apply delayed load results after disposal for an account switch", async () => {
     const oldLoad = deferred<EmailValue>();
-    const old = setup(() => oldLoad.promise);
+    const load = vi
+      .fn<() => Promise<EmailValue>>()
+      .mockReturnValueOnce(oldLoad.promise)
+      .mockResolvedValueOnce({ enabled: true, verified: true });
+    const old = setup(load);
     const pending = old.controller.refresh();
     old.controller.dispose();
-
-    const next = setup(async () => ({ enabled: true, verified: true }));
-    await next.controller.refresh();
-    const previousCallbacks = old.states.length;
+    await old.controller.refresh();
+    expect(load).toHaveBeenCalledTimes(2);
+    const stateAfterReactivation = old.states.at(-1);
     oldLoad.resolve({ enabled: false, verified: false });
     await pending;
 
-    expect(old.states).toHaveLength(previousCallbacks);
-    expect(next.states.at(-1)?.value).toEqual({ enabled: true, verified: true });
+    expect(old.states.at(-1)).toBe(stateAfterReactivation);
+    expect(old.states.at(-1)?.value).toEqual({ enabled: true, verified: true });
   });
 
   it("does not apply a delayed update after account disposal", async () => {

@@ -225,6 +225,7 @@ export function createEmailPreference(
     toggle,
     dispose: () => {
       epoch++;
+      state = { ...state, loading: false, busy: false };
     },
   };
 }
