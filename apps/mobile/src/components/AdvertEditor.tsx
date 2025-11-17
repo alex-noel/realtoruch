@@ -1,8 +1,9 @@
-import React, { type ComponentRef, useRef, useState } from "react";
+import React, { type ComponentRef, useEffect, useRef, useState } from "react";
 import { Text, TextInput, View } from "react-native";
 import { Advert, Draft } from "../marketplaceApi";
 import { c, s } from "../theme";
 import { Button, Chip, Field } from "./UI";
+import type { RegisterExitGuard, RequestExit } from "./MarketplaceDialog";
 import PropertyMap from "./DeferredPropertyMap";
 import {
   ownerNumbersFrom,
@@ -12,16 +13,13 @@ import {
   type OwnerNumberKey,
 } from "../ownerValidation";
 
-// Reserved for the unified parent-close/dirty-state contract; currently unused.
-export type AdvertEditorExitGuardRegistration = (
-  guard: (() => boolean) | null,
-) => void;
 export interface AdvertEditorProps {
   initial?: Advert;
   busy: boolean;
   onCancel: () => void;
-  onSave: (draft: Draft) => void;
-  registerExitGuard?: AdvertEditorExitGuardRegistration;
+  onSave: (draft: Draft) => Promise<boolean>;
+  registerExitGuard: RegisterExitGuard;
+  requestExit: RequestExit;
 }
 
 const emptyDraft: Draft = {
@@ -57,6 +55,8 @@ export function AdvertEditor({
   busy,
   onCancel,
   onSave,
+  registerExitGuard,
+  requestExit,
 }: AdvertEditorProps) {
   const [draft, setDraft] = useState<Draft>(
     () => initial?.advert || { ...emptyDraft },
@@ -76,6 +76,14 @@ export function AdvertEditor({
     longitude,
     photoLinks,
   );
+  const snapshot = JSON.stringify({ draft, numbers, latitude, longitude, photoLinks });
+  const [baseline] = useState(snapshot);
+  useEffect(() => {
+    registerExitGuard({ dirty: () => snapshot !== baseline, canSave: () => !!validation.value,
+      save: () => validation.value ? onSave(validation.value) : Promise.resolve(false),
+      focus: () => refs.current.title?.focus() });
+    return () => registerExitGuard(null);
+  }, [registerExitGuard, snapshot, baseline, validation.value, onSave]);
   const errors = validation.errors;
   const invalid = Object.keys(errors) as OwnerField[];
   const pinned = !errors.lat && !errors.lon;
@@ -95,7 +103,7 @@ export function AdvertEditor({
   );
   function submit() {
     setSubmitted(true);
-    if (validation.value) onSave(validation.value);
+    if (validation.value) void onSave(validation.value);
   }
   return (
     <>
@@ -287,7 +295,7 @@ export function AdvertEditor({
           ? "Save and update advert"
           : "Save draft"}
       </Button>
-      <Button outline disabled={busy} onPress={onCancel}>
+      <Button outline disabled={busy} onPress={() => requestExit(onCancel)}>
         Back to adverts
       </Button>
     </>
