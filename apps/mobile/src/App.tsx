@@ -15,7 +15,8 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NotificationInbox from "./components/NotificationInbox";
-import { disablePush, listenForPush } from "./pushClient";
+import { listenForPush } from "./pushClient";
+import { completedAccountAction, signOutWithPush } from "./accountActions";
 import type { RentalNotification } from "./types";
 import { useAccountCollections, type Collection } from "./hooks/useAccountCollections";
 import { StatusBar } from "expo-status-bar";
@@ -40,7 +41,7 @@ import Sprout from "lucide-react-native/icons/sprout";
 import TrendingUp from "lucide-react-native/icons/trending-up";
 import User from "lucide-react-native/icons/user";
 import X from "lucide-react-native/icons/x";
-import { api, API_URL, restoreToken, setToken, subscribeSession, SessionState, SessionError, getSessionState, isCurrentAccessToken } from "./api";
+import { api, API_URL, restoreToken, setToken, subscribeSession, SessionState, SessionError, getSessionState, getSessionRevision, isCurrentAccessToken } from "./api";
 import { AccountDialog, ResetPasswordDialog } from "./components/AccountDialog";
 import { market } from "./marketplaceApi";
 import {
@@ -161,6 +162,7 @@ function RentalApp() {
     NonNullable<Listing["contact_adverts"]>[number] | undefined
   >();
   const [resetToken, setResetToken] = useState<string | null>(null);
+  const [verificationRevision, setVerificationRevision] = useState(0);
   const feedbackSequence = useRef(0);
   const announcedFeedback = useRef<number | null>(null);
   const [feedback, setFeedback] = useState<{ id: number; message: string; kind: "success" | "error" } | null>(null);
@@ -175,6 +177,7 @@ function RentalApp() {
   const [guestSeenIds, setGuestSeenIds] = useState<Set<string>>(new Set());
   const sessionGeneration = useRef(0);
   const currentUser = useRef(user);
+  const renderedSessionRevision = getSessionRevision();
   currentUser.current = user;
   const detailRequest = useRef(0);
   const pendingFavorite = useRef<Listing | null>(null);
@@ -367,6 +370,7 @@ function RentalApp() {
       async consume(action) {
         if (action.type === "verify-account") {
           await api.verifyAccount(action.token);
+          setVerificationRevision(value => value + 1);
           return "Email verified. You can return to your account.";
         }
         setTab("notifications");
@@ -1672,6 +1676,7 @@ function RentalApp() {
       )}
       {dialog === "account" && (
         <AccountDialog
+          verificationRevision={verificationRevision}
           onMarketplace={(mode) => {
             setMarketMode(mode);
             setContact(undefined);
@@ -1679,25 +1684,13 @@ function RentalApp() {
           }}
           onClose={() => setDialog(null)}
           onSignOut={async () => {
-            let pushWarning = "";
-            try {
-              await disablePush();
-            } catch {
-              // A push-provider outage must not prevent revoking the login session.
-              pushWarning =
-                " Device alert removal could not be confirmed. You can disable alerts in device settings.";
-            }
-            await api.signOut();
-            currentUser.current = null;
-            setUser(null);
-            setDialog(null);
-            setToast("Signed out." + pushWarning);
+            const message = await signOutWithPush();
+            if (message) setToast(message);
           }}
           onDeleted={(message) => {
-            currentUser.current = null;
-            setUser(null);
-            setDialog(null);
-            setToast(message);
+            // The session subscriber owns clearing private UI. A late completion
+            // must never clear a newer login or its dialog.
+            if (completedAccountAction(renderedSessionRevision)) setToast(message);
           }}
         />
       )}

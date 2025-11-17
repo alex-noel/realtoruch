@@ -30,6 +30,7 @@ export function subscribeSession(listener: (state: SessionState) => void) {
 }
 function publish(state: SessionState) { sessionState = state; listeners.forEach(listener => listener(state)); }
 export function getSessionState() { return sessionState; }
+export function getSessionRevision() { return generation; }
 export function isCurrentAccessToken(token: string) { return accessToken === token; }
 export type RequestErrorCode = "unknown" | "validation" | "version_conflict" | "verification_required" |
   "rate_limited" | "search_limit" | "advert_limit" | "profile_required" | "profile_type_conflict" |
