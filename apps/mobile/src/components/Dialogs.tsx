@@ -5,6 +5,7 @@ import {
   Platform,
   Pressable,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -16,7 +17,7 @@ import { api } from "../api";
 import { Filters, Listing } from "../types";
 import { c, s } from "../theme";
 import { ListingPhoto } from "./ListingCard";
-import { Button, Chip, Field, Panel, money } from "./UI";
+import { Button, Chip, Field, PasswordField, Panel, money } from "./UI";
 import { parseFilterNumber } from "../filterNumbers";
 
 const numericFilterKeys = [
@@ -51,7 +52,16 @@ export function AuthDialog({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const emailRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const emailError = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? undefined : "Enter a complete email address.";
+  const passwordError = password.length >= 12 && password.length <= 128 ? undefined : "Use 12–128 characters.";
   async function submit() {
+    if (busy) return;
+    setSubmitted(true);
+    if (emailError) { emailRef.current?.focus(); return; }
+    if (!forgot && passwordError) { passwordRef.current?.focus(); return; }
     setBusy(true);
     setError("");
     try {
@@ -64,6 +74,7 @@ export function AuthDialog({
       onClose();
     } catch (e) {
       setError((e as Error).message);
+      (forgot ? emailRef : passwordRef).current?.focus();
     } finally {
       setBusy(false);
     }
@@ -85,15 +96,24 @@ export function AuthDialog({
       <Field
         label="EMAIL"
         value={email}
-        onChange={setEmail}
+        onChange={value => { setEmail(value); setError(""); setMessage(""); }}
+        inputPurpose="email"
+        inputRef={emailRef}
+        error={submitted ? emailError : undefined}
+        onSubmitEditing={() => { if (forgot) void submit(); else passwordRef.current?.focus(); }}
         placeholder="you@example.com"
       />
       {!forgot && (
-        <Field
+        <PasswordField
+          key={register ? "new-password" : "current-password"}
           label="PASSWORD"
           value={password}
-          onChange={setPassword}
-          secure
+          onChange={value => { setPassword(value); setError(""); }}
+          inputPurpose={register ? "new-password" : "current-password"}
+          inputRef={passwordRef}
+          helperText={register ? "Choose 12–128 characters." : "Enter your current password (12–128 characters)."}
+          error={submitted ? passwordError : undefined}
+          onSubmitEditing={() => void submit()}
           placeholder="At least 12 characters"
         />
       )}
@@ -108,7 +128,8 @@ export function AuthDialog({
         </Text>
       )}
       <Button
-        disabled={busy || !email || (!forgot && password.length < 12)}
+        busy={busy}
+        busyLabel="Please wait…"
         onPress={submit}
       >
         {busy
@@ -126,6 +147,8 @@ export function AuthDialog({
           setForgot(false);
           setMessage("");
           setError("");
+          setPassword("");
+          setSubmitted(false);
         }}
       >
         <Text
@@ -145,6 +168,9 @@ export function AuthDialog({
           onPress={() => {
             setForgot(true);
             setError("");
+            setMessage("");
+            setPassword("");
+            setSubmitted(false);
           }}
         >
           Forgot password?

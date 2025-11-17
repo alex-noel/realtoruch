@@ -832,7 +832,7 @@ test("T20-TC01 primary screens and validation at normal and 200% text size", asy
         await button(page, "Account").click();
         const account = page.getByRole("dialog", { name: "Your account." });
         await button(account, "Delete account…").click();
-        await reachable(account.getByLabel("CURRENT PASSWORD"));
+        await reachable(account.getByLabel("CURRENT PASSWORD", { exact: true }));
         await reachable(button(account, "Permanently delete my account"));
         await reachable(button(account, "Close dialog"));
         await overflow();

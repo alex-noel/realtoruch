@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import React, { type ComponentRef, useEffect, useRef, useState } from "react";
+import { Text, TextInput, View } from "react-native";
 import { api, Account } from "../api";
 import { s } from "../theme";
-import { Button, Field, Panel } from "./UI";
+import { Button, Field, PasswordField, Panel } from "./UI";
 
 type Sessions = Awaited<ReturnType<typeof api.sessions>>["items"];
 export function AccountDialog({
@@ -123,7 +123,7 @@ export function AccountDialog({
       <Button disabled={busy} onPress={() => run(onSignOut)}>
         Sign out
       </Button>
-      <Button disabled={busy} outline onPress={() => setDeleting(!deleting)}>
+      <Button disabled={busy} outline onPress={() => { setDeleting(!deleting); setPassword(""); setMessage(""); }}>
         Delete account…
       </Button>
       {deleting && (
@@ -133,14 +133,15 @@ export function AccountDialog({
             seen history, messages, and alert subscriptions. Published adverts
             will be withdrawn. Enter your password to confirm.
           </Text>
-          <Field
+          <PasswordField
             label="CURRENT PASSWORD"
             value={password}
             onChange={setPassword}
-            secure
+            inputPurpose="current-password"
+            helperText="Enter your current password (12–128 characters) to enable permanent deletion."
           />
           <Button
-            disabled={busy || password.length < 12}
+            disabled={busy || password.length < 12 || password.length > 128}
             onPress={() =>
               run(async () => {
                 const result = await api.deleteAccount(password);
@@ -161,56 +162,36 @@ export function AccountDialog({
   );
 }
 
-export function ResetPasswordDialog({
-  token,
-  onClose,
-  onComplete,
-}: {
-  token: string;
-  onClose: () => void;
-  onComplete: (message: string) => void;
-}) {
+export function ResetPasswordDialog(props: { token: string; onClose: () => void; onComplete: (message: string) => void }) {
+  return <ResetPasswordForm key={props.token} {...props} />;
+}
+function ResetPasswordForm({ token, onClose, onComplete }: { token: string; onClose: () => void; onComplete: (message: string) => void }) {
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const confirmationRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const passwordError = password.length >= 12 && password.length <= 128 ? undefined : "Use 12–128 characters.";
+  const confirmationError = confirmation === password && !!confirmation ? undefined : "Repeat the same new password.";
   async function submit() {
-    setBusy(true);
-    setError("");
+    if (busy) return;
+    setSubmitted(true);
+    if (passwordError) { passwordRef.current?.focus(); return; }
+    if (confirmationError) { confirmationRef.current?.focus(); return; }
+    setBusy(true); setError("");
     try {
-      onComplete((await api.resetPassword(token, password)).message);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+      const result = await api.resetPassword(token, password);
+      setPassword(""); setConfirmation("");
+      onComplete(result.message);
+    } catch (e) { setError((e as Error).message); passwordRef.current?.focus(); }
+    finally { setBusy(false); }
   }
-  return (
-    <Panel title="Choose a new password." onClose={onClose}>
-      <Field
-        label="NEW PASSWORD"
-        value={password}
-        onChange={setPassword}
-        secure
-        placeholder="At least 12 characters"
-      />
-      <Field
-        label="REPEAT NEW PASSWORD"
-        value={confirmation}
-        onChange={setConfirmation}
-        secure
-      />
-      {!!error && (
-        <Text accessibilityRole="alert" style={s.text}>
-          {error}
-        </Text>
-      )}
-      <Button
-        disabled={busy || password.length < 12 || password !== confirmation}
-        onPress={submit}
-      >
-        {busy ? "Changing password…" : "Change password"}
-      </Button>
-    </Panel>
-  );
+  return <Panel title="Choose a new password." onClose={onClose}>
+    <PasswordField label="NEW PASSWORD" value={password} onChange={value => { setPassword(value); setError(""); }} inputPurpose="new-password" inputRef={passwordRef} placeholder="At least 12 characters" helperText="Choose 12–128 characters." error={submitted ? passwordError : undefined} onSubmitEditing={() => confirmationRef.current?.focus()} />
+    <PasswordField label="REPEAT NEW PASSWORD" value={confirmation} onChange={value => { setConfirmation(value); setError(""); }} inputPurpose="new-password" inputRef={confirmationRef} error={submitted ? confirmationError : undefined} onSubmitEditing={() => void submit()} />
+    {!!error && <Text accessibilityRole="alert" style={s.text}>{error}</Text>}
+    <Button busy={busy} busyLabel="Changing password…" onPress={() => void submit()}>Change password</Button>
+  </Panel>;
 }

@@ -327,7 +327,7 @@ test("account link errors are safe and retryable, with token fragments removed",
       .getByLabel("NEW PASSWORD", { exact: true })
       .fill("new-synthetic-password-123");
     await page
-      .getByLabel("REPEAT NEW PASSWORD")
+      .getByLabel("REPEAT NEW PASSWORD", { exact: true })
       .fill("new-synthetic-password-123");
     await page
       .getByRole("button", { name: "Change password", exact: true })
@@ -399,4 +399,39 @@ test("account link errors are safe and retryable, with token fragments removed",
   expect(savedToken).toBe(false);
   expect(printedToken).toBe(false);
   expect(blocked).toEqual([]);
+});
+
+test('Q24 auth fields validate, reveal locally and submit with the keyboard', async ({ page, context }, info) => {
+  await allowLoopback(context);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  const email = dialog.getByLabel('EMAIL', { exact: true });
+  const password = dialog.getByLabel('PASSWORD', { exact: true });
+  await expect(email).toHaveAttribute('type', 'email');
+  await expect(email).toHaveAttribute('autocomplete', 'email');
+  await expect(password).toHaveAttribute('autocomplete', 'current-password');
+  await dialog.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(email).toBeFocused();
+  await expect(email).toHaveAttribute('aria-invalid', 'true');
+  await email.fill(`q24-${info.project.name}@example.test`);
+  await email.press('Enter'); await expect(password).toBeFocused();
+  await password.fill('short'); await password.press('Enter');
+  await expect(password).toHaveAccessibleDescription(/Use 12–128 characters/);
+  await dialog.getByRole('button', { name: 'Show password', exact: true }).click();
+  await expect(password).toHaveAttribute('type', 'text');
+  await expect(password).toHaveValue('short');
+  await dialog.getByRole('button', { name: 'New here? Create a free account', exact: true }).click();
+  await expect(password).toHaveValue('');
+  await expect(password).toHaveAttribute('type', 'password');
+  await expect(password).toHaveAttribute('autocomplete', 'new-password');
+  await expect(password).not.toHaveAttribute('aria-invalid', 'true');
+  await password.fill('synthetic-q24-password-123');
+  await password.press('Enter');
+  await expect(page.getByRole('button', { name: 'Account', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete account…', exact: true }).click();
+  await expect(page.getByLabel('CURRENT PASSWORD', { exact: true })).toHaveAttribute('autocomplete', 'current-password');
+  await expect(page.getByRole('button', { name: 'Permanently delete my account', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
 });

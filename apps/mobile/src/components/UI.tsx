@@ -141,7 +141,7 @@ export function Field({
   value,
   onChange,
   placeholder,
-  secure = false,
+  secure,
   numeric = false,
   multiline = false,
   errorId,
@@ -201,7 +201,7 @@ export function Field({
         placeholder={placeholder}
         placeholderTextColor={c.muted}
         secureTextEntry={
-          secure || purpose === "current-password" || purpose === "new-password"
+          secure ?? (purpose === "current-password" || purpose === "new-password")
         }
         keyboardType={
           numeric
@@ -222,6 +222,8 @@ export function Field({
                 submitBehavior ?? (multiline ? "newline" : "submit"),
             })}
         onSubmitEditing={onSubmitEditing}
+        autoCorrect={purpose ? false : undefined}
+        spellCheck={purpose ? false : undefined}
         autoCapitalize="none"
         style={[
           s.input,
@@ -265,6 +267,16 @@ export function nativeFieldPurposeProps(
             : undefined,
     ...(purpose === "email" ? { keyboardType: "email-address" as const } : {}),
   };
+}
+
+export function PasswordField({ inputPurpose = "current-password", ...props }: Omit<React.ComponentProps<typeof Field>, "secure" | "inputPurpose"> & { inputPurpose?: "current-password" | "new-password" }) {
+  const [revealed, setRevealed] = useState(false);
+  return <View style={{ gap: 4 }}>
+    <Field {...props} inputPurpose={inputPurpose} secure={!revealed} />
+    <View style={{ alignItems: "flex-start" }}>
+      <Button variant="quiet" label={`${revealed ? "Hide" : "Show"} ${props.label.toLowerCase()}`} onPress={() => setRevealed(value => !value)}>{revealed ? "Hide password" : "Show password"}</Button>
+    </View>
+  </View>;
 }
 
 // The web dialog enters the browser's top layer, making the rest of the page
