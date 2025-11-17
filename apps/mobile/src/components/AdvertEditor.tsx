@@ -1,6 +1,7 @@
 import React, { type ComponentRef, useEffect, useRef, useState } from "react";
 import { Text, TextInput, View } from "react-native";
-import { Advert, Draft } from "../marketplaceApi";
+import { Advert, Draft, market } from "../marketplaceApi";
+import { SessionError } from "../api";
 import { c, s } from "../theme";
 import { Button, Chip, Field } from "./UI";
 import type { RegisterExitGuard, RequestExit } from "./MarketplaceDialog";
@@ -17,7 +18,7 @@ export interface AdvertEditorProps {
   initial?: Advert;
   busy: boolean;
   onCancel: () => void;
-  onSave: (draft: Draft) => Promise<boolean>;
+  onSave: (draft: Draft, base?: Advert) => Promise<{ ok: boolean; error?: unknown }>;
   registerExitGuard: RegisterExitGuard;
   requestExit: RequestExit;
 }
@@ -66,6 +67,10 @@ export function AdvertEditor({
   const [longitude, setLongitude] = useState(initial ? String(draft.lon) : "");
   const [photoLinks, setPhotoLinks] = useState(draft.images.join("\n"));
   const [submitted, setSubmitted] = useState(false);
+  const [base, setBase] = useState(initial);
+  const [conflict, setConflict] = useState<{ local: Draft; latest: Advert | null; failed: boolean; loading: boolean; confirmReload: boolean; choices: Partial<Record<keyof Draft, "local" | "latest">> } | null>(null);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const refs = useRef<
     Partial<Record<OwnerField, { focus: () => void } | null>>
   >({});
@@ -77,13 +82,13 @@ export function AdvertEditor({
     photoLinks,
   );
   const snapshot = JSON.stringify({ draft, numbers, latitude, longitude, photoLinks });
-  const [baseline] = useState(snapshot);
+  const [baseline, setBaseline] = useState(snapshot);
   useEffect(() => {
-    registerExitGuard({ dirty: () => snapshot !== baseline, canSave: () => !!validation.value,
-      save: () => validation.value ? onSave(validation.value) : Promise.resolve(false),
+    registerExitGuard({ dirty: () => snapshot !== baseline, canSave: () => !!validation.value && !conflict,
+      save: async () => validation.value ? (await save(validation.value)).ok : false,
       focus: () => refs.current.title?.focus() });
     return () => registerExitGuard(null);
-  }, [registerExitGuard, snapshot, baseline, validation.value, onSave]);
+  }, [registerExitGuard, snapshot, baseline, validation.value, onSave, conflict, base]);
   const errors = validation.errors;
   const invalid = Object.keys(errors) as OwnerField[];
   const pinned = !errors.lat && !errors.lon;
@@ -101,15 +106,78 @@ export function AdvertEditor({
       {title}
     </Text>
   );
+  async function fetchLatest(local: Draft) {
+    setConflict({ local, latest: null, loading: true, failed: false, confirmReload: false, choices: {} });
+    try {
+      const result = await market.adverts();
+      if (!alive.current) return;
+      const latest = result.items.find(item => item.id === base?.id) || null;
+      setConflict({ local, latest, loading: false, failed: !latest, confirmReload: false, choices: {} });
+    } catch {
+      if (alive.current) setConflict({ local, latest: null, loading: false, failed: true, confirmReload: false, choices: {} });
+    }
+  }
+  async function save(value: Draft, against = base) {
+    const result = await onSave(value, against);
+    if (alive.current && !result.ok && result.error instanceof SessionError && result.error.code === "version_conflict" && against)
+      await fetchLatest(value);
+    return result;
+  }
   function submit() {
     setSubmitted(true);
-    if (validation.value) void onSave(validation.value);
+    if (validation.value && !conflict) void save(validation.value);
   }
+  function reloadLatest() {
+    if (!conflict?.latest) return;
+    const latest = conflict.latest;
+    const nextNumbers = ownerNumbersFrom(latest.advert);
+    const nextLatitude = String(latest.advert.lat), nextLongitude = String(latest.advert.lon);
+    const nextLinks = latest.advert.images.join("\n");
+    setDraft(latest.advert); setNumbers(nextNumbers);
+    setLatitude(nextLatitude); setLongitude(nextLongitude); setPhotoLinks(nextLinks);
+    setBaseline(JSON.stringify({ draft: latest.advert, numbers: nextNumbers, latitude: nextLatitude, longitude: nextLongitude, photoLinks: nextLinks }));
+    setBase(latest); setSubmitted(false); setConflict(null);
+  }
+  const different = conflict?.latest ? (Object.keys(conflict.local) as (keyof Draft)[]).filter(key =>
+    JSON.stringify(conflict.local[key]) !== JSON.stringify(conflict.latest!.advert[key])) : [];
+  function selectConflict(key: keyof Draft, choice: "local" | "latest") {
+    setConflict(current => current ? { ...current, choices: { ...current.choices, [key]: choice } } : current);
+  }
+  function reconcile() {
+    if (!conflict?.latest || different.some(key => !conflict.choices[key])) return;
+    const merged = { ...conflict.local };
+    for (const key of different) if (conflict.choices[key] === "latest")
+      Object.assign(merged, { [key]: conflict.latest.advert[key] });
+    void save(merged, conflict.latest);
+  }
+
   return (
     <>
       <Text style={[s.title, { fontSize: 23 }]}>
         {initial ? "Edit rental" : "A new place to call home."}
       </Text>
+      {conflict && <View style={[s.card, { padding: 16, gap: 12 }]}>
+        <Text accessibilityRole="alert" style={s.text}>This advert changed on another device. Your edits are still here.</Text>
+        {conflict.loading && <Text accessibilityRole="status" style={s.muted}>Loading the latest version…</Text>}
+        {conflict.failed && <><Text style={s.text}>The latest advert is unavailable. It may have been removed or could not be loaded.</Text><Button outline onPress={() => fetchLatest(conflict.local)}>Retry latest version</Button></>}
+        <Button outline disabled={busy || conflict.loading} onPress={() => setConflict(null)}>Return to editing</Button>
+        {conflict.latest && <>
+          <Text style={s.muted}>Latest status: {conflict.latest.state}{conflict.latest.hidden ? " · hidden after review" : ""}. Server changes will not be overwritten until you explicitly save.</Text>
+          {different.map(key => <View key={key} style={{ gap: 6 }}>
+            <Text style={s.label}>{key.replace(/_/g, " ").toUpperCase()}</Text>
+            <Text style={s.muted}>Yours: {String(JSON.stringify(conflict.local[key]))}</Text>
+            <Text style={s.muted}>Latest: {String(JSON.stringify(conflict.latest!.advert[key]))}</Text>
+            <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
+              <Chip label={`Use mine for ${key}`} selected={conflict.choices[key] === "local"} onPress={() => selectConflict(key, "local")} />
+              <Chip label={`Use latest for ${key}`} selected={conflict.choices[key] === "latest"} onPress={() => selectConflict(key, "latest")} />
+            </View>
+          </View>)}
+          <Button disabled={busy || different.some(key => !conflict.choices[key])} onPress={reconcile}>Save selected values</Button>
+          {!conflict.confirmReload ? <Button outline disabled={busy} onPress={() => setConflict({ ...conflict, confirmReload: true })}>Reload latest version</Button> :
+            <View style={{ gap: 8 }}><Text style={s.text}>Discard your edits and load the latest version?</Text><Button outline onPress={reloadLatest}>Discard edits and reload</Button><Button outline onPress={() => setConflict({ ...conflict, confirmReload: false })}>Keep my edits</Button></View>}
+        </>}
+      </View>}
+      <View style={{ display: conflict ? "none" : "flex", gap: 16 }}>
       {submitted && invalid.length > 0 && (
         <View
           style={[s.card, { padding: 14, gap: 8, alignItems: "flex-start" }]}
@@ -290,11 +358,12 @@ export function AdvertEditor({
       <Text style={s.muted}>
         Use up to 30 photos you own or have permission to publish.
       </Text>
-      <Button busy={busy} busyLabel="Saving…" onPress={submit}>
+      <Button busy={busy} disabled={!!conflict} busyLabel="Saving…" onPress={submit}>
         {initial?.state === "published"
           ? "Save and update advert"
           : "Save draft"}
       </Button>
+      </View>
       <Button outline disabled={busy} onPress={() => requestExit(onCancel)}>
         Back to adverts
       </Button>
