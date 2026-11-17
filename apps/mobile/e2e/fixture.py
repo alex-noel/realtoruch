@@ -20,9 +20,24 @@ from realtoruch.auth import AuthSession, User
 from realtoruch.schemas import RawListing
 
 action, profile = sys.argv[1:]
-if action not in {'baseline', 'new', 'delist', 'relist', 'drop', 'state', 'boundaries', 'duplicate'} or profile not in {'desktop', 'mobile', 'webkit', 'firefox'}:
+if action not in {'baseline', 'new', 'delist', 'relist', 'drop', 'state', 'boundaries', 'duplicate', 'hide-owner'} or profile not in {'desktop', 'mobile', 'webkit', 'firefox'}:
     raise SystemExit('Invalid fixture action')
 prefix = 't18-' + profile
+if action == 'hide-owner':
+    # A fixed synthetic owner in the disposable catalog only. This is not an
+    # application mutation endpoint or a configurable arbitrary listing edit.
+    from realtoruch.models import Advert, Listing
+    with AuthSession() as auth:
+        user_id = auth.scalar(select(User.id).where(User.email == f'owner-{profile}@example.test'))
+    with Session.begin() as session:
+        adverts = session.scalars(select(Advert).where(Advert.user_id == user_id)).all() if user_id else []
+        if len(adverts) != 1 or adverts[0].state != 'withdrawn' or not adverts[0].listing_id:
+            raise SystemExit('Hidden-owner fixture requires the completed synthetic owner journey')
+        advert = adverts[0]
+        listing = session.get(Listing, advert.listing_id)
+        listing.hidden = True
+        print(json.dumps({'advert_id': advert.id, 'listing_id': listing.id}))
+    raise SystemExit(0)
 if action == 'duplicate':
     from uuid import uuid4
     with AuthSession() as auth:
