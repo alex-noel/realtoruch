@@ -22,6 +22,7 @@ import type { Listing } from "../types";
 import { c, s } from "../theme";
 import { InboxModel, highestVisibleIncoming } from "./messagesState";
 import { Button } from "./UI";
+import { jumpToComposerSafely } from "./messageNavigation";
 
 type Contact = NonNullable<Listing["contact_adverts"]>[number];
 type Call = RefObject<(() => void) | null>;
@@ -188,6 +189,8 @@ export function MessagesPanel({
   stop: Call;
 }) {
   const [description, setDescription] = useState("");
+  const composer = useRef<ComponentRef<typeof View>>(null);
+  const composerInput = useRef<ComponentRef<typeof TextInput>>(null);
   const state = useSyncExternalStore(model.subscribe, model.snapshot);
   const { active, target, inbox, thread, body, jobs, errors, historyCursor } =
     state;
@@ -199,6 +202,16 @@ export function MessagesPanel({
   );
   const selected = target?.kind === "thread";
   const recipient = target?.kind === "advert" ? contact : undefined;
+  const selectedContext = selected ? inbox?.items.find(item => item.id === target.id) : undefined;
+  function jumpToComposer() {
+    const viewport = scroll.current, content = viewport?.getInnerViewRef();
+    const destination = composer.current, input = composerInput.current;
+    if (!viewport || !content || !destination || !input) return;
+    const currentTarget = model.snapshot().target;
+    const current = () => model.snapshot().active && model.snapshot().target === currentTarget &&
+      scroll.current === viewport && composer.current === destination && composerInput.current === input;
+    jumpToComposerSafely(destination, content, viewport, input, current);
+  }
 
   useLayoutEffect(() => {
     model.attach();
@@ -275,6 +288,8 @@ export function MessagesPanel({
           <Text accessibilityRole="header" style={[s.title, { fontSize: 21 }]}>
             {target.title}
           </Text>
+          {selectedContext && <Text style={s.muted}>Last activity: {new Date(selectedContext.updated_at).toLocaleString()}</Text>}
+          {showComposer && <Button outline onPress={jumpToComposer}>Write a message</Button>}
           {!thread && !errors.thread && <Status>Loading messages…</Status>}
           <Retry
             error={errors.thread}
@@ -359,10 +374,12 @@ export function MessagesPanel({
         </>
       )}
       {showComposer && (
-        <>
+        <View ref={composer} collapsable={false} style={{ gap: 12 }}>
+          {selected && <Text style={s.muted}>Message about: {target.title}</Text>}
           <View style={{ gap: 8 }}>
             <Text style={[s.label, { color: c.ink }]}>YOUR MESSAGE</Text>
             <TextInput
+              ref={composerInput}
               accessibilityLabel="YOUR MESSAGE"
               multiline
               editable={!jobs.send}
@@ -390,7 +407,7 @@ export function MessagesPanel({
                 ? "Retry send"
                 : "Send message"}
           </Button>
-        </>
+        </View>
       )}
       {!selected && (
         <>
@@ -419,10 +436,12 @@ export function MessagesPanel({
           )}
           {inbox?.items.map((item) => (
             <View key={item.id} style={[s.card, { padding: 16, gap: 12 }]}>
-              <Text style={s.text}>
-                {item.title}
-                {item.unread_count ? ` · ${item.unread_count} unread` : ""}
-              </Text>
+              <Text style={[s.text, { fontWeight: "600" }]}>{item.title}</Text>
+              <Text style={s.muted}>Last activity: {new Date(item.updated_at).toLocaleString()}</Text>
+              <View style={[s.row, { flexWrap: "wrap", gap: 8 }]}>
+                <Text style={[s.text, { fontWeight: item.unread_count ? "700" : "400" }]}>{item.unread_count ? `${item.unread_count} unread` : "No unread messages"}</Text>
+                {item.blocked && <Text style={s.text}>Blocked · {item.can_unblock ? "You can unblock this conversation" : "Messages unavailable"}</Text>}
+              </View>
               <Button
                 outline
                 label={`Open conversation: ${item.title}`}
