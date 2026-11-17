@@ -127,7 +127,7 @@ const messages = {
   more: "Could not load more conversations.",
   thread: "Could not load messages.",
   older: "Could not load message history.",
-  send: "Could not send your message. Your draft is saved.",
+  send: "Could not send your message. Your draft stays here while this rental desk is open.",
   block: "Could not change the block status.",
 };
 function makeClientId() {
@@ -184,6 +184,21 @@ export class InboxModel {
     this.attached = false;
     this.setForeground(false);
     this.cancel(threadJobs);
+  };
+
+  hasDrafts = () => [...this.drafts.values()].some(draft => draft.body.length > 0);
+
+  discardDrafts = () => {
+    this.drafts.clear();
+    this.update({ body: "", errors: { ...this.state.errors, send: undefined } });
+  };
+
+  // Account reset and desk teardown override ordinary draft preservation.
+  clearPrivate = () => {
+    this.stop();
+    this.drafts.clear(); this.olderInboxCursors.clear(); this.paginatedInbox = false;
+    this.acknowledged = undefined; this.displayed = undefined;
+    this.update({ target: null, inbox: null, thread: null, body: "", errors: {}, historyCursor: undefined });
   };
 
   setForeground(active: boolean) {

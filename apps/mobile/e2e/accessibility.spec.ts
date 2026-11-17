@@ -1082,7 +1082,10 @@ test("T20-TC01 primary screens and validation at normal and 200% text size", asy
             path: info.outputPath("320px-200percent-message.png"),
           });
         }
-        await close(page, desk);
+        await page.keyboard.press("Escape");
+        await expect(desk.getByText("Discard unsaved changes?")).toBeVisible();
+        await button(desk, "Discard changes").click();
+        await expect(desk).toHaveCount(0);
         await button(page, "Discover homes").click();
         if (scale === 2)
           await page
