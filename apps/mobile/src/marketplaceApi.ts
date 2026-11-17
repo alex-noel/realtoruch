@@ -30,6 +30,8 @@ export type Draft = {
 export type Advert = {
   id: string;
   hidden?: boolean;
+  updated_at?: string;
+  appeal_status?: "pending" | "resolved" | null;
   listing_id: string | null;
   state: string;
   version: number;

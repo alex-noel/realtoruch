@@ -23,7 +23,8 @@ async function createVerified(page: Page, email: string) {
     const files = await readdir(process.env.E2E_MAIL_DIR!).catch(() => []);
     for (const name of files.filter(f => f.endsWith('.eml'))) {
       const content = (await readFile(join(process.env.E2E_MAIL_DIR!, name), 'utf8')).replace(/=\r?\n/g, '').replace(/=3D/gi, '=');
-      if (content.includes(email)) token = content.match(/#verify_account=([^\s]+)/)?.[1] || '';
+      if (content.split(/\r?\n/).some(line => line.trim() === `To: ${email}`))
+        token = content.match(/#verify_account=([^\s]+)/)?.[1] || '';
     }
     return !!token;
   }, { timeout: 20_000 }).toBe(true);
@@ -217,6 +218,126 @@ test.describe("moderation decisions", () => {
   });
 });
 
+test("Q35 owner dashboard keeps independent loads, confirms withdrawal and tracks appeal review", async ({ page, context }, info) => {
+  const blocked: string[] = [];
+  await blockOutside(context, blocked);
+  const api = process.env.E2E_API_URL!;
+  const draft = {
+    title: "Synthetic published home", description: "A synthetic owner dashboard fixture.",
+    city: "Kraków", district: "Krowodrza", region: "małopolskie", address: "Fixture Street 5",
+    lat: 50.06, lon: 19.94, area_m2: 55, rooms: 2, floor: 2, rent_pln: 4400,
+    fees_pln: 400, deposit_pln: null, commission_pln: 0, property_type: "apartment" as const,
+    amenities: [], images: [],
+  };
+  const saved = "2026-11-16T12:00:00Z";
+  let adverts = [
+    { id: "fixture-published", listing_id: "fixture-public-home", state: "published", hidden: false, version: 1, updated_at: saved, appeal_status: null as "pending" | "resolved" | null, advert: draft },
+    { id: "fixture-hidden", listing_id: "fixture-hidden-home", state: "withdrawn", hidden: true, version: 2, updated_at: saved, appeal_status: null as "pending" | "resolved" | null, advert: { ...draft, title: "Synthetic hidden home" } },
+    { id: "fixture-draft", listing_id: null, state: "draft", hidden: false, version: 1, updated_at: saved, appeal_status: null as "pending" | "resolved" | null, advert: { ...draft, title: "Synthetic draft home" } },
+  ];
+  let profileReads = 0;
+  let advertReads = 0;
+  let releaseProfile!: () => void;
+  const profilePending = new Promise<void>(resolve => { releaseProfile = resolve; });
+  let releaseAdverts!: () => void;
+  const advertsPending = new Promise<void>(resolve => { releaseAdverts = resolve; });
+  let releaseWithdraw!: () => void;
+  const withdrawal = new Promise<void>(resolve => { releaseWithdraw = resolve; });
+  let withdrawalCalls = 0;
+  let appealCalls = 0;
+  await page.route(`${api}/v1/me/advertiser`, async route => {
+    if (route.request().method() !== "GET") return route.continue();
+    profileReads++;
+    if (profileReads === 1) {
+      await profilePending;
+      return route.fulfill({ status: 503, json: {} });
+    }
+    return route.fulfill({ json: { profile: { id: "fixture-profile", name: "Synthetic owner", kind: "private", description: "" } } });
+  });
+  await page.route(`${api}/v1/me/adverts`, async route => {
+    advertReads++;
+    if (advertReads === 1) {
+      await advertsPending;
+      return route.fulfill({ json: { items: adverts } });
+    }
+    if (advertReads === 2) return route.fulfill({ status: 503, json: {} });
+    return route.fulfill({ json: { items: adverts } });
+  });
+  await page.route(`${api}/v1/me/adverts/fixture-published/withdraw`, async route => {
+    withdrawalCalls++;
+    await withdrawal;
+    expect(route.request().postDataJSON()).toEqual({ version: 1 });
+    adverts = adverts.map(item => item.id === "fixture-published" ? { ...item, state: "withdrawn", version: 2 } : item);
+    return route.fulfill({ json: adverts[0] });
+  });
+  await page.route(`${api}/v1/me/adverts/fixture-hidden/appeal`, route => {
+    appealCalls++;
+    expect(route.request().postDataJSON()).toEqual({ action: "restore", reason: "The corrected advert now includes clear rental terms." });
+    adverts = adverts.map(item => item.id === "fixture-hidden" ? { ...item, appeal_status: "pending" } : item);
+    return route.fulfill({ status: 201, json: { message: "Appeal submitted for review" } });
+  });
+  await createVerified(page, `q35-owner-${info.project.name}@example.test`);
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await page.getByRole("button", { name: "My rental adverts", exact: true }).click();
+  const desk = page.getByRole("dialog", { name: "Your rental desk." });
+  const action = (name: string) => desk.getByRole("button", { name, exact: true });
+  try {
+    await expect(desk.getByText("Loading your adverts…", { exact: true })).toBeVisible();
+    await expect(desk.getByText("Loading advertiser profile…", { exact: true })).toBeVisible();
+    await expect(desk.getByText("No rental adverts yet.", { exact: true })).toHaveCount(0);
+  } finally {
+    releaseAdverts();
+    releaseProfile();
+  }
+  await expect(desk.getByText("Could not load advertiser profile.", { exact: true })).toBeVisible();
+  await expect(desk.getByRole("heading", { name: "Synthetic published home", exact: true })).toBeVisible();
+  await action("Retry advertiser profile").click();
+  await expect(action("Synthetic owner · Edit profile")).toBeVisible();
+  expect(advertReads).toBe(1);
+  await action("Refresh adverts").click();
+  await expect(desk.getByText(/Could not load your adverts.*Showing the last loaded adverts/)).toBeVisible();
+  await expect(action("Synthetic owner · Edit profile")).toBeVisible();
+  await action("Retry adverts").click();
+  expect(profileReads).toBe(2);
+  await expect(desk.getByText("Last saved 16/11/2026, 13:00:00 · Europe/Warsaw", { exact: true })).toHaveCount(3);
+  await action("Withdraw").click();
+  const confirmation = desk.getByRole("region", { name: "Confirm withdrawal" });
+  await expect(confirmation).toContainText("Synthetic published home");
+  await action("Keep published").click();
+  expect(withdrawalCalls).toBe(0);
+  await action("Withdraw").click();
+  await action("Confirm withdrawal").evaluate(node => { (node as HTMLElement).click(); (node as HTMLElement).click(); });
+  try {
+    await expect.poll(() => withdrawalCalls).toBe(1);
+    await expect(action("Withdrawing…")).toBeDisabled();
+  } finally {
+    releaseWithdraw();
+  }
+  await expect(desk.getByText("Withdrawn Synthetic published home.", { exact: true })).toBeVisible();
+  await expect(desk.getByText(/^WITHDRAWN · 4400/)).toBeVisible();
+  const hiddenTitle = desk.getByRole("heading", { name: "Synthetic hidden home", exact: true });
+  const hiddenCard = hiddenTitle.locator('..');
+  await expect(hiddenCard.getByRole("button", { name: "Review and publish", exact: true })).toHaveCount(0);
+  await hiddenCard.getByRole("button", { name: "Appeal a review", exact: true }).click();
+  await desk.getByRole("textbox", { name: "WHY SHOULD THIS ADVERT BE RESTORED?" }).fill("The corrected advert now includes clear rental terms.");
+  await action("Submit appeal").click();
+  await expect(desk.getByText("Appeal submitted for Synthetic hidden home.", { exact: true })).toBeVisible();
+  await expect(hiddenCard.getByText("Review pending", { exact: true })).toBeVisible();
+  await expect(hiddenCard.getByRole("button", { name: "Appeal a review", exact: true })).toHaveCount(0);
+  await action("Refresh adverts").click();
+  await expect(hiddenCard.getByText("Review pending", { exact: true })).toBeVisible();
+  expect(appealCalls).toBe(1);
+  adverts = adverts.map(item => item.id === "fixture-hidden" ? { ...item, hidden: false, appeal_status: "resolved" } : item);
+  await action("Refresh adverts").click();
+  await expect(hiddenCard.getByText("Appeal reviewed", { exact: true })).toBeVisible();
+  await expect(hiddenCard.getByRole("button", { name: "Review and publish", exact: true })).toBeVisible();
+  if (info.project.name === "mobile") {
+    await hiddenTitle.evaluate(node => node.scrollIntoView({ block: "start" }));
+    await page.screenshot({ path: info.outputPath("q35-owner-status.png") });
+  }
+  expect(blocked).toEqual([]);
+});
+
 test('owner publishes, edits, messages a renter and withdraws @cross-browser', async ({ page, context, browser }, info) => {
   const blocked: string[] = [];
   await blockOutside(context, blocked);
@@ -305,8 +426,10 @@ test('owner publishes, edits, messages a renter and withdraws @cross-browser', a
     await page.getByRole('button', { name: 'All conversations' }).click();
     await expect(page.getByText(/1 unread/)).toHaveCount(0);
     await page.getByRole('button', { name: 'My adverts', exact: true }).click();
-    await page.getByRole('button', { name: 'Withdraw' }).click();
-    await expect(page.getByText('WITHDRAWN', { exact: false })).toBeVisible();
+    await page.getByRole('button', { name: 'Withdraw', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Confirm withdrawal' })).toContainText(title);
+    await page.getByRole('button', { name: 'Confirm withdrawal', exact: true }).click();
+    await expect(page.getByText(/^WITHDRAWN ·/)).toBeVisible();
     const discovery = visitor.waitForResponse(r => r.url().includes('/v1/listings?') && r.status() === 200);
     await visitor.reload({ waitUntil: 'commit' });
     await discovery;

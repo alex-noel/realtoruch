@@ -237,6 +237,80 @@ def test_moderation_survives_edits_and_owner_can_appeal(client, auth_client, ses
     assert len(session.scalars(select(ModerationAction)).all()) == 2
 
 
+def test_owner_appeal_projection_excludes_other_users_and_report_contents(
+    client, auth_client, session, monkeypatch
+):
+    owner_id, owner = account(auth_client, "appeal-owner")
+    _, stranger = account(auth_client, "appeal-stranger")
+    moderator_id, moderator = account(auth_client, "appeal-moderator")
+    monkeypatch.setattr(get_settings(), "moderator_user_ids", moderator_id)
+    advert = publish(client, owner, draft(client, owner))
+    home_id = advert["listing_id"]
+    report = client.post(
+        f"/v1/listings/{home_id}/reports",
+        headers=stranger,
+        json={"reason": "Private reporter evidence must not reach the owner projection."},
+    ).json()
+    assert client.post(
+        f"/v1/moderation/reports/{report['id']}/review", headers=moderator,
+        json={"action": "hide", "reason": "More advertiser evidence is needed before this is visible."},
+    ).status_code == 200
+    item = client.get("/v1/me/adverts", headers=owner).json()["items"][0]
+    assert item["appeal_status"] is None
+    assert item["hidden"] is True
+    assert "reason" not in item and "reports" not in item
+    response = client.post(
+        f"/v1/me/adverts/{advert['id']}/appeal",
+        headers=owner,
+        json={"action": "restore", "reason": "Corrected terms and updated advert evidence."},
+    )
+    assert response.status_code == 201
+    assert client.get("/v1/me/adverts", headers=owner).json()["items"][0]["appeal_status"] == "pending"
+    assert client.get("/v1/me/adverts", headers=stranger).json()["items"] == []
+    assert client.get("/v1/me/adverts", headers=moderator).json()["items"] == []
+    public_profile = client.get("/v1/advertisers/" + owner_id).json()
+    assert public_profile["items"] == []
+    duplicate = client.post(
+        f"/v1/me/adverts/{advert['id']}/appeal", headers=owner,
+        json={"action": "restore", "reason": "Second attempt while already waiting."},
+    )
+    assert duplicate.status_code == 409
+    pending = client.get("/v1/moderation/reports", headers=moderator).json()["items"]
+    appeal = next(item for item in pending if item["id"] != report["id"])
+    response = client.post(
+        f"/v1/moderation/reports/{appeal['id']}/review", headers=moderator,
+        json={"action": "restore", "reason": "Owner correction was reviewed against source evidence."},
+    )
+    assert response.status_code == 200
+    item = client.get("/v1/me/adverts", headers=owner).json()["items"][0]
+    assert item["appeal_status"] == "resolved"
+    assert item["hidden"] is False
+    public = client.get("/v1/listings/" + home_id).json()
+    assert "appeal_status" not in public
+    assert "reason" not in public
+    assert client.post(
+        f"/v1/me/adverts/{advert['id']}/appeal", headers=stranger,
+        json={"action": "restore", "reason": "A stranger cannot appeal this private advert."},
+    ).status_code == 404
+
+
+def test_pending_owner_report_blocks_duplicate_appeal_in_projection(
+    client, auth_client, session
+):
+    _, owner = account(auth_client, "pending-owner")
+    advert = publish(client, owner, draft(client, owner))
+    home_id = advert["listing_id"]
+    home = session.get(Listing, home_id)
+    home.hidden = True
+    session.commit()
+    response = client.post(
+        f"/v1/listings/{home_id}/reports", headers=owner,
+        json={"reason": "Existing owner report awaiting moderator review."},
+    )
+    assert response.status_code == 201
+    assert client.get("/v1/me/adverts", headers=owner).json()["items"][0]["appeal_status"] == "pending"
+
+
 def test_deletion_withdraws_owner_adverts_and_removes_conversations(client, auth_client, session):
     from realtoruch.auth_jobs import process_jobs
 
