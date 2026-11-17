@@ -12,6 +12,8 @@ dependencies = [
   "sqlalchemy>=2.0.38,<3", "psycopg[binary]>=3.2,<4",
   "pydantic-settings>=2.8,<3", "httpx>=0.28,<1",
   "beautifulsoup4>=4.13,<5", "protego>=0.7,<1", "PyJWT[crypto]>=2.10,<3",
+  "google-cloud-storage==3.17.1",
+  "Pillow==13.0.0; python_version >= '3.11'", "Pillow==12.3.0; python_version < '3.11'",
   "argon2-cffi>=23.1,<26", "prometheus-client>=0.21,<1", "pywebpush>=2.5,<3"
 ]
 

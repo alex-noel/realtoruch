@@ -42,6 +42,8 @@ def main():
                EMAIL_DELIVERY_MODE='file', EMAIL_PREVIEW_DIRECTORY=str(dest / 'mail'),
                EXPO_PUSH_ENABLED='false', ELASTICSEARCH_URL='', SEARCH_SERVICE_URL='',
                CLOUDSQL_CONNECTION_NAME='', GCP_PROJECT='')
+    env.update(MEDIA_STORAGE_BACKEND='local', MEDIA_DIRECTORY=str(dest / 'media'),
+               MEDIA_GCS_BUCKET='', MEDIA_PUBLIC_BASE_URL='http://127.0.0.1:8000')
     env.update(PYTHONPATH=str(ROOT / 'backend'), VERIFY_RUN_ID=args.run_id, TMPDIR=str(dest),
                EXPO_OFFLINE='1', EXPO_NO_TELEMETRY='1', EXPO_NO_DOTENV='1')
     def command(cmd, cwd=ROOT, *, check=True):
@@ -135,7 +137,8 @@ def main():
                   'backend/tests/test_market_history.py', 'backend/tests/test_metrics.py',
                   'backend/tests/test_message_cursors.py', 'backend/tests/test_account_data.py',
                   'backend/tests/test_public_contract.py', 'backend/tests/test_query_budgets.py',
-                  'backend/tests/test_restore_contract.py', 'backend/tests/test_merge_alert_regression.py'] if args.profile == 'services' else ['backend/tests']
+                  'backend/tests/test_restore_contract.py', 'backend/tests/test_merge_alert_regression.py',
+                  'backend/tests/test_media.py'] if args.profile == 'services' else ['backend/tests']
         selection = ['-k', 'not test_t26_helm and not test_t26_sqlite'] if args.profile == 'services' else []
         result = command([sys.executable, '-m', 'pytest', *suites, *selection, '--junitxml', str(xml)], check=False)
         if xml.exists():
