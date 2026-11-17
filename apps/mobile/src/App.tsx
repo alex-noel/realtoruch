@@ -14,7 +14,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import NotificationInbox from "./components/NotificationInbox";
+import { Insights, NotificationInbox } from "./components/DeferredSections";
 import { listenForPush } from "./pushClient";
 import { completedAccountAction, signOutWithPush } from "./accountActions";
 import type { RentalNotification } from "./types";
@@ -65,7 +65,6 @@ import {
   DetailDialog,
   FilterDialog,
 } from "./components/Dialogs";
-import Insights from "./components/Insights";
 import SourceStatus from "./components/SourceStatus";
 import { loadSeenIds, normalizeCity, resultAge, useListingSearch } from "./hooks/useListingSearch";
 import {

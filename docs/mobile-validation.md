@@ -63,3 +63,7 @@ npx uri-scheme open 'realtoruch:///?listing=<id>' --android
 ```
 
 Universal Links and Android App Links require a user-supplied domain and the corresponding iOS and Android association files. No domain has been supplied. Association and installed-device validation are deferred to T22. [Expo incoming-link documentation](https://docs.expo.dev/linking/into-your-app/).
+
+## Quality completion device checks
+
+Q23, Q26, Q34 and Q37 add push capability feedback, account JSON sharing, photo selection and draft-exit protection. Their local adapter tests and iOS/Android JavaScript exports are recorded in the [Q40 handoff](verification/Q40-quality-handoff.md). Installed acceptance still requires signed development builds and designated devices: test permission denial/recovery, picker cancellation and format validation, share completion/cancellation and temporary-file cleanup, keyboard-visible composer controls, Back/Escape equivalents and VoiceOver/TalkBack announcements. Validate real push only with an explicitly designated test device and provider credentials. Browser WebKit is not an installed iOS test.
