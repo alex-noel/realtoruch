@@ -61,6 +61,8 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app):
+    import asyncio
+    app.state.media_processors = asyncio.Semaphore(1)
     if settings.environment != "production":
         init_db()
     yield
@@ -72,7 +74,7 @@ app = FastAPI(
     description="Free, paginated public rental data. No account required for reads. Sample data is explicitly labelled. Contact fingerprints are never exposed.",
     lifespan=lifespan,
 )
-install_http(app)
+install_http(app, media_upload=True)
 from .account_data import guard_account_write, router as account_data_router
 app.include_router(account_data_router)
 from .email_alerts import router as email_router
@@ -81,6 +83,8 @@ from .identity_review import router as identity_router
 from .marketplace import router as marketplace_router
 
 app.include_router(email_router)
+from .media import router as media_router
+app.include_router(media_router)
 app.include_router(marketplace_router)
 app.include_router(identity_router)
 
