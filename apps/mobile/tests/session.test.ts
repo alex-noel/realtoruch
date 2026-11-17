@@ -358,3 +358,29 @@ describe("account export authorization", () => {
     expect(fetch.mock.calls[0][1]).toMatchObject({ cache: "no-store", headers: { "X-Account-Export-Token": "purpose-token" } });
   });
 });
+
+describe("authenticated binary media transport", () => {
+  it("refreshes an expired session and replays the binary request with the rotated token", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/login") ? response(result("old")) : response(result("new"))));
+    const tokens: string[] = [];
+    const transport = vi.fn(async (_url: string, init: RequestInit) => {
+      tokens.push((init.headers as Record<string, string>).Authorization);
+      return tokens.length === 1 ? response({ detail: "expired" }, 401) : new Response(new Blob(["synthetic-image"]));
+    });
+    const client = await load(); await client.api.signIn("a@example.test", "synthetic-password", false);
+    const blob = await client.requestBlob("/v1/me/media/id/thumbnail", { transport });
+    expect(await blob.text()).toBe("synthetic-image");
+    expect(tokens).toEqual(["Bearer old", "Bearer new"]);
+  });
+  it("does not replay a delayed binary response as another account", async () => {
+    let release!: (value: Response) => void, logins = 0;
+    const pending = new Promise<Response>(resolve => { release = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async () => response(result(++logins === 1 ? "a" : "b"))));
+    const transport = vi.fn().mockReturnValue(pending);
+    const client = await load(); await client.api.signIn("a@example.test", "synthetic-password", false);
+    const old = client.requestBlob("/v1/me/media/id/thumbnail", { transport });
+    await client.api.signIn("b@example.test", "synthetic-password", false);
+    release(response({}, 401)); await expect(old).rejects.toMatchObject({ kind: "superseded" });
+    expect(transport).toHaveBeenCalledTimes(1); expect(client.isCurrentAccessToken("b")).toBe(true);
+  });
+});

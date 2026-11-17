@@ -31,6 +31,7 @@ export function subscribeSession(listener: (state: SessionState) => void) {
 function publish(state: SessionState) { sessionState = state; listeners.forEach(listener => listener(state)); }
 export function getSessionState() { return sessionState; }
 export function getSessionRevision() { return generation; }
+export function captureSession() { const intent = generation; return () => intent === generation; }
 export function isCurrentAccessToken(token: string) { return accessToken === token; }
 export type RequestErrorCode = "unknown" | "validation" | "version_conflict" | "verification_required" |
   "rate_limited" | "search_limit" | "advert_limit" | "profile_required" | "profile_type_conflict" |
@@ -267,13 +268,22 @@ function waitForRefresh(refresh: Promise<string | null>, signal: AbortSignal) {
   });
 }
 
-export async function request<T>(path: string, options: RequestInit & { anonymous?: boolean } = {}, authService = false, retry = true, retried = false, lockHeld = false): Promise<T> {
-  const { signal: callerSignal, anonymous, ...init } = options;
+type RequestResponse = Pick<Response, "ok" | "status" | "json" | "blob">;
+type RequestOptions = RequestInit & { anonymous?: boolean; timeoutMs?: number; transport?: (url: string, init: RequestInit) => Promise<RequestResponse> };
+export function request<T>(path: string, options: RequestOptions = {}, authService = false, retry = true, retried = false, lockHeld = false): Promise<T> {
+  return requestValue(path, response => response.json(), options, authService, retry, retried, lockHeld);
+}
+export function requestBlob(path: string, options: RequestOptions = {}) {
+  return requestValue(path, response => response.blob(), options);
+}
+async function requestValue<T>(path: string, read: (response: RequestResponse) => Promise<T>, options: RequestOptions,
+  authService = false, retry = true, retried = false, lockHeld = false): Promise<T> {
+  const { signal: callerSignal, anonymous, timeoutMs = 12000, transport = fetch, ...init } = options;
   const controller = new AbortController();
   const abort = () => controller.abort();
   callerSignal?.addEventListener("abort", abort, { once: true });
   if (callerSignal?.aborted) abort();
-  const timeout = setTimeout(abort, 12000);
+  const timeout = setTimeout(abort, timeoutMs);
   const intent = generation;
   function checkResponse() {
     if (controller.signal.aborted) throw cancelled();
@@ -282,7 +292,7 @@ export async function request<T>(path: string, options: RequestInit & { anonymou
   async function send(mayRetry: boolean, didRetry: boolean): Promise<T> {
     checkResponse();
     const usedToken = anonymous ? null : accessToken;
-    const response = await fetch((authService ? AUTH_URL : API_URL) + path, {
+    const response = await transport((authService ? AUTH_URL : API_URL) + path, {
       ...init, credentials: authService && Platform.OS === "web" ? "include" : "omit",
       signal: controller.signal,
       headers: { "Content-Type": "application/json", ...(usedToken ? { Authorization: `Bearer ${usedToken}` } : {}), ...init.headers },
@@ -318,7 +328,7 @@ export async function request<T>(path: string, options: RequestInit & { anonymou
       const feedback = requestFeedback(path, response.status, data);
       throw new SessionError(kind, linkMessage ?? (kind === "invalid" ? ((path.endsWith("/login") || path.endsWith("/account")) ? validationMessage(data) : "Session expired or revoked. Sign in again.") : kind === "transient" ? "Cannot reach the service. Try again." : feedback.message), response.status, feedback.code, feedback.fields);
     }
-    const data = await response.json();
+    const data = await read(response);
     checkResponse();
     return data;
   }

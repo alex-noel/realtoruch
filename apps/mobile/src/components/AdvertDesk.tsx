@@ -3,6 +3,7 @@ import { Text, TextInput, View } from "react-native";
 import { market, Advert, Profile } from "../marketplaceApi";
 import { api, SessionError } from "../api";
 import { AdvertPreview } from "./AdvertPreview";
+import { ownerMedia } from "./PhotoUploader";
 import { s } from "../theme";
 import { Button, Chip, Field, money } from "./UI";
 import { AdvertEditor } from "./AdvertEditor";
@@ -34,6 +35,20 @@ export function AdvertDesk({
   const [previewError, setPreviewError] = useState("");
   const [notice, setNotice] = useState("");
   const publishing = useRef(false);
+  const [mediaReady, setMediaReady] = useState<boolean | null>(null);
+  const [mediaRetry, setMediaRetry] = useState(0);
+  const previewIds = JSON.stringify(preview?.advert.media_ids ?? []);
+  useEffect(() => {
+    if (!preview) return;
+    const ids: string[] = JSON.parse(previewIds);
+    const job = new AbortController();
+    if (!ids.length) { setMediaReady(true); return () => job.abort(); }
+    setMediaReady(null);
+    Promise.all(ids.map(id => ownerMedia.status(id, job.signal)))
+      .then(items => { if (!job.signal.aborted) setMediaReady(items.every(item => item.state === "ready")); })
+      .catch(() => { if (!job.signal.aborted) setMediaReady(false); });
+    return () => job.abort();
+  }, [preview?.id, previewIds, mediaRetry]);
   useEffect(() => {
     let active = true;
     api.me().then(account => { if (active) setVerified(account.email_verified); }).catch(() => {});
@@ -76,7 +91,7 @@ export function AdvertDesk({
     return () => registerExitGuard(null);
   }, [editing, profileOpen, profileDirty, profileValid, profileDraft, profile, registerExitGuard]);
   async function publishPreview() {
-    if (!preview || publishing.current || busy || verified === false || preview.hidden) return;
+    if (!preview || publishing.current || busy || verified === false || preview.hidden || mediaReady !== true) return;
     publishing.current = true; setPreviewError("");
     try {
       const ok = await run(async () => {
@@ -97,7 +112,7 @@ export function AdvertDesk({
       try {
         const latest = (await market.adverts()).items.find(item => item.id === preview.id);
         if (!latest) { setPreviewError("This advert is no longer available."); return; }
-        setPreview(latest); setPreviewError("Latest advert loaded. Review it again before publishing.");
+        setMediaReady(null); setPreview(latest); setPreviewError("Latest advert loaded. Review it again before publishing.");
       } catch (error) {
         setPreviewError("Could not load the latest advert. Please try again.");
         throw error;
@@ -109,8 +124,10 @@ export function AdvertDesk({
     <Text style={s.muted}>Status: {preview.state}{preview.hidden ? " · hidden after review" : ""}</Text>
     {verified === false && <Text accessibilityRole="alert" style={s.text}>Verify your email in Account: close this desk, open Account, then choose Send verification email. Your saved draft will be here when you return.</Text>}
     {preview.hidden && <Text accessibilityRole="alert" style={s.text}>This advert is hidden after review. Submit an appeal before publishing.</Text>}
+    {mediaReady === null && <Text accessibilityRole="status" style={s.muted}>Checking saved photos…</Text>}
+    {mediaReady === false && <><Text accessibilityRole="alert" style={s.text}>Some saved photos are unavailable. Retry or edit the draft to remove them before publishing.</Text><Button outline onPress={() => setMediaRetry(value => value + 1)}>Retry photo check</Button></>}
     {!!previewError && <><Text accessibilityRole="alert" style={s.text}>{previewError}</Text><Button outline disabled={busy} onPress={() => void refreshPreview()}>Refresh latest advert</Button></>}
-    <Button busy={busy} busyLabel="Publishing…" disabled={verified === false || !!preview.hidden} onPress={() => void publishPreview()}>Publish advert</Button>
+    <Button busy={busy} busyLabel="Publishing…" disabled={verified === false || !!preview.hidden || mediaReady !== true} onPress={() => void publishPreview()}>Publish advert</Button>
     <Button outline disabled={busy} onPress={() => { setEditing(preview); setPreview(null); }}>Edit draft</Button>
     <Button outline disabled={busy} onPress={() => { setPreview(null); setPreviewError(""); }}>Back to adverts</Button>
   </View>;
@@ -123,14 +140,16 @@ export function AdvertDesk({
         busy={busy}
         onCancel={() => setEditing(null)}
         onSave={async (draft, base) => {
-          let error: unknown;
+          let error: unknown, result: Advert | undefined;
           const saved = await run(async () => {
-            try { await market.saveAdvert(draft, editing === "new" ? undefined : base || editing); }
+            try { result = await market.saveAdvert(draft, editing === "new" ? undefined : base || editing); }
             catch (cause) { error = cause; throw cause; }
-            setEditing(null);
           });
-          if (saved) void run(reload);
-          return { ok: saved, error };
+          return { ok: saved, saved: result, error };
+        }}
+        onFinished={(saved, keepEditing) => {
+          setEditing(keepEditing ? saved : null);
+          void run(reload);
         }}
       />
     );
@@ -220,7 +239,7 @@ export function AdvertDesk({
             ) : (
               <Button
                 disabled={busy}
-                onPress={() => requestExit(() => { setPreviewError(""); setNotice(""); setPreview(advert); })}
+                onPress={() => requestExit(() => { setPreviewError(""); setNotice(""); setMediaReady(null); setPreview(advert); })}
               >
                 Review and publish
               </Button>
