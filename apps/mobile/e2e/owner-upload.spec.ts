@@ -77,8 +77,18 @@ test('owned photos upload, reorder, save and publish in selected order', async (
   await expect(page.getByText('Uploaded photo 1 · Cover')).toBeVisible();
   await expect(page.getByRole('img', { name: 'Blue room' })).toBeVisible();
   await page.screenshot({ path: info.outputPath('synthetic-photo-preview.png'), fullPage: true });
+  let publishAttempts = 0;
+  await page.route(`${process.env.E2E_API_URL}/v1/me/adverts/*/publish`, route => {
+    if (++publishAttempts === 1) return route.fulfill({ status: 409, json: { detail: 'This advert changed on another device. Reload before editing.' } });
+    return route.continue();
+  });
+  await page.getByRole('button', { name: 'Publish advert' }).click();
+  await page.getByRole('button', { name: 'Refresh latest advert' }).click();
+  await expect(page.getByText('Latest advert loaded. Review it again before publishing.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Publish advert' })).toBeEnabled();
   await page.getByRole('button', { name: 'Publish advert' }).click();
   await expect(page.getByText(/^PUBLISHED ·/)).toBeVisible();
+  expect(publishAttempts).toBe(2);
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Move photo 1 earlier' })).toBeDisabled();
   await expect(page.getByText(/Ready/)).toHaveCount(2);

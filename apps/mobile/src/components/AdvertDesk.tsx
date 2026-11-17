@@ -112,7 +112,7 @@ export function AdvertDesk({
       try {
         const latest = (await market.adverts()).items.find(item => item.id === preview.id);
         if (!latest) { setPreviewError("This advert is no longer available."); return; }
-        setMediaReady(null); setPreview(latest); setPreviewError("Latest advert loaded. Review it again before publishing.");
+        setMediaReady(null); setMediaRetry(value => value + 1); setPreview(latest); setPreviewError("Latest advert loaded. Review it again before publishing.");
       } catch (error) {
         setPreviewError("Could not load the latest advert. Please try again.");
         throw error;
