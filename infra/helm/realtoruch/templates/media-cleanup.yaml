@@ -1,0 +1,37 @@
+{{- if .Values.mediaCleanup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: media-cleanup }
+spec:
+  schedule: {{ .Values.mediaCleanup.schedule | quote }}
+  timeZone: Europe/Warsaw
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels: { app: media-cleanup }
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: api
+          terminationGracePeriodSeconds: 30
+          nodeSelector: { workload: core }
+          securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - name: media-cleanup
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              command: ["python", "-m", "realtoruch.runtime", "python", "-m", "realtoruch.media"]
+              env:
+                - name: GCP_CONFIG_SECRET
+                  value: "projects/{{ .Values.projectId }}/secrets/realtoruch-api-config/versions/latest"
+              securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+              resources:
+                requests: { cpu: 100m, memory: 128Mi }
+                limits: { cpu: "1", memory: 256Mi }
+              volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          volumes: [{ name: tmp, emptyDir: {} }]
+{{- end }}

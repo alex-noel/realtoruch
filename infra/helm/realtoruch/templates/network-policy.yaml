@@ -52,7 +52,7 @@ kind: NetworkPolicy
 metadata: { name: sql-egress }
 spec:
   podSelector:
-    matchExpressions: [{ key: app, operator: In, values: [api, auth, auth-worker, alerts, indexer] }]
+    matchExpressions: [{ key: app, operator: In, values: [api, auth, auth-worker, alerts, indexer, media-cleanup] }]
   policyTypes: [Egress]
   egress:
     - to: [{ ipBlock: { cidr: {{ .Values.network.sqlCidr | quote }} } }]
@@ -63,7 +63,7 @@ kind: NetworkPolicy
 metadata: { name: external-https-egress }
 spec:
   podSelector:
-    matchExpressions: [{ key: app, operator: In, values: [api, auth, auth-worker, alerts, indexer, search, collector] }]
+    matchExpressions: [{ key: app, operator: In, values: [api, auth, auth-worker, alerts, indexer, search, collector, media-cleanup] }]
   policyTypes: [Egress]
   egress:
     # Private Google APIs, Secret Manager, queue, provider and push HTTPS.

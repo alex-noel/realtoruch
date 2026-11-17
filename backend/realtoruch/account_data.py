@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .db import get_session
 from .models import (AccountClosure, Advert, AdvertiserProfile, EmailSubscription, Favorite,
-                     Message, SavedSearch, SeenPrice)
+                     MediaAsset, Message, SavedSearch, SeenPrice)
 from .security import require_claims
 from .settings import get_settings
 
@@ -65,6 +65,8 @@ def export_bytes(session, user_id, email):
         ("searches", SavedSearch, ["id", "name", "filters", "created_at"], SavedSearch.user_id == user_id),
         ("seen", SeenPrice, ["listing_id", "rent_pln", "seen_at"], SeenPrice.user_id == user_id),
         ("adverts", Advert, ["id", "listing_id", "draft", "state", "version", "created_at", "updated_at"], Advert.user_id == user_id),
+        ("media", MediaAsset, ["id", "state", "description", "created_at"],
+         (MediaAsset.user_id == user_id) & (MediaAsset.state != "deleted")),
         ("sent_messages", Message, ["id", "conversation_id", "body", "created_at"], Message.sender_id == user_id),
     ]
     parts = []

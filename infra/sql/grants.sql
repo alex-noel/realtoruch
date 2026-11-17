@@ -17,6 +17,7 @@ GRANT SELECT, INSERT ON moderation_actions, identity_decisions TO :"api_user";
 GRANT SELECT, INSERT, UPDATE, DELETE ON listing_aliases TO :"api_user";
 GRANT SELECT, INSERT, UPDATE ON search_revisions TO :"api_user";
 GRANT SELECT, INSERT ON account_closures TO :"api_user";
+GRANT SELECT, INSERT, UPDATE, DELETE ON media_assets TO :"api_user";
 GRANT SELECT ON collection_runs, source_poll_state TO :"api_user";
 GRANT SELECT ON adverts, advertiser_profiles TO :"indexer_user";
 GRANT SELECT, DELETE ON collection_runs TO :"indexer_user";

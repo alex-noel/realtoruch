@@ -4,9 +4,10 @@ import base64
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
+from urllib.parse import unquote, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 from sqlalchemy import case, func, or_, select, text, tuple_, update
 
 from .account_data import guard_account_write
@@ -53,11 +54,19 @@ class AdvertBody(BaseModel):
     property_type: Literal["apartment", "house", "room"] = "apartment"
     amenities: list[str] = Field(default_factory=list, max_length=40)
     images: list[HttpUrl] = Field(default_factory=list, max_length=30)
+    media_ids: list[UUID] = Field(default_factory=list, max_length=30)
+
+    @model_validator(mode="after")
+    def media_limit(self):
+        if len(self.images) + len(self.media_ids) > 30 or len(set(self.media_ids)) != len(self.media_ids):
+            raise ValueError("At most 30 unique images are allowed")
+        return self
 
     @field_validator("images")
     @classmethod
     def secure_images(cls, values):
-        if any(value.scheme != "https" or value.username or value.password for value in values):
+        origin = urlsplit(get_settings().media_public_base_url)
+        if any(value.scheme != "https" or value.username or value.password or (value.host == origin.hostname and unquote(value.path).startswith("/v1/media/")) for value in values):
             raise ValueError("Use HTTPS image URLs without credentials")
         return values
 
@@ -121,8 +130,13 @@ def advance_version(session, advert, expected):
 
 
 def publish_observation(session, advert, profile, status):
+    from .media import media_url
+    from .models import MediaAsset
+    draft = {**advert.draft}
+    ids = draft.pop("media_ids", [])
+    draft["images"] = list(draft.get("images", [])) + [media_url(session.get(MediaAsset, asset_id), "display") for asset_id in ids]
     raw = RawListing(
-        **advert.draft,
+        **draft,
         source="realtoruch",
         external_id=advert.id,
         url=get_settings().public_web_url.rstrip("/") + "/?advert=" + advert.id,
@@ -212,6 +226,16 @@ def my_adverts(user_id=Depends(require_user), session=Depends(get_session)):
     return {"items": [{**advert_data(row), "hidden": row.listing_id in hidden} for row in rows]}
 
 
+def validate_media(session, user_id, body):
+    from .models import MediaAsset
+    for asset_id in body.media_ids:
+        asset = session.get(MediaAsset, str(asset_id))
+        if not asset or asset.user_id != user_id:
+            raise HTTPException(403, "Media not available")
+        if asset.state != "ready":
+            raise HTTPException(422, "Media is not ready")
+
+
 @router.post("/v1/me/adverts", status_code=201)
 def create_advert(body: AdvertBody, user_id=Depends(require_user), session=Depends(get_session)):
     guard_account_write(session, user_id)
@@ -222,6 +246,7 @@ def create_advert(body: AdvertBody, user_id=Depends(require_user), session=Depen
         raise HTTPException(422, "Create your advertiser profile first")
     if session.scalar(select(func.count()).select_from(Advert).where(Advert.user_id == user_id)) >= 100:
         raise HTTPException(422, "You can keep up to 100 adverts")
+    validate_media(session, user_id, body)
     advert = Advert(user_id=user_id, draft=body.model_dump(mode="json"))
     session.add(advert)
     session.commit()
@@ -231,6 +256,7 @@ def create_advert(body: AdvertBody, user_id=Depends(require_user), session=Depen
 @router.put("/v1/me/adverts/{advert_id}")
 def edit_advert(advert_id: str, body: EditBody, user_id=Depends(require_user), session=Depends(get_session)):
     advert = owner_advert(session, advert_id, user_id)
+    validate_media(session, user_id, body.advert)
     advance_version(session, advert, body.version)
     advert.draft = body.advert.model_dump(mode="json")
     # Editing a published advert updates it in the same transaction, including alerts/history.
@@ -246,6 +272,7 @@ def publish_advert(
 ):
     verified(claims)
     advert = owner_advert(session, advert_id, claims["sub"])
+    validate_media(session, claims["sub"], AdvertBody.model_validate(advert.draft))
     advance_version(session, advert, body.version)
     if advert.listing_id and session.get(Listing, advert.listing_id).hidden:
         raise HTTPException(
