@@ -63,6 +63,7 @@ export type Thread = {
 export type Report = {
   id: string;
   reason: string;
+  created_at: string;
   hidden: boolean;
   listing: Listing;
 };
