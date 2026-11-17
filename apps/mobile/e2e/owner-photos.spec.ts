@@ -94,7 +94,7 @@ async function choose(page: Page, files: FilePayload[], keyboard = false) {
   await (await chooser).setFiles(files);
 }
 
-test("owner uploads generated photos, saves only ready order, and resolves stale editing safely", async ({
+test("owner uploads generated photos, blocks unfinished saves, and resolves stale editing safely", async ({
   page,
   context,
   request,
@@ -237,7 +237,7 @@ test("owner uploads generated photos, saves only ready order, and resolves stale
     await expect(
       page.getByText("oversized.png: Choose an image no larger than 10 MiB."),
     ).toBeVisible();
-    await expect(page.getByText("Ready", { exact: true })).toHaveCount(2);
+    await expect(page.getByText(/^Ready(?: · Cover photo)?$/)).toHaveCount(2);
     await expect(page.getByText("Failed", { exact: true })).toHaveCount(1);
     await expect(page.getByText("Uploading…", { exact: true })).toHaveCount(1);
     expect(attempts["red.png"]).toHaveLength(2);
@@ -261,20 +261,13 @@ test("owner uploads generated photos, saves only ready order, and resolves stale
     await page
       .getByLabel("Description for photo 2, red.png")
       .fill(redDescription);
-    const partial = page.waitForResponse((r) =>
-      routeStatus(r, "POST", adverts),
-    );
-    await page.getByRole("button", { name: "Save draft", exact: true }).click();
-    const first = await partial;
-    expect(first.status()).toBe(201);
-    const created = await first.json();
-    const advertUrl = `${adverts}/${created.id}`;
-    expect(created.advert.media_ids).toEqual([
-      received["green.png"],
-      received["red.png"],
-    ]);
-    expect(created.advert.images).toEqual([]);
-    await expect(page.getByText(/Draft saved with ready photos/)).toBeVisible();
+    let prematureSaves = 0;
+    await page.route(adverts, async route => {
+      if (route.request().method() === "POST") prematureSaves++;
+      await route.fallback();
+    });
+    await expect(page.getByRole("button", { name: "Save draft", exact: true })).toBeDisabled();
+    expect(prematureSaves).toBe(0);
 
     const cancel = page.getByRole("button", {
       name: "Cancel upload for photo 4, yellow.png",
@@ -290,16 +283,22 @@ test("owner uploads generated photos, saves only ready order, and resolves stale
     expect((await tombstone.json()).state).toBe("deleted");
     releaseYellow();
     await page.getByRole("button", { name: "Retry photo 3, blue.png" }).click();
-    await expect(page.getByText("Ready", { exact: true })).toHaveCount(3);
+    await expect(page.getByText(/^Ready(?: · Cover photo)?$/)).toHaveCount(3);
     expect(attempts["blue.png"]).toHaveLength(2);
     expect(new Set(attempts["blue.png"]).size).toBe(1);
 
-    const full = page.waitForResponse((r) => routeStatus(r, "PUT", advertUrl));
+    const firstSave = page.waitForResponse(r => routeStatus(r, "POST", adverts));
     await page.getByRole("button", { name: "Save draft", exact: true }).click();
-    expect((await full).status()).toBe(200);
-    await expect(
-      page.getByRole("button", { name: "Publish", exact: true }),
-    ).toBeVisible();
+    const first = await firstSave;
+    expect(first.status()).toBe(201);
+    const created = await first.json();
+    const advertUrl = `${adverts}/${created.id}`;
+    expect(created.advert.media_ids).toEqual([
+      received["green.png"], received["red.png"], received["blue.png"],
+    ]);
+    expect(created.advert.images).toEqual([]);
+    expect(prematureSaves).toBe(1);
+    await expect(page.getByRole("button", { name: "Review and publish", exact: true })).toBeVisible();
     const resources = () =>
       page.evaluate(() => {
         const data = (
@@ -345,7 +344,8 @@ test("owner uploads generated photos, saves only ready order, and resolves stale
     const published = page.waitForResponse((r) =>
       routeStatus(r, "POST", `${advertUrl}/publish`),
     );
-    await page.getByRole("button", { name: "Publish", exact: true }).click();
+    await page.getByRole("button", { name: "Review and publish", exact: true }).click();
+    await page.getByRole("button", { name: "Publish advert", exact: true }).click();
     expect((await published).status()).toBe(200);
     await expect(page.getByText(/PUBLISHED.*4\s?400/)).toBeVisible();
 
@@ -375,7 +375,7 @@ test("owner uploads generated photos, saves only ready order, and resolves stale
     );
 
     await page.getByRole("button", { name: "Edit", exact: true }).click();
-    await expect(page.getByText("Ready", { exact: true })).toHaveCount(3);
+    await expect(page.getByText(/^Ready(?: · Cover photo)?$/)).toHaveCount(3);
     await page
       .getByLabel("TITLE", { exact: true })
       .fill(originalTitle + " merged");
@@ -386,7 +386,7 @@ test("owner uploads generated photos, saves only ready order, and resolves stale
       .getByRole("button", { name: "Remove photo 3", exact: true })
       .click();
     await choose(page, [fixtures[4]]);
-    await expect(page.getByText("Ready", { exact: true })).toHaveCount(3);
+    await expect(page.getByText(/^Ready(?: · Cover photo)?$/)).toHaveCount(3);
     const remoteWrite = await request.put(advertUrl, {
       headers: second,
       data: {
@@ -400,11 +400,12 @@ test("owner uploads generated photos, saves only ready order, and resolves stale
     });
     expect(remoteWrite.status()).toBe(200);
     const stale = page.waitForResponse((r) => routeStatus(r, "PUT", advertUrl));
-    await page.getByRole("button", { name: "Save and update advert" }).click();
+    await page.getByRole("button", { name: "Review published changes" }).click();
+    await page.getByRole("button", { name: "Apply published changes" }).click();
     expect((await stale).status()).toBe(409);
-    await expect(page.getByText(/This advert changed elsewhere/)).toBeVisible();
+    await expect(page.getByText(/This advert changed on another device/).first()).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Reload latest and discard my edits" }),
+      page.getByRole("button", { name: "Reload latest version" }),
     ).toBeVisible();
     expect(activeDeletes).toBe(0);
     expect(activeDescriptions).toBe(1); // Only the accepted initial draft edit.
@@ -413,31 +414,38 @@ test("owner uploads generated photos, saves only ready order, and resolves stale
     ).items.find((item: { id: string }) => item.id === created.id);
     expect(stillRemote.advert.description).toBe(latestDescription);
     expect(stillRemote.advert.title).toBe(originalTitle);
-    await page
-      .getByRole("button", { name: "Merge my edits with latest" })
-      .click();
-    await expect(page.getByLabel("TITLE", { exact: true })).toHaveValue(
-      originalTitle + " merged",
-    );
-    await expect(page.getByLabel("DESCRIPTION", { exact: true })).toHaveValue(
-      latestDescription,
-    );
-    await expect(page.getByText("Ready", { exact: true })).toHaveCount(4);
+    await page.getByRole("button", { name: "Use mine for title" }).click();
+    await page.getByRole("button", { name: "Use latest for description" }).click();
+    // Keep the remote addition using Q30’s explicit whole-field choice.
+    await page.getByRole("button", { name: "Use latest for media_ids" }).click();
+    await page.getByRole("button", { name: "Save selected values" }).click();
+    await expect(page.getByText("Review this rental")).toBeVisible();
     const merged = page.waitForResponse((r) =>
       routeStatus(r, "PUT", advertUrl),
     );
-    const detached = page.waitForResponse((r) =>
-      routeStatus(r, "DELETE", `${media}/${received["blue.png"]}`),
-    );
-    await page.getByRole("button", { name: "Save and update advert" }).click();
+    await page.getByRole("button", { name: "Apply published changes" }).click();
     const saved = await merged;
     expect(saved.status()).toBe(200);
     expect((await saved.json()).advert.media_ids).toEqual([
       received["green.png"],
       received["red.png"],
+      received["blue.png"],
       remoteId,
-      received["local.png"],
     ]);
+    const accepted = await saved.json();
+    expect(accepted.advert.title).toBe(originalTitle + " merged");
+    expect(accepted.advert.description).toBe(latestDescription);
+    await expect.poll(async () => (await (await request.get(`${media}/${received["local.png"]}`, { headers: second })).json()).state).toBe("deleted");
+    // Choosing latest must preserve its published assets and clean the rejected local upload.
+    expect(activeDeletes).toBe(0);
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await expect(page.getByText(/^Ready(?: · Cover photo)?$/)).toHaveCount(4);
+    await page.getByRole("button", { name: "Remove photo 3", exact: true }).click();
+    const detached = page.waitForResponse(r => routeStatus(r, "DELETE", `${media}/${received["blue.png"]}`));
+    await page.getByRole("button", { name: "Review published changes" }).click();
+    const removalSave = page.waitForResponse(r => routeStatus(r, "PUT", advertUrl));
+    await page.getByRole("button", { name: "Apply published changes" }).click();
+    expect((await removalSave).status()).toBe(200);
     expect((await detached).status()).toBe(200);
     await expect(
       page.getByRole("button", { name: "Edit", exact: true }),
@@ -455,6 +463,26 @@ test("owner uploads generated photos, saves only ready order, and resolves stale
       "alt",
       "Illustrative apartment interior",
     );
+    await page.getByRole("button", { name: "Account", exact: true }).click();
+    await page.getByRole("button", { name: "My rental adverts" }).click();
+    let withdrawals = 0;
+    await page.route(`${advertUrl}/withdraw`, async route => {
+      if (route.request().method() === "POST") withdrawals++;
+      await route.fallback();
+    });
+    await page.getByRole("button", { name: "Withdraw", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Confirm withdrawal" })).toContainText(originalTitle + " merged");
+    await page.getByRole("button", { name: "Keep published" }).click();
+    expect(withdrawals).toBe(0);
+    await page.getByRole("button", { name: "Withdraw", exact: true }).click();
+    const withdrawn = page.waitForResponse(r => routeStatus(r, "POST", `${advertUrl}/withdraw`));
+    await page.getByRole("button", { name: "Confirm withdrawal", exact: true }).click();
+    expect((await withdrawn).status()).toBe(200);
+    expect(withdrawals).toBe(1);
+    await expect(page.getByText(/^WITHDRAWN ·/)).toBeVisible();
+    // Q33 retains already published photos; private management remains authenticated.
+    expect((await request.get(`${api}/v1/media/${received["green.png"]}/thumbnail`)).status()).toBe(200);
+    expect((await request.get(`${media}/${received["green.png"]}/thumbnail`)).status()).toBe(401);
     expect(blocked).toEqual([]);
   } finally {
     releaseYellow();
