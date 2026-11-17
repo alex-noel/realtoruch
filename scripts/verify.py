@@ -49,7 +49,9 @@ def main():
     def command(cmd, cwd=ROOT, *, check=True):
         p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
         try:
-            output, _ = p.communicate(timeout=300)
+            # The expanded desktop/mobile acceptance suite needs its own bounded
+            # budget; retain the shorter bound for individual service commands.
+            output, _ = p.communicate(timeout=900 if args.profile == 'web' else 300)
         except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
             # Terminate the whole owned process group, including test descendants.
             try:

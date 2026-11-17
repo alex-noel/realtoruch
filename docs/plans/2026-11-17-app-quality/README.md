@@ -2,9 +2,9 @@
 
 Forty bounded tasks to improve the current rental app, finish incomplete user journeys and prepare the work for lower-cost implementation models. The priority is clear, recoverable renter and owner flows with consistent UI. Preserve the existing React Native and FastAPI stack and the green, cream and square-corner visual identity.
 
-Prepared **17 November 2026, Europe/Warsaw**, against `3bbe7b413c61e86095d1b5a6cce14c3c15bb9d83`. All 40 tasks are **PLANNED**. The audit used current source, existing tests, previous handoffs and checked-in previews; it did not run a new app build, browser session or regression suite. Previous test passes are historical evidence, not acceptance of this plan.
+Prepared **17 November 2026, Europe/Warsaw**, against `3bbe7b413c61e86095d1b5a6cce14c3c15bb9d83`. The original audit used source, existing tests, previous handoffs and checked-in previews. **Execution was subsequently authorized and is tracked in [execution.json](execution.json).** Packet headings retain the original planning state; implementation status, reviewed commits and current evidence are in the tracker and task handoffs. Earlier test passes are not acceptance of later changes.
 
-Read [the delegation guide](DELEGATION.md), dispatch one linked task packet, then collect [a handoff](HANDOFF_TEMPLATE.md). [manifest.json](manifest.json) contains scopes, dependencies, checks and effort ranges; [execution.json](execution.json) starts with every task unassigned.
+Read [the delegation guide](DELEGATION.md), dispatch one linked task packet, then collect [a handoff](HANDOFF_TEMPLATE.md). [manifest.json](manifest.json) contains scopes, dependencies, checks and effort ranges; [execution.json](execution.json) records actual assignments, commits and acceptance.
 
 ## Priorities and effort
 

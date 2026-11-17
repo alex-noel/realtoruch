@@ -11,19 +11,21 @@
         "docs/verification/Q01-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q02",
       "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6-luna",
-      "branch": "codex/q02-field-semantics",
+      "branch": "codex/app-quality-2026-11",
       "commit": "c3a8496",
       "evidence": [
         "docs/verification/Q02-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "followup_commits": []
     },
     {
       "id": "Q03",
@@ -36,7 +38,8 @@
       ],
       "blocked_by": [],
       "reasoning_effort": "high",
-      "review": "Independent Terra high review approved after generic fallback correction;39session tests and typecheck passed."
+      "review": "Independent Terra high review approved after generic fallback correction;39session tests and typecheck passed.",
+      "followup_commits": []
     },
     {
       "id": "Q04",
@@ -47,29 +50,34 @@
       "evidence": [
         "docs/verification/Q04-handoff.md"
       ],
-      "blocked_by": []
+      "blocked_by": [],
+      "followup_commits": []
     },
     {
       "id": "Q05",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6-luna",
-      "branch": null,
-      "commit": null,
-      "evidence": [],
+      "branch": "codex/app-quality-2026-11",
+      "commit": "ef9181b",
+      "evidence": [
+        "docs/verification/Q05-handoff.md"
+      ],
       "blocked_by": [],
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "followup_commits": []
     },
     {
       "id": "Q06",
       "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6-luna",
-      "branch": "codex/q06-filter-validation",
+      "branch": "codex/app-quality-2026-11",
       "commit": "d126236",
       "evidence": [
         "docs/verification/Q06-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "followup_commits": []
     },
     {
       "id": "Q07",
@@ -81,25 +89,27 @@
         "docs/verification/Q07-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "followup_commits": []
     },
     {
       "id": "Q08",
       "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6.1-sol",
-      "branch": "codex/q08-sort-selector",
+      "branch": "codex/app-quality-2026-11",
       "commit": "00eb435",
       "evidence": [
         "docs/verification/Q08-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "followup_commits": []
     },
     {
       "id": "Q09",
       "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6.1-sol",
-      "branch": "codex/q09-map-pagination",
+      "branch": "codex/app-quality-2026-11",
       "commit": "2fc8b19",
       "evidence": [
         "docs/verification/Q09-handoff.md"
@@ -107,20 +117,24 @@
       "blocked_by": [],
       "reasoning_effort": "medium",
       "worker_commit": "b68c55c3fafdc210bab35ed19b59e35665ba127b",
-      "review": "Parent reviewed pager and stable marker focus;4browser checks on Node24 andtypecheck passed."
+      "review": "Parent reviewed pager and stable marker focus;4browser checks on Node24 andtypecheck passed.",
+      "followup_commits": []
     },
     {
       "id": "Q10",
       "status": "VERIFIED_LOCAL",
-      "assignee": null,
-      "branch": null,
+      "assignee": "parent",
+      "branch": "codex/app-quality-2026-11",
       "commit": "3880ed4",
       "evidence": [
         "docs/verification/Q10-handoff.md"
       ],
       "blocked_by": [],
       "followup_commit": "a1173be",
-      "review": "Independent high-effort review and notification/detail request-race correction."
+      "review": "Independent high-effort review and notification/detail request-race correction.",
+      "followup_commits": [
+        "a1173be"
+      ]
     },
     {
       "id": "Q11",
@@ -132,19 +146,21 @@
         "docs/verification/Q11-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q12",
       "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6.1-sol",
-      "branch": "codex/q12-gallery",
+      "branch": "codex/app-quality-2026-11",
       "commit": "36d115c",
       "evidence": [
         "docs/verification/Q12-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "followup_commits": []
     },
     {
       "id": "Q13",
@@ -156,19 +172,21 @@
         "docs/verification/Q13-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q14",
-      "status": "REVIEWED_PENDING_INTEGRATION",
+      "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6.1-sol",
       "branch": "codex/app-quality-2026-11",
-      "commit": null,
+      "commit": "f5d640f",
       "evidence": [
         "docs/verification/Q14-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "followup_commits": []
     },
     {
       "id": "Q15",
@@ -180,7 +198,8 @@
         "docs/verification/Q15-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "followup_commits": []
     },
     {
       "id": "Q16",
@@ -192,30 +211,33 @@
         "docs/verification/Q16-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "followup_commits": []
     },
     {
       "id": "Q17",
       "status": "VERIFIED_LOCAL",
-      "assignee": null,
-      "branch": null,
+      "assignee": "parent",
+      "branch": "codex/app-quality-2026-11",
       "commit": "4f73b5d",
       "evidence": [
         "docs/verification/Q17-handoff.md"
       ],
-      "blocked_by": []
+      "blocked_by": [],
+      "followup_commits": []
     },
     {
       "id": "Q18",
       "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6.1-terra",
-      "branch": "codex/q18-private-collections",
+      "branch": "codex/app-quality-2026-11",
       "commit": "9c636cd",
       "evidence": [
         "docs/verification/Q18-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q19",
@@ -229,8 +251,34 @@
     },
     {
       "id": "Q20",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6.1-sol",
+      "branch": "codex/app-quality-2026-11",
+      "commit": "a1080ea",
+      "evidence": [
+        "docs/verification/Q20-handoff.md"
+      ],
+      "blocked_by": [],
+      "reasoning_effort": "medium",
+      "followup_commits": []
+    },
+    {
+      "id": "Q21",
+      "status": "VERIFIED_LOCAL",
+      "assignee": "gpt-6.1-terra",
+      "branch": "codex/app-quality-2026-11",
+      "commit": "c7165c4",
+      "evidence": [
+        "docs/verification/Q21-handoff.md"
+      ],
+      "blocked_by": [],
+      "reasoning_effort": "high",
+      "followup_commits": []
+    },
+    {
+      "id": "Q22",
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6-luna",
       "branch": null,
       "commit": null,
       "evidence": [],
@@ -238,34 +286,14 @@
       "reasoning_effort": "medium"
     },
     {
-      "id": "Q21",
-      "status": "VERIFIED_LOCAL",
-      "assignee": "gpt-6.1-terra",
-      "branch": "codex/q21-inbox",
-      "commit": "c7165c4",
-      "evidence": [
-        "docs/verification/Q21-handoff.md"
-      ],
-      "blocked_by": [],
-      "reasoning_effort": "high"
-    },
-    {
-      "id": "Q22",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
-      "commit": null,
-      "evidence": [],
-      "blocked_by": []
-    },
-    {
       "id": "Q23",
-      "status": "PLANNED",
-      "assignee": null,
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6-luna",
       "branch": null,
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "medium"
     },
     {
       "id": "Q24",
@@ -277,33 +305,42 @@
         "docs/verification/Q24-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q25",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED_LOCAL",
       "assignee": "parent",
-      "branch": null,
-      "commit": null,
-      "evidence": [],
+      "branch": "codex/app-quality-2026-11",
+      "commit": "4c2df7e",
+      "evidence": [
+        "docs/verification/Q25-handoff.md"
+      ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q26",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED_LOCAL",
       "assignee": "parent",
-      "branch": null,
-      "commit": null,
-      "evidence": [],
+      "branch": "codex/app-quality-2026-11",
+      "commit": "efa2397",
+      "evidence": [
+        "docs/verification/Q26-handoff.md"
+      ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": [
+        "12ef790"
+      ]
     },
     {
       "id": "Q27",
       "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6.1-terra",
-      "branch": "codex/q27-rental-desk",
+      "branch": "codex/app-quality-2026-11",
       "commit": "0f19dd5",
       "evidence": [
         "docs/verification/Q27-handoff.md"
@@ -311,7 +348,8 @@
       "blocked_by": [],
       "reasoning_effort": "low",
       "worker_commit": "770b7b5f88e86a0cd9bdf86311a2b600c17776ce",
-      "review": "Parent compared extraction, preserved handlers/type-only cycles; worker typecheck,12unit and2browser passed."
+      "review": "Parent compared extraction, preserved handlers/type-only cycles; worker typecheck,12unit and2browser passed.",
+      "followup_commits": []
     },
     {
       "id": "Q28",
@@ -323,7 +361,8 @@
         "docs/verification/Q28-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "medium"
+      "reasoning_effort": "medium",
+      "followup_commits": []
     },
     {
       "id": "Q29",
@@ -335,7 +374,8 @@
         "docs/verification/Q29-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q30",
@@ -347,17 +387,21 @@
         "docs/verification/Q30-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q31",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED_LOCAL",
       "assignee": "gpt-6.1-terra",
-      "branch": null,
-      "commit": null,
-      "evidence": [],
+      "branch": "codex/app-quality-2026-11",
+      "commit": "16f90e4",
+      "evidence": [
+        "docs/verification/Q31-handoff.md"
+      ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q32",
@@ -369,7 +413,8 @@
         "docs/verification/Q32-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q33",
@@ -381,75 +426,91 @@
         "docs/verification/Q33-handoff.md"
       ],
       "blocked_by": [],
-      "reasoning_effort": "high"
+      "reasoning_effort": "high",
+      "followup_commits": []
     },
     {
       "id": "Q34",
-      "status": "PLANNED",
-      "assignee": null,
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6.1-terra",
       "branch": null,
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "high"
     },
     {
       "id": "Q35",
-      "status": "PLANNED",
-      "assignee": null,
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6.1-sol",
       "branch": null,
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "medium"
     },
     {
       "id": "Q36",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
-      "commit": null,
-      "evidence": [],
-      "blocked_by": []
+      "status": "VERIFIED_LOCAL",
+      "assignee": "parent",
+      "branch": "codex/app-quality-2026-11",
+      "commit": "cc2a9b0",
+      "evidence": [
+        "docs/verification/Q36-handoff.md"
+      ],
+      "blocked_by": [],
+      "followup_commits": []
     },
     {
       "id": "Q37",
-      "status": "PLANNED",
-      "assignee": null,
+      "status": "IN_PROGRESS",
+      "assignee": "gpt-6.1-terra",
       "branch": null,
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "high"
     },
     {
       "id": "Q38",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
-      "commit": null,
-      "evidence": [],
-      "blocked_by": []
+      "status": "VERIFIED_LOCAL",
+      "assignee": "parent",
+      "branch": "codex/app-quality-2026-11",
+      "commit": "d991031",
+      "evidence": [
+        "docs/verification/Q38-handoff.md"
+      ],
+      "blocked_by": [],
+      "followup_commits": []
     },
     {
       "id": "Q39",
-      "status": "PLANNED",
-      "assignee": null,
-      "branch": null,
-      "commit": null,
-      "evidence": [],
-      "blocked_by": []
+      "status": "IMPLEMENTED_PENDING_FINAL",
+      "assignee": "parent",
+      "branch": "codex/app-quality-2026-11",
+      "commit": "7d157d8",
+      "evidence": [
+        "docs/verification/Q39-quality.md"
+      ],
+      "blocked_by": [],
+      "followup_commits": []
     },
     {
       "id": "Q40",
-      "status": "PLANNED",
-      "assignee": null,
+      "status": "IN_PROGRESS",
+      "assignee": "parent",
       "branch": null,
       "commit": null,
       "evidence": [],
-      "blocked_by": []
+      "blocked_by": [],
+      "reasoning_effort": "high"
     }
   ],
   "execution_start_revision": "3872e35",
   "integration_branch": "codex/app-quality-2026-11",
   "reuse_candidates": {
     "Q32-Q34": "Owner media implementation in active Plan Polish rental listings app chat; inspect reviewed output before duplicating implementation."
-  }
+  },
+  "actual_evidence_date": "2026-11-17",
+  "phase": "implementation_and_integration_review"
 }
