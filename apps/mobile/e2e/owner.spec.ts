@@ -56,11 +56,44 @@ test('owner publishes, edits, messages a renter and withdraws', async ({ page, c
   await page.getByLabel('ROOMS', { exact: true }).fill('2');
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect(page.getByText('DRAFT', { exact: false })).toBeVisible();
-  await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByText('PUBLISHED', { exact: false })).toBeVisible();
+  let publishAttempts = 0;
+  await page.route(`${process.env.E2E_API_URL}/v1/me/adverts/*/publish`, async route => {
+    if (++publishAttempts === 1) return route.fulfill({ status: 503, json: { detail: 'offline' } });
+    return route.continue();
+  });
+  await page.getByRole('button', { name: 'Review and publish', exact: true }).click();
+  await expect(page.getByText('Review this rental')).toBeVisible();
+  expect(publishAttempts).toBe(0);
+  await page.getByRole('button', { name: 'Publish advert', exact: true }).click();
+  await expect(page.getByText('Review this rental')).toBeVisible();
+  await expect(page.getByText('Cannot reach the service. Try again.').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Publish advert', exact: true }).click();
+  await expect(page.getByText(/^PUBLISHED ·/)).toBeVisible();
+  expect(publishAttempts).toBe(2);
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('MONTHLY BASE RENT (PLN)').fill('4200');
-  await page.getByRole('button', { name: 'Save and update advert' }).click();
+  let updateCalls = 0;
+  await page.route(`${process.env.E2E_API_URL}/v1/me/adverts/*`, async route => {
+    if (route.request().method() === 'PUT') {
+      updateCalls++;
+      if (updateCalls === 1) return route.fulfill({ status: 409, json: { detail: 'This advert changed on another device. Reload before editing.' } });
+    }
+    return route.continue();
+  });
+  await page.getByRole('button', { name: 'Review published changes' }).click();
+  await expect(page.getByText('Review this rental')).toBeVisible();
+  expect(updateCalls).toBe(0);
+  await page.getByRole('button', { name: 'Back to editing' }).click();
+  await expect(page.getByLabel('MONTHLY BASE RENT (PLN)')).toHaveValue('4200');
+  await page.getByRole('button', { name: 'Review published changes' }).click();
+  await page.getByRole('button', { name: 'Apply published changes' }).click();
+  await page.getByRole('button', { name: 'Use mine for rent_pln' }).click();
+  await page.getByRole('button', { name: 'Save selected values' }).click();
+  await expect(page.getByText('Review this rental')).toBeVisible();
+  const update = page.waitForRequest(request => request.url().includes('/v1/me/adverts/') && request.method() === 'PUT');
+  await page.getByRole('button', { name: 'Apply published changes' }).click();
+  expect((await update).postDataJSON().advert.rent_pln).toBe(4200);
+  expect(updateCalls).toBe(2);
   await expect(page.getByText(/PUBLISHED.*4\s?200/)).toBeVisible();
 
   const renter = await browser.newContext({ viewport: info.project.use.viewport });

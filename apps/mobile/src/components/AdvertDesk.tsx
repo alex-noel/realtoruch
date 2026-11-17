@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Text, TextInput, View } from "react-native";
 import { market, Advert, Profile } from "../marketplaceApi";
+import { api, SessionError } from "../api";
+import { AdvertPreview } from "./AdvertPreview";
 import { s } from "../theme";
 import { Button, Chip, Field, money } from "./UI";
 import { AdvertEditor } from "./AdvertEditor";
@@ -27,6 +29,16 @@ export function AdvertDesk({
   const [profileOpen, setProfileOpen] = useState(false);
   const [adverts, setAdverts] = useState<Advert[]>([]);
   const [editing, setEditing] = useState<Advert | "new" | null>(null);
+  const [preview, setPreview] = useState<Advert | null>(null);
+  const [verified, setVerified] = useState<boolean | null>(null);
+  const [previewError, setPreviewError] = useState("");
+  const [notice, setNotice] = useState("");
+  const publishing = useRef(false);
+  useEffect(() => {
+    let active = true;
+    api.me().then(account => { if (active) setVerified(account.email_verified); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   const [appeal, setAppeal] = useState<Advert | null>(null);
   const [reason, setReason] = useState("");
   useEffect(() => {
@@ -63,6 +75,45 @@ export function AdvertDesk({
       discard: () => { setProfileDraft(profile || emptyProfile); setProfileOpen(false); } });
     return () => registerExitGuard(null);
   }, [editing, profileOpen, profileDirty, profileValid, profileDraft, profile, registerExitGuard]);
+  async function publishPreview() {
+    if (!preview || publishing.current || busy || verified === false || preview.hidden) return;
+    publishing.current = true; setPreviewError("");
+    try {
+      const ok = await run(async () => {
+        try { await market.publish(preview); }
+        catch (error) {
+          if (error instanceof SessionError && error.code === "verification_required") setVerified(false);
+          setPreviewError(error instanceof Error ? error.message : "Could not publish. Please try again.");
+          throw error;
+        }
+      });
+      if (ok) { setPreview(null); setNotice("Advert published."); void run(reload); }
+    } finally { publishing.current = false; }
+  }
+  async function refreshPreview() {
+    if (!preview || busy) return;
+    setPreviewError("");
+    await run(async () => {
+      try {
+        const latest = (await market.adverts()).items.find(item => item.id === preview.id);
+        if (!latest) { setPreviewError("This advert is no longer available."); return; }
+        setPreview(latest); setPreviewError("Latest advert loaded. Review it again before publishing.");
+      } catch (error) {
+        setPreviewError("Could not load the latest advert. Please try again.");
+        throw error;
+      }
+    });
+  }
+  if (preview) return <View style={{ gap: 12 }}>
+    <AdvertPreview draft={preview.advert} />
+    <Text style={s.muted}>Status: {preview.state}{preview.hidden ? " · hidden after review" : ""}</Text>
+    {verified === false && <Text accessibilityRole="alert" style={s.text}>Verify your email in Account: close this desk, open Account, then choose Send verification email. Your saved draft will be here when you return.</Text>}
+    {preview.hidden && <Text accessibilityRole="alert" style={s.text}>This advert is hidden after review. Submit an appeal before publishing.</Text>}
+    {!!previewError && <><Text accessibilityRole="alert" style={s.text}>{previewError}</Text><Button outline disabled={busy} onPress={() => void refreshPreview()}>Refresh latest advert</Button></>}
+    <Button busy={busy} busyLabel="Publishing…" disabled={verified === false || !!preview.hidden} onPress={() => void publishPreview()}>Publish advert</Button>
+    <Button outline disabled={busy} onPress={() => { setEditing(preview); setPreview(null); }}>Edit draft</Button>
+    <Button outline disabled={busy} onPress={() => { setPreview(null); setPreviewError(""); }}>Back to adverts</Button>
+  </View>;
   if (editing)
     return (
       <AdvertEditor
@@ -85,6 +136,7 @@ export function AdvertDesk({
     );
   return (
     <>
+      {!!notice && <Text accessibilityRole="status" style={s.text}>{notice}</Text>}
       <Text style={s.muted}>
         Publish a rental, keep its history, and speak with interested renters.
         Verify your account email before publishing.
@@ -168,14 +220,9 @@ export function AdvertDesk({
             ) : (
               <Button
                 disabled={busy}
-                onPress={() =>
-                  run(async () => {
-                    await market.publish(advert);
-                    await reload();
-                  })
-                }
+                onPress={() => requestExit(() => { setPreviewError(""); setNotice(""); setPreview(advert); })}
               >
-                Publish
+                Review and publish
               </Button>
             )}
             {advert.listing_id && !advert.hidden && (

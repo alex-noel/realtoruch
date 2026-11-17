@@ -6,6 +6,7 @@ import { c, s } from "../theme";
 import { Button, Chip, Field } from "./UI";
 import type { RegisterExitGuard, RequestExit } from "./MarketplaceDialog";
 import PropertyMap from "./DeferredPropertyMap";
+import { AdvertPreview } from "./AdvertPreview";
 import {
   ownerNumbersFrom,
   ownerNumberRules,
@@ -68,6 +69,7 @@ export function AdvertEditor({
   const [photoLinks, setPhotoLinks] = useState(draft.images.join("\n"));
   const [submitted, setSubmitted] = useState(false);
   const [base, setBase] = useState(initial);
+  const [preview, setPreview] = useState<{ draft: Draft; base?: Advert } | null>(null);
   const [conflict, setConflict] = useState<{ local: Draft; latest: Advert | null; failed: boolean; loading: boolean; confirmReload: boolean; choices: Partial<Record<keyof Draft, "local" | "latest">> } | null>(null);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -84,11 +86,11 @@ export function AdvertEditor({
   const snapshot = JSON.stringify({ draft, numbers, latitude, longitude, photoLinks });
   const [baseline, setBaseline] = useState(snapshot);
   useEffect(() => {
-    registerExitGuard({ dirty: () => snapshot !== baseline, canSave: () => !!validation.value && !conflict,
+    registerExitGuard({ dirty: () => snapshot !== baseline, canSave: () => !!validation.value && !conflict && !preview && base?.state !== "published",
       save: async () => validation.value ? (await save(validation.value)).ok : false,
       focus: () => refs.current.title?.focus() });
     return () => registerExitGuard(null);
-  }, [registerExitGuard, snapshot, baseline, validation.value, onSave, conflict, base]);
+  }, [registerExitGuard, snapshot, baseline, validation.value, onSave, conflict, base, preview]);
   const errors = validation.errors;
   const invalid = Object.keys(errors) as OwnerField[];
   const pinned = !errors.lat && !errors.lon;
@@ -119,13 +121,18 @@ export function AdvertEditor({
   }
   async function save(value: Draft, against = base) {
     const result = await onSave(value, against);
-    if (alive.current && !result.ok && result.error instanceof SessionError && result.error.code === "version_conflict" && against)
+    if (alive.current && !result.ok && result.error instanceof SessionError && result.error.code === "version_conflict" && against) {
+      setPreview(null);
       await fetchLatest(value);
+    }
     return result;
   }
   function submit() {
     setSubmitted(true);
-    if (validation.value && !conflict) void save(validation.value);
+    if (validation.value && !conflict) {
+      if (base?.state === "published") setPreview({ draft: validation.value, base });
+      else void save(validation.value);
+    }
   }
   function reloadLatest() {
     if (!conflict?.latest) return;
@@ -148,7 +155,8 @@ export function AdvertEditor({
     const merged = { ...conflict.local };
     for (const key of different) if (conflict.choices[key] === "latest")
       Object.assign(merged, { [key]: conflict.latest.advert[key] });
-    void save(merged, conflict.latest);
+    if (conflict.latest.state === "published") setPreview({ draft: merged, base: conflict.latest });
+    else void save(merged, conflict.latest);
   }
 
   return (
@@ -156,7 +164,13 @@ export function AdvertEditor({
       <Text style={[s.title, { fontSize: 23 }]}>
         {initial ? "Edit rental" : "A new place to call home."}
       </Text>
-      {conflict && <View style={[s.card, { padding: 16, gap: 12 }]}>
+      {preview && <View style={{ gap: 12 }}>
+        <AdvertPreview draft={preview.draft} />
+        <Text style={s.muted}>These changes will update the published advert only after you confirm.</Text>
+        <Button busy={busy} busyLabel="Applying changes…" onPress={() => void save(preview.draft, preview.base)}>Apply published changes</Button>
+        <Button outline disabled={busy} onPress={() => setPreview(null)}>Back to editing</Button>
+      </View>}
+      {conflict && !preview && <View style={[s.card, { padding: 16, gap: 12 }]}>
         <Text accessibilityRole="alert" style={s.text}>This advert changed on another device. Your edits are still here.</Text>
         {conflict.loading && <Text accessibilityRole="status" style={s.muted}>Loading the latest version…</Text>}
         {conflict.failed && <><Text style={s.text}>The latest advert is unavailable. It may have been removed or could not be loaded.</Text><Button outline onPress={() => fetchLatest(conflict.local)}>Retry latest version</Button></>}
@@ -177,7 +191,7 @@ export function AdvertEditor({
             <View style={{ gap: 8 }}><Text style={s.text}>Discard your edits and load the latest version?</Text><Button outline onPress={reloadLatest}>Discard edits and reload</Button><Button outline onPress={() => setConflict({ ...conflict, confirmReload: false })}>Keep my edits</Button></View>}
         </>}
       </View>}
-      <View style={{ display: conflict ? "none" : "flex", gap: 16 }}>
+      <View style={{ display: conflict || preview ? "none" : "flex", gap: 16 }}>
       {submitted && invalid.length > 0 && (
         <View
           style={[s.card, { padding: 14, gap: 8, alignItems: "flex-start" }]}
@@ -359,14 +373,14 @@ export function AdvertEditor({
         Use up to 30 photos you own or have permission to publish.
       </Text>
       <Button busy={busy} disabled={!!conflict} busyLabel="Saving…" onPress={submit}>
-        {initial?.state === "published"
-          ? "Save and update advert"
+        {base?.state === "published"
+          ? "Review published changes"
           : "Save draft"}
       </Button>
       </View>
-      <Button outline disabled={busy} onPress={() => requestExit(onCancel)}>
+      {!preview && <Button outline disabled={busy} onPress={() => requestExit(onCancel)}>
         Back to adverts
-      </Button>
+      </Button>}
     </>
   );
 }
