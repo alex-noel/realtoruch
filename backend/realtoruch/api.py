@@ -544,6 +544,13 @@ def erase_account_data(user_id: str, session=Depends(get_session)):
             publish_observation(session, advert, session.get(AdvertiserProfile, user_id), "inactive")
         session.delete(advert)
     session.flush()
+    from .media import delete_bytes
+    from .models import MediaAsset
+    for asset in session.scalars(select(MediaAsset).where(MediaAsset.user_id == user_id)):
+        asset.state = "deleted"
+        asset.idempotency_key = "!" + asset.id
+        asset.digest = None
+        asset.description = ""
     session.execute(delete(AdvertiserProfile).where(AdvertiserProfile.user_id == user_id))
 
     notifications = select(Notification.id).where(Notification.user_id == user_id)
@@ -570,5 +577,10 @@ def erase_account_data(user_id: str, session=Depends(get_session)):
         Report,
     ):
         session.execute(delete(model).where(model.user_id == user_id))
+    session.commit()
+    # Durable closure and tombstones fence uploads before external cleanup.
+    for asset in session.scalars(select(MediaAsset).where(MediaAsset.user_id == user_id)):
+        delete_bytes(asset, permanent=True)
+        session.delete(asset)
     session.commit()
     return {"erased": True}

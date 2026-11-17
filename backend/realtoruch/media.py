@@ -15,7 +15,7 @@ from sqlalchemy import or_, select
 
 from .account_data import guard_account_write
 from .db import get_session
-from .models import Advert, Listing, MediaAsset, now, uid
+from .models import Advert, Listing, MediaAsset, SourceListing, now, uid
 from .normalization import clean_text
 from .security import require_claims
 from .settings import get_settings
@@ -77,9 +77,32 @@ def owned(session, user, asset_id):
     return row
 
 
+def projected(session, advert, asset, *, visible=False):
+    if advert.state not in ("published", "withdrawn") or not advert.listing_id:
+        return False
+    listing = session.get(Listing, advert.listing_id)
+    if not listing or (visible and listing.hidden):
+        return False
+    url = media_url(asset, "display")
+    if url not in (listing.images or []):
+        return False
+    # The owner advert's own published source must also contain the URL. An
+    # unrelated imported listing sharing a canonical home cannot make an
+    # unpublished draft asset public by injecting a guessed media URL.
+    source = session.scalar(select(SourceListing).where(
+        SourceListing.listing_id == listing.id, SourceListing.source == "realtoruch",
+        SourceListing.external_id == advert.id))
+    images = source.data.get("images") if source and isinstance(source.data, dict) else None
+    return isinstance(images, list) and url in images
+
+
 def referenced(session, asset):
-    return any(asset.id in (ad.draft.get("media_ids") or []) for ad in session.scalars(
-        select(Advert).where(Advert.user_id == asset.user_id)))
+    adverts = list(session.scalars(select(Advert).where(Advert.user_id == asset.user_id)))
+    if any(asset.id in (ad.draft.get("media_ids") or []) for ad in adverts):
+        return True
+    # Keep previously published bytes while a withdrawn projection references
+    # them, even if its private draft has since been edited.
+    return any(projected(session, ad, asset) for ad in adverts)
 
 
 def delete_bytes(asset, *, permanent=False):
@@ -301,3 +324,89 @@ def preview(asset_id: str, kind: str, claims=Depends(require_claims), session=De
     user = verify_owner(claims)
     guard_account_write(session, user)
     return rendition(owned(session, user, asset_id), kind)
+
+
+@router.get("/v1/media/{asset_id}/{kind}")
+def public_media(asset_id: str, kind: str, session=Depends(get_session)):
+    row = session.get(MediaAsset, asset_id)
+    if row and row.state == "ready":
+        adverts = session.scalars(select(Advert).where(Advert.user_id == row.user_id,
+            Advert.state.in_(("published", "withdrawn"))))
+        if any(projected(session, advert, row, visible=True) for advert in adverts):
+            return rendition(row, kind)
+    raise HTTPException(404, "Media not found")
+
+
+def cleanup(session, cutoff=None):
+    from .models import AccountClosure
+    cutoff = cutoff or now() - timedelta(hours=24)
+    # Digest is bound before any storage write; a deleted open-account row
+    # retains it until both permanent fences have been confirmed. Closed rows
+    # scrub digest immediately, so the account tombstone selects them instead.
+    pending_delete = (MediaAsset.state == "deleted") & or_(
+        MediaAsset.digest.is_not(None), MediaAsset.user_id.in_(select(AccountClosure.user_id)))
+    eligible = or_((MediaAsset.created_at < cutoff) & (MediaAsset.state != "deleted"), pending_delete)
+    users = session.scalars(select(MediaAsset.user_id).where(eligible).distinct()).all()
+    session.rollback()
+    for user in users:
+        def lock_account():
+            try:
+                guard_account_write(session, user)
+            except HTTPException as exc:
+                if exc.status_code != 401:
+                    raise
+                session.rollback()
+                guard_account_write(session, user, closing=True)
+        lock_account()
+        closed = session.get(AccountClosure, user) is not None
+        rows = list(session.scalars(select(MediaAsset).where(MediaAsset.user_id == user, eligible)))
+        ids = []
+        for row in rows:
+            if closed or row.state == "deleted" or not referenced(session, row):
+                row.state = "deleted"
+                ids.append(row.id)
+        session.commit()
+        lock_account()
+        closed = session.get(AccountClosure, user) is not None
+        for asset_id in ids:
+            row = session.get(MediaAsset, asset_id, populate_existing=True)
+            if not row:
+                continue
+            if closed or row.digest is not None:
+                delete_bytes(row, permanent=True)
+            if closed:
+                session.delete(row)
+            else:
+                row.digest = None
+        session.commit()
+
+
+def main():
+    import argparse
+    import signal
+    import threading
+    from .db import Session
+    parser = argparse.ArgumentParser(description="Remove expired unattached media")
+    parser.add_argument("--loop", action="store_true")
+    parser.add_argument("--interval", type=int, default=3600)
+    args = parser.parse_args()
+    if not 60 <= args.interval <= 86400:
+        parser.error("interval must be between 60 and 86400 seconds")
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    while True:
+        try:
+            with Session() as session:
+                cleanup(session)
+        except Exception:
+            if not args.loop:
+                raise
+            import logging
+            logging.exception("Media cleanup failed; retrying")
+        if not args.loop or stop.wait(args.interval):
+            break
+
+
+if __name__ == "__main__":
+    main()

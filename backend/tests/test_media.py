@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from realtoruch.api import app, erase_account_data
 from realtoruch.db import Base, get_session
+from realtoruch.media import cleanup
 from realtoruch.models import MediaAsset, now
 from realtoruch.security import require_claims
 from realtoruch.settings import get_settings
@@ -356,3 +357,312 @@ def test_closed_account_cannot_manage_media(media_client):
     assert client.get(item["thumbnail_url"]).status_code == 401
     assert client.delete("/v1/me/media/" + item["id"]).status_code == 401
     assert upload(client, "after-closure").status_code == 401
+
+
+def test_auth_ownership_cleanup_and_erasure(media_client):
+    client, factory, path = media_client
+    item = upload(client, "owned").json()
+    app.dependency_overrides[require_claims] = lambda: {"sub": "other", "email_verified": True}
+    assert client.delete("/v1/me/media/" + item["id"]).status_code == 403
+    app.dependency_overrides[require_claims] = lambda: {"sub": "one", "email_verified": False}
+    assert upload(client, "unverified").status_code == 403
+    app.dependency_overrides[require_claims] = lambda: {"sub": "one", "email_verified": True}
+    with factory.begin() as session:
+        session.get(MediaAsset, item["id"]).created_at = now() - timedelta(hours=25)
+    with factory() as session:
+        cleanup(session)
+        cleanup(session)
+    assert client.get("/v1/me/media/" + item["id"]).json()["state"] == "deleted"
+    second = upload(client, "erase").json()
+    with factory() as session:
+        assert erase_account_data("one", session) == {"erased": True}
+    assert client.get("/v1/me/media/" + second["id"]).status_code == 401
+    assert not list((path / "objects").rglob("a"))
+
+
+def test_attach_publish_withdraw_and_owner_scope(media_client):
+    import time
+    import jwt
+    client, factory, _ = media_client
+    app.state.validate_claims = lambda payload: {**payload, "email_verified": True}
+    settings = get_settings()
+    token = jwt.encode({"sub": "one", "iss": settings.jwt_issuer, "aud": "realtoruch", "iat": int(time.time()), "exp": int(time.time()) + 60}, settings.jwt_secret, algorithm="HS256")
+    client.headers["Authorization"] = "Bearer " + token
+    try:
+        assert client.put("/v1/me/advertiser", json={"name": "Local owner", "kind": "private"}).status_code == 200
+        item = upload(client, "photo").json()
+        draft = {"title": "Bright apartment", "description": "A pleasant bright apartment with a balcony.",
+                 "city": "Kraków", "address": "Testowa 18", "lat": 50.05, "lon": 19.95,
+                 "area_m2": 55, "rooms": 2, "rent_pln": 4500, "media_ids": [item["id"]]}
+        response = client.post("/v1/me/adverts", json=draft)
+        assert response.status_code == 201, response.text
+        ad = response.json()
+        assert client.delete("/v1/me/media/" + item["id"]).status_code == 409
+        response = client.post("/v1/me/adverts/" + ad["id"] + "/publish", json={"version": ad["version"]})
+        assert response.status_code == 200, response.text
+        ad = response.json()
+        assert client.get("/v1/media/" + item["id"] + "/display").status_code == 200
+        assert client.get("/v1/listings/" + ad["listing_id"]).json()["images"][0].endswith("/display")
+        response = client.post("/v1/me/adverts/" + ad["id"] + "/withdraw", json={"version": ad["version"]})
+        assert response.status_code == 200
+        assert client.get("/v1/media/" + item["id"] + "/display").status_code == 200
+        assert client.get(item["thumbnail_url"]).status_code == 200
+        assert client.post("/v1/me/adverts", json={**draft, "media_ids": [item["id"]] * 31}).status_code == 422
+        app.dependency_overrides[require_claims] = lambda: {"sub": "other", "email_verified": True}
+        assert client.delete("/v1/me/media/" + item["id"]).status_code == 403
+    finally:
+        del app.state.validate_claims
+
+
+def test_cancel_and_erasure_fence_inflight_processing(media_client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    import realtoruch.media as media
+    client, factory, path = media_client
+    original = media.decode
+    entered, release = Event(), Event()
+    def paused(data, mime):
+        entered.set()
+        assert release.wait(10)
+        return original(data, mime)
+    monkeypatch.setattr(media, "decode", paused)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(upload, client, "race")
+        assert entered.wait(10)
+        assert client.delete("/v1/me/media/by-key/race").status_code == 200
+        release.set()
+        assert future.result(timeout=10).status_code == 409
+    assert not list((path / "objects").rglob("a"))
+    entered.clear()
+    release.clear()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(upload, client, "erase-race")
+        assert entered.wait(10)
+        with factory() as session:
+            assert erase_account_data("one", session) == {"erased": True}
+        release.set()
+        assert future.result(timeout=10).status_code == 401
+    assert not list((path / "objects").rglob("a"))
+
+
+def test_storage_failure_erasure_is_retryable(media_client, monkeypatch):
+    import realtoruch.media as media
+    import realtoruch.api as api
+    client, factory, path = media_client
+    item = upload(client, "failure").json()
+    original = media.delete_bytes
+    def fail(_, **kwargs):
+        raise OSError("injected storage failure")
+    monkeypatch.setattr(api, "delete_bytes", fail, raising=False)
+    # erase_account_data imports the helper dynamically.
+    monkeypatch.setattr(media, "delete_bytes", fail)
+    with factory() as session:
+        with pytest.raises(OSError):
+            erase_account_data("one", session)
+    with factory() as session:
+        assert session.get(MediaAsset, item["id"]).state == "deleted"
+    assert client.get("/v1/media/" + item["id"] + "/display").status_code == 404
+    monkeypatch.setattr(media, "delete_bytes", original)
+    with factory() as session:
+        assert erase_account_data("one", session) == {"erased": True}
+    assert not list((path / "objects").rglob("a"))
+
+
+def test_fake_gcs_route_lifecycle(media_client, monkeypatch):
+    from realtoruch import media
+    from realtoruch.media_storage import GCSStorage
+    class Blob:
+        def __init__(self, objects, key): self.objects, self.key = objects, key
+        def upload_from_string(self, data, **kwargs):
+            assert kwargs["if_generation_match"] == 0 and self.key not in self.objects
+            self.objects[self.key] = data
+        def download_as_bytes(self, **kwargs): return self.objects[self.key]
+        def reload(self, **kwargs):
+            if self.key not in self.objects:
+                error = Exception()
+                error.code = 404
+                raise error
+            self.generation = 1
+        def delete(self, **kwargs):
+            assert kwargs["if_generation_match"] == 1
+            if self.key not in self.objects:
+                error = Exception()
+                error.code = 404
+                raise error
+            del self.objects[self.key]
+    class Bucket:
+        def __init__(self): self.objects = {}
+        def blob(self, key): return Blob(self.objects, key)
+    bucket = Bucket()
+    monkeypatch.setattr(media, "storage", lambda: GCSStorage(bucket))
+    test_attach_publish_withdraw_and_owner_scope(media_client)
+    assert len(bucket.objects) == 2
+
+
+def test_delayed_gcs_put_is_fenced_after_erasure(media_client, monkeypatch):
+    from realtoruch import media
+    from realtoruch.media_storage import GCSStorage
+    client, factory, _ = media_client
+    class RemoteError(Exception):
+        def __init__(self, code): self.code = code
+    class Blob:
+        def __init__(self, bucket, key): self.bucket, self.key = bucket, key
+        def upload_from_string(self, data, if_generation_match, **kwargs):
+            if not data and self.bucket.fail_fence:
+                self.bucket.fail_fence = False
+                raise TimeoutError("fence outcome unknown")
+            if data:
+                self.bucket.delayed = (self.key, data, if_generation_match)
+                raise TimeoutError("accepted, response lost")
+            existing = self.bucket.objects.get(self.key)
+            generation = existing[0] if existing else 0
+            if generation != if_generation_match: raise RemoteError(412)
+            self.bucket.next_generation += 1
+            self.bucket.objects[self.key] = (self.bucket.next_generation, data)
+        def reload(self, **kwargs):
+            if self.key not in self.bucket.objects: raise RemoteError(404)
+            self.generation, data = self.bucket.objects[self.key]
+            self.size = len(data)
+        def delete(self, if_generation_match, **kwargs):
+            if self.key not in self.bucket.objects: raise RemoteError(404)
+            if self.bucket.objects[self.key][0] != if_generation_match: raise RemoteError(412)
+            del self.bucket.objects[self.key]
+    class Bucket:
+        def __init__(self): self.objects, self.delayed, self.next_generation, self.fail_fence = {}, None, 0, True
+        def blob(self, key): return Blob(self, key)
+        def complete_delayed(self):
+            key, data, match = self.delayed
+            existing = self.objects.get(key)
+            if (existing[0] if existing else 0) != match:
+                raise RemoteError(412)
+            self.next_generation += 1
+            self.objects[key] = (self.next_generation, data)
+    bucket = Bucket()
+    monkeypatch.setattr(media, "storage", lambda: GCSStorage(bucket))
+    with pytest.raises(TimeoutError):
+        upload(client, "private-client-key")
+    with factory() as session, pytest.raises(TimeoutError):
+        erase_account_data("one", session)
+    with factory() as session:
+        row = session.query(MediaAsset).one()
+        asset_id = row.id
+        assert row.state == "deleted" and row.idempotency_key == "!" + row.id
+        assert row.description == "" and row.digest is None
+    with factory() as session:
+        assert erase_account_data("one", session) == {"erased": True}
+    key, data, generation_match = bucket.delayed
+    assert generation_match == 0 and bucket.objects[key][1] == b""
+    # The delayed create now fails its generation precondition.
+    with pytest.raises(RemoteError) as delayed:
+        bucket.complete_delayed()
+    assert delayed.value.code == 412 and bucket.objects[key][1] == b""
+    assert client.get("/v1/media/" + asset_id + "/display").status_code == 404
+    with factory() as session:
+        cleanup(session)
+        cleanup(session)
+    assert all(value == b"" for _, value in bucket.objects.values())
+    with factory() as session:
+        assert session.get(MediaAsset, asset_id) is None
+
+
+def test_failed_owner_deletion_is_retried_once(media_client, monkeypatch):
+    from realtoruch import media
+    client, factory, _ = media_client
+    asset = upload(client, "retry-cleanup").json()
+    original = media.storage()
+    class FlakyStorage:
+        fail, calls = True, 0
+        def fence(self, key):
+            self.calls += 1
+            if self.fail:
+                self.fail = False
+                raise OSError("injected failure")
+            original.fence(key)
+        def __getattr__(self, name): return getattr(original, name)
+    flaky = FlakyStorage()
+    monkeypatch.setattr(media, "storage", lambda: flaky)
+    with pytest.raises(OSError):
+        client.delete("/v1/me/media/" + asset["id"])
+    with factory() as session:
+        row = session.get(MediaAsset, asset["id"])
+        assert row.state == "deleted" and row.digest is not None
+        cleanup(session)
+        assert session.get(MediaAsset, asset["id"]).digest is None
+        calls = flaky.calls
+        cleanup(session)
+    assert flaky.calls == calls == 3
+
+
+def test_attachment_validation_and_published_snapshot_visibility(media_client):
+    import time
+    import jwt
+    from realtoruch.models import Advert, Listing
+    client, factory, _ = media_client
+    settings = get_settings()
+    app.state.validate_claims = lambda payload: {**payload, "email_verified": True}
+    def token(user):
+        return jwt.encode({"sub": user, "iss": settings.jwt_issuer, "aud": "realtoruch", "iat": int(time.time()), "exp": int(time.time()) + 120}, settings.jwt_secret, algorithm="HS256")
+    client.headers["Authorization"] = "Bearer " + token("one")
+    try:
+        assert client.put("/v1/me/advertiser", json={"name": "Test owner", "kind": "private"}).status_code == 200
+        published = upload(client, "published").json()
+        later = upload(client, "later").json()
+        foreign, pending, deleted = [str(uuid4()) for _ in range(3)]
+        with factory.begin() as session:
+            session.add_all([
+                MediaAsset(id=foreign, user_id="other", idempotency_key="x", state="ready", description=""),
+                MediaAsset(id=pending, user_id="one", idempotency_key="p", state="pending", description=""),
+                MediaAsset(id=deleted, user_id="one", idempotency_key="d", state="deleted", description=""),
+            ])
+        draft = {"title": "Synthetic home", "description": "A suitable synthetic listing for this test.",
+                 "city": "Kraków", "address": "Testowa 18", "lat": 50.05, "lon": 19.95,
+                 "area_m2": 55, "rooms": 2, "rent_pln": 4500, "media_ids": [published["id"]]}
+        ad = client.post("/v1/me/adverts", json=draft).json()
+        assert client.get("/v1/media/" + published["id"] + "/display").status_code == 404
+        for invalid, status in [(foreign, 403), (pending, 422), (deleted, 422)]:
+            response = client.put("/v1/me/adverts/" + ad["id"], json={"version": ad["version"], "advert": {**draft, "media_ids": [invalid]}})
+            assert response.status_code == status
+            with factory() as session:
+                stored = session.get(Advert, ad["id"])
+                assert stored.version == ad["version"] and stored.draft["media_ids"] == [published["id"]]
+        ad = client.post("/v1/me/adverts/" + ad["id"] + "/publish", json={"version": ad["version"]}).json()
+        url = "/v1/media/" + published["id"] + "/display"
+        assert client.get(url).status_code == 200
+        client.headers["Authorization"] = "Bearer " + token("renter")
+        assert client.put("/v1/me/favorites/" + ad["listing_id"]).status_code == 200
+        client.headers["Authorization"] = "Bearer " + token("one")
+        ad = client.post("/v1/me/adverts/" + ad["id"] + "/withdraw", json={"version": ad["version"]}).json()
+        client.headers["Authorization"] = "Bearer " + token("renter")
+        saved = client.get("/v1/me/favorites").json()["items"]
+        assert saved[0]["status"] == "inactive" and saved[0]["images"][0].endswith(url)
+        assert client.get("/v1/listings/" + ad["listing_id"]).status_code == 200
+        assert client.get(url).status_code == 200
+        client.headers["Authorization"] = "Bearer " + token("one")
+        changed = client.put("/v1/me/adverts/" + ad["id"], json={"version": ad["version"], "advert": {**draft, "media_ids": [later["id"]]}})
+        assert changed.status_code == 200
+        assert client.get("/v1/media/" + later["id"] + "/display").status_code == 404
+        # A different source contaminating the canonical image list cannot
+        # publish a media ID absent from this owner's published projection.
+        with factory.begin() as session:
+            listing = session.get(Listing, ad["listing_id"])
+            original_images = list(listing.images)
+            listing.images = [*original_images, settings.media_public_base_url.rstrip("/") + "/v1/media/" + later["id"] + "/display"]
+        assert client.get("/v1/media/" + later["id"] + "/display").status_code == 404
+        with factory.begin() as session:
+            session.get(Listing, ad["listing_id"]).images = original_images
+        assert client.get(url).status_code == 200
+        with factory.begin() as session:
+            session.get(MediaAsset, published["id"]).created_at = now() - timedelta(hours=25)
+        with factory() as session:
+            cleanup(session)
+        assert client.get(url).status_code == 200
+        assert client.delete("/v1/me/media/" + published["id"]).status_code == 409
+        with factory.begin() as session:
+            session.get(Listing, ad["listing_id"]).hidden = True
+        assert client.get(url).status_code == 404
+        assert client.get("/v1/listings/" + ad["listing_id"]).status_code == 404
+        with factory() as session:
+            assert erase_account_data("one", session) == {"erased": True}
+        assert client.get(url).status_code == 404
+    finally:
+        del app.state.validate_claims

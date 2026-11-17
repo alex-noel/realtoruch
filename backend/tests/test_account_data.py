@@ -403,3 +403,19 @@ def test_cleanup_scrubs_own_advert_and_conversation(auth_client, client, session
     assert source.data["address"] == "" and source.data["description"] == "" and source.data["images"] == []
     home = session.get(Listing, advert["listing_id"])
     assert home.status == "inactive" and home.address == ""
+
+
+def test_media_export_is_owner_scoped_and_excludes_internal_fields(session):
+    import json
+    from realtoruch.models import MediaAsset
+    session.add_all([
+        MediaAsset(id="own", user_id="owner", idempotency_key="private-key", digest="private-digest", state="ready", description="My photo"),
+        MediaAsset(id="deleted", user_id="owner", idempotency_key="tombstone", state="deleted", description="deleted"),
+        MediaAsset(id="foreign", user_id="other", idempotency_key="other-key", state="ready", description="Other photo"),
+    ])
+    session.commit()
+    raw = export_bytes(session, "owner", "owner@example.test")
+    media = json.loads(raw)["media"]
+    assert len(media) == 1 and media[0]["id"] == "own" and media[0]["description"] == "My photo"
+    assert set(media[0]) == {"id", "state", "description", "created_at"}
+    assert b"private-key" not in raw and b"private-digest" not in raw and b"Other photo" not in raw

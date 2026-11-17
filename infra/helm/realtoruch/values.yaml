@@ -18,6 +18,10 @@ collector:
   enabled: false
 retention:
   schedule: "30 2 * * *"
+mediaCleanup:
+  # Enable only after the API's private GCS storage and IAM access are configured.
+  enabled: false
+  schedule: "15 * * * *"
 sources:
   sources: []
 network:
