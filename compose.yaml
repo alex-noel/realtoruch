@@ -14,7 +14,7 @@ x-service: &service
     SEARCH_SERVICE_URL: http://search:8000
     AUTH_SERVICE_URL: http://auth:8000
     API_BASE_URL: http://api:8000
-    MEDIA_STORAGE_BACKEND: ${MEDIA_STORAGE_BACKEND:-disabled}
+    MEDIA_STORAGE_BACKEND: ${MEDIA_STORAGE_BACKEND:-local}
     MEDIA_DIRECTORY: /var/lib/realtoruch/media
     MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-http://localhost:8000}
     CONNECTORS_CONFIG: /config/sources.json

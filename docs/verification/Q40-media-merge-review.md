@@ -30,3 +30,5 @@ Preliminary browser run01 passed2/2 before the additional withdrawal checks. Run
 ## Remaining acceptance
 
 Final clean integrated revision still requires full offline/service/web profiles, Q39 visual/cross-browser profiles, entry and warm-action budgets, native JavaScript exports and the external gate ledger. No external request, collection, provider send, deployment or push occurred in this task.
+
+Final local usability review: Q32 required disabled media until Q33/Q34 review. That review is now complete. Development launcher, development `.env.example` and Compose restore the existing local upload default, with an explicit disabled override; generic service defaults and production examples remain disabled. Private directories, cleanup, loopback bindings and production rejection of local storage remain in place.
