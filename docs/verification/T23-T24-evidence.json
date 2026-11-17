@@ -1,0 +1,139 @@
+{
+  "verified_date": "2026-11-17",
+  "timezone": "Europe/Warsaw",
+  "application_commit": "a7d550c16b359576e8ea3de2a5ff6d0f74d84efb",
+  "status": "VERIFIED_LOCAL",
+  "tasks": [
+    "T23",
+    "T24"
+  ],
+  "profiles": {
+    "offline": {
+      "status": "PASS",
+      "counts": {
+        "passed": 420,
+        "failed": 0,
+        "skipped": 133
+      },
+      "start_utc": "2026-11-17T14:36:27.719885+00:00",
+      "end_utc": "2026-11-17T14:37:07.947118+00:00",
+      "platform": {
+        "system": "macOS-15.7.7-arm64-arm-64bit",
+        "python": "3.12.9 (main, Feb  4 2025, 14:38:38) [Clang 16.0.0 (clang-1600.0.26.6)]",
+        "node": "v24.6.0",
+        "git_revision": "a7d550c16b359576e8ea3de2a5ff6d0f74d84efb",
+        "worktree_dirty": false
+      },
+      "private_artifact": ".local/verification/T01/nov17-media-offline2/report.json"
+    },
+    "services": {
+      "status": "PASS",
+      "counts": {
+        "passed": 275,
+        "failed": 0,
+        "skipped": 0
+      },
+      "start_utc": "2026-11-17T14:36:23.608624+00:00",
+      "end_utc": "2026-11-17T14:38:51.166101+00:00",
+      "platform": {
+        "system": "macOS-15.7.7-arm64-arm-64bit",
+        "python": "3.12.9 (main, Feb  4 2025, 14:38:38) [Clang 16.0.0 (clang-1600.0.26.6)]",
+        "node": "v24.6.0",
+        "git_revision": "a7d550c16b359576e8ea3de2a5ff6d0f74d84efb",
+        "worktree_dirty": false
+      },
+      "private_artifact": ".local/verification/T01/nov17-media-services1/report.json"
+    },
+    "web": {
+      "status": "PASS",
+      "counts": {
+        "passed": 38,
+        "failed": 0,
+        "skipped": 0
+      },
+      "start_utc": "2026-11-17T14:31:46.017654+00:00",
+      "end_utc": "2026-11-17T14:34:41.098819+00:00",
+      "platform": {
+        "system": "macOS-15.7.7-arm64-arm-64bit",
+        "python": "3.12.9 (main, Feb  4 2025, 14:38:38) [Clang 16.0.0 (clang-1600.0.26.6)]",
+        "node": "v24.6.0",
+        "git_revision": "e00d7a28b78394b139adee43b4e7ca69b88e8a28",
+        "worktree_dirty": false
+      },
+      "private_artifact": ".local/verification/T01/nov17-media-web1/report.json"
+    }
+  },
+  "frontend_unit": {
+    "passed": 131,
+    "failed": 0,
+    "skipped": 0,
+    "typecheck": "PASS"
+  },
+  "final_photo_browser": {
+    "status": "passed",
+    "counts": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "native_exports": {
+    "ios": "PASS_JS_EXPORT",
+    "android": "PASS_JS_EXPORT",
+    "installed_device": "NOT_RUN",
+    "private_artifact": ".local/verification/T24/nov17-native-final/metadata.json"
+  },
+  "decoder_memory": {
+    "scope": "Fresh macOS arm64 Python3.12.9/Pillow13 processes, generated20MP JPEGs; not pod capacity",
+    "two_concurrent_upright_peak_mib": 876.6,
+    "one_orientation6_peak_mib": 522.2,
+    "accepted_process_slots": 1,
+    "configured_api_pod_limit_mib": 768
+  },
+  "audit": {
+    "status": "PASS",
+    "findings": [
+      {
+        "ecosystem": "npm",
+        "package": "glob",
+        "version": "13.0.7",
+        "advisory": "GHSA-3g3m-2fjr-6pw4",
+        "severity": "moderate",
+        "new": false,
+        "blocked": false,
+        "exception": null
+      },
+      {
+        "ecosystem": "npm",
+        "package": "minimatch",
+        "version": "10.2.6",
+        "advisory": "GHSA-g3hv-75wg-m249",
+        "severity": "moderate",
+        "new": false,
+        "blocked": false,
+        "exception": null
+      }
+    ]
+  },
+  "configuration": {
+    "compose": "PASS",
+    "helm_lint": "PASS",
+    "optional_media_cleanup_render": "PASS",
+    "helm_diagnostic_tests": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cloud_apply": "NOT_RUN"
+  },
+  "evidence_compatibility": "Complete browser/audit profiles used e00d7a2; final a7d550c has identical frontend and dependency locks, plus backend deletion-fence fixes verified in final offline/service/targeted browser profiles.",
+  "open_gates": [
+    "Installed iOS/Android devices",
+    "Live GCS IAM, generations, lifecycle and backups",
+    "External email delivery",
+    "72-hour current-pin collection",
+    "OLX permitted automated access",
+    "Cloud deployment and operational SLA"
+  ],
+  "push_performed": false
+}

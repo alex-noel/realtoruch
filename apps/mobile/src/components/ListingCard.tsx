@@ -19,6 +19,8 @@ import ShieldAlert from "lucide-react-native/icons/shield-alert";
 import { Listing } from "../types";
 import { c, s } from "../theme";
 import { Button, Feedback, money } from "./UI";
+import { API_URL } from "../api";
+import { ownedPhotoThumbnail } from "./photoUrls";
 
 type ListingPhotoProps = {
   uri: string;
@@ -157,6 +159,7 @@ export function ListingCard({
   onCompare: () => void;
 }) {
   const compact = useWindowDimensions().width < 620;
+  const thumbnail = home.images[0] ? ownedPhotoThumbnail(home.images[0], API_URL) : null;
   const saving = favoriteAction?.state === "pending";
   const pressFavorite = useFavoritePress(favoriteAction, onSave);
   return (
@@ -183,7 +186,7 @@ export function ListingCard({
       >
         {home.images[0] ? (
           <ListingPhoto
-            uri={home.images[0]}
+            uri={thumbnail ?? home.images[0]}
             alt={
               home.is_demo
                 ? "Illustrative apartment interior"

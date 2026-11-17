@@ -10,6 +10,7 @@ ENV REALTORUCH_SQL_DIR=/app/infra/sql
 COPY config /config
 ENV CONNECTORS_CONFIG=/config/sources.json
 RUN useradd --uid 10001 --create-home app
+RUN mkdir -p /var/lib/realtoruch/media && chown app:app /var/lib/realtoruch/media && chmod 700 /var/lib/realtoruch/media
 USER app
 EXPOSE 8000
 CMD ["python", "-m", "realtoruch.runtime", "uvicorn", "realtoruch.api:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
