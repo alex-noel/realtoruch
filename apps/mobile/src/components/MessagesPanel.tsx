@@ -180,6 +180,7 @@ export function MessagesPanel({
   scroll,
   onViewportChange,
   stop,
+  focusComposer,
 }: {
   model: InboxModel;
   contact?: Contact;
@@ -187,6 +188,7 @@ export function MessagesPanel({
   scroll: Scroll;
   onViewportChange: Call;
   stop: Call;
+  focusComposer: Call;
 }) {
   const [description, setDescription] = useState("");
   const composer = useRef<ComponentRef<typeof View>>(null);
@@ -212,6 +214,11 @@ export function MessagesPanel({
       scroll.current === viewport && composer.current === destination && composerInput.current === input;
     jumpToComposerSafely(destination, content, viewport, input, current);
   }
+
+  useLayoutEffect(() => {
+    focusComposer.current = jumpToComposer;
+    return () => { focusComposer.current = null; };
+  });
 
   useLayoutEffect(() => {
     model.attach();
@@ -347,7 +354,7 @@ export function MessagesPanel({
           {thread.blocked && <Status>This conversation is blocked.</Status>}
           {thread.blocked && !!body && (
             <Status>
-              Your unsent draft is saved while this conversation is blocked.
+              Your unsent draft stays here while this rental desk is open, even while the conversation is blocked.
             </Status>
           )}
           {(!thread.blocked || thread.can_unblock) && (
@@ -389,6 +396,7 @@ export function MessagesPanel({
               style={[s.input, { minHeight: 100, textAlignVertical: "top" }]}
             />
           </View>
+          <Text style={s.muted}>Unsent drafts stay here only while this rental desk is open.</Text>
           {body.length > 4000 && (
             <Status>Use no more than 4,000 characters.</Status>
           )}
@@ -458,10 +466,7 @@ export function MessagesPanel({
               {!!item.listing_id && (
                 <Button
                   outline
-                  onPress={() => {
-                    model.stop();
-                    onOpenHome(item.listing_id!);
-                  }}
+                  onPress={() => onOpenHome(item.listing_id!)}
                 >
                   View home
                 </Button>

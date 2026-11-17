@@ -385,7 +385,7 @@ export function AdvertDesk({
               </Button>
             )}
             {advert.listing_id && !advert.hidden && (
-              <Button outline onPress={() => requestExit(() => onOpenHome(advert.listing_id!))}>
+              <Button outline onPress={() => onOpenHome(advert.listing_id!)}>
                 View home
               </Button>
             )}

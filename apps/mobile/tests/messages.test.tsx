@@ -277,7 +277,7 @@ describe("messages inbox behavior", () => {
     expect(model.snapshot().body).toBe("Synthetic reply");
     lost.reject(Error("Response lost after commit"));
     await first;
-    expect(model.snapshot().errors.send).toMatch(/draft is saved/);
+    expect(model.snapshot().errors.send).toMatch(/only|while this rental desk is open/);
     expect(model.snapshot().body).toBe("Synthetic reply");
     await model.send();
     expect(api.reply.mock.calls.map(([, , clientId]) => clientId)).toEqual([
@@ -321,6 +321,36 @@ describe("messages inbox behavior", () => {
     model.edit("Edited draft A");
     await model.send();
     expect(api.reply.mock.calls[2][2]).not.toBe(api.reply.mock.calls[3][2]);
+  });
+
+  it("tracks drafts across recipients and clears private state on account reset", async () => {
+    const api = fixture(); const late = deferred<Message>();
+    api.reply.mockReturnValue(late.promise);
+    api.thread.mockImplementation(async id => page(id, []));
+    const model = mount(api, target("A")); await settle();
+    model.edit("Private A"); const pending = model.send();
+    model.select(target("B")); await settle(); model.edit("Private B");
+    expect(model.hasDrafts()).toBe(true);
+    model.select(null); expect(model.snapshot().body).toBe("");
+    expect(model.hasDrafts()).toBe(true);
+    model.clearPrivate();
+    expect(model.hasDrafts()).toBe(false);
+    expect(model.snapshot()).toMatchObject({ active: false, target: null, thread: null, inbox: null, body: "" });
+    late.resolve(numbered(1)); await pending; await settle();
+    expect(model.snapshot().body).toBe("");
+    model.attach(); model.setForeground(true); model.select(target("A")); await settle();
+    expect(model.snapshot().body).toBe("");
+  });
+  it("discards all recipient drafts without changing message retry identity until discard", async () => {
+    const api = fixture(); api.thread.mockImplementation(async id => page(id, []));
+    api.reply.mockRejectedValue(Error("offline"));
+    const model = mount(api, target("A")); await settle();
+    model.edit("Draft A"); await model.send();
+    model.select(target("B")); await settle(); model.edit("Draft B");
+    model.select(target("A")); await settle(); await model.send();
+    expect(api.reply.mock.calls[0][2]).toBe(api.reply.mock.calls[1][2]);
+    model.discardDrafts(); expect(model.hasDrafts()).toBe(false); expect(model.snapshot().body).toBe("");
+    model.select(target("B")); await settle(); expect(model.snapshot().body).toBe("");
   });
 
   it("pauses and resumes one poll timer across five duplicate visibility notifications", async () => {
