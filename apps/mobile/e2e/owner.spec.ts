@@ -1,5 +1,6 @@
 import { test, expect, BrowserContext, Page } from '@playwright/test';
 import { readdir, readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
 async function blockOutside(context: BrowserContext, blocked: string[]) {
@@ -434,6 +435,29 @@ test('owner publishes, edits, messages a renter and withdraws @cross-browser', a
     await visitor.reload({ waitUntil: 'commit' });
     await discovery;
     await expect(visitor.getByRole('button', { name: title, exact: true })).toHaveCount(0);
+    // Q40: keep the real owner journey through appeal persistence. Only the
+    // initial hidden condition is a run-isolated fixture; no API is mocked.
+    const hidden = JSON.parse(execFileSync(process.env.E2E_PYTHON!, [join(__dirname, 'fixture.py'), 'hide-owner', suffix], { encoding: 'utf8' }));
+    await page.bringToFront();
+    await page.getByRole('button', { name: 'Refresh adverts', exact: true }).click();
+    await expect(page.getByText('Hidden after moderation review. Publishing remains unavailable while hidden.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Review and publish', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Appeal a review', exact: true }).click();
+    await expect(page.getByRole('heading', { name: `Appeal for ${title}`, exact: true })).toBeVisible();
+    await page.getByLabel('WHY SHOULD THIS ADVERT BE RESTORED?').fill('This synthetic owner asks for a new review of the hidden advert.');
+    const appealUrl = `${process.env.E2E_API_URL}/v1/me/adverts/${hidden.advert_id}/appeal`;
+    const appealed = page.waitForResponse(response => response.url() === appealUrl && response.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Submit appeal', exact: true }).click();
+    expect((await appealed).status()).toBe(201);
+    await expect(page.getByText(`Appeal submitted for ${title}.`, { exact: true })).toBeVisible();
+    await expect(page.getByText('Review pending', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Appeal a review', exact: true })).toHaveCount(0);
+    const latest = page.waitForResponse(response => response.url() === `${process.env.E2E_API_URL}/v1/me/adverts` && response.request().method() === 'GET');
+    await page.getByRole('button', { name: 'Refresh adverts', exact: true }).click();
+    const ownerRows = (await (await latest).json()).items;
+    expect(ownerRows.find((item: { id: string }) => item.id === hidden.advert_id)).toMatchObject({ hidden: true, appeal_status: 'pending' });
+    await expect(page.getByText('Review pending', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Appeal a review', exact: true })).toHaveCount(0);
     expect(blocked).toEqual([]);
   } finally { await renter.close(); }
 });
