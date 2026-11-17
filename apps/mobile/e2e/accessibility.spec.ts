@@ -1066,8 +1066,9 @@ test("T20-TC01 primary screens and validation at normal and 200% text size", asy
           await expect(desk.getByText(/DRAFT ·/)).toBeVisible();
         } else {
           await button(desk, "Back to adverts").click();
+          await button(desk, "Discard changes").click();
         }
-        await reachable(button(desk, "Publish"));
+        await reachable(button(desk, "Review and publish"));
         await button(desk, "Messages").click();
         await button(desk, "Open conversation: Fixture conversation").click();
         const message = desk.getByLabel("YOUR MESSAGE");

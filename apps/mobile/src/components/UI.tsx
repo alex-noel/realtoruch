@@ -180,7 +180,7 @@ export function Field({
     [errorDescriptionId, helperId].filter(Boolean).join(" ") || undefined;
   const purpose = inputPurpose ?? autoComplete;
   return (
-    <View style={{ gap: 8, flex: 1, minWidth: 0 }}>
+    <View style={{ gap: 8, flex: 1, flexBasis: "auto", minWidth: 0 }}>
       <Text nativeID={labelId} style={s.label}>
         {label}
       </Text>

@@ -20,7 +20,7 @@ from realtoruch.auth import AuthSession, User
 from realtoruch.schemas import RawListing
 
 action, profile = sys.argv[1:]
-if action not in {'baseline', 'new', 'delist', 'relist', 'drop', 'state', 'boundaries', 'duplicate'} or profile not in {'desktop', 'mobile'}:
+if action not in {'baseline', 'new', 'delist', 'relist', 'drop', 'state', 'boundaries', 'duplicate'} or profile not in {'desktop', 'mobile', 'webkit', 'firefox'}:
     raise SystemExit('Invalid fixture action')
 prefix = 't18-' + profile
 if action == 'duplicate':
@@ -50,7 +50,7 @@ if action == 'state':
     raise SystemExit(0)
 base = dict(source='otodom', url='https://fixture.example.test/', title='T18 synthetic home ' + profile,
     description='Fictional local-only apartment', city='Kraków', region='małopolskie',
-    district='Krowodrza', address='Fixture 12/' + ('1' if profile == 'desktop' else '2'), area_m2=55, rooms=2, floor=2,
+    district='Krowodrza', address='Fixture 12/' + {'desktop': '1', 'mobile': '2', 'webkit': '3', 'firefox': '4'}[profile], area_m2=55, rooms=2, floor=2,
     fees_pln=500, commission_pln=0, advertiser_type='private', property_type='apartment',
     lat=50.0647, lon=19.945, phone='000000000', is_demo=True, images=[])
 with Session.begin() as session:
@@ -69,7 +69,7 @@ with Session.begin() as session:
         print(json.dumps(ids))
         raise SystemExit(0)
     if action == 'baseline':
-        result = ingest(session, RawListing(**{**base, 'address': 'Baseline 99/' + ('1' if profile == 'desktop' else '2'),
+        result = ingest(session, RawListing(**{**base, 'address': 'Baseline 99/' + {'desktop': '1', 'mobile': '2', 'webkit': '3', 'firefox': '4'}[profile],
             'title': 'T18 baseline ' + profile}, external_id=prefix + '-baseline', rent_pln=4700))
     else:
         for source in session.scalars(select(SourceListing).where(SourceListing.source == 'otodom',

@@ -19,7 +19,7 @@ function rentalMail(contents: string[]) {
   return contents.filter(content => !content.includes('Verify your Realtoruch email') && !content.includes('Confirm your Realtoruch email alerts'));
 }
 
-test('draw and save a filtered search against a synthetic baseline', async ({ page, context }, info) => {
+test('draw and save a filtered search against a synthetic baseline @cross-browser', async ({ page, context }, info) => {
   const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
   const blocked: string[] = [];
   await context.route('**/*', async route => {

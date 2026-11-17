@@ -25,7 +25,7 @@ test('export loads local catalog and opens sign-in', async ({ page, context }) =
   expect(blocked).toEqual([]);
 });
 
-test('synthetic account survives reload and signs out', async ({ page, context }, info) => {
+test('synthetic account survives reload and signs out @cross-browser', async ({ page, context }, info) => {
   const allowed = new Set((process.env.E2E_ALLOWED_PORTS || '').split(','));
   const blocked: string[] = [];
   await context.route('**/*', async route => {

@@ -28,7 +28,7 @@ def port():
         return sock.getsockname()[1]
 
 api, auth, web = [port() for _ in range(3)]
-env = {k: os.environ[k] for k in ('PATH', 'HOME', 'LANG', 'LC_ALL', 'SYSTEMROOT', 'PLAYWRIGHT_BROWSERS_PATH', 'VERIFY_BROWSER_ARTIFACTS_DIR') if k in os.environ}
+env = {k: os.environ[k] for k in ('PATH', 'HOME', 'LANG', 'LC_ALL', 'SYSTEMROOT', 'PLAYWRIGHT_BROWSERS_PATH', 'VERIFY_BROWSER_ARTIFACTS_DIR', 'QUALITY_CAPTURE', 'QUALITY_OVERLAP_FAULT', 'E2E_QUALITY_PROFILE') if k in os.environ}
 sys.path.insert(0, str(ROOT / 'backend'))
 from realtoruch.settings import Settings
 for key, field in Settings.model_fields.items():

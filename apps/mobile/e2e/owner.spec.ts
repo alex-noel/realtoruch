@@ -217,7 +217,7 @@ test.describe("moderation decisions", () => {
   });
 });
 
-test('owner publishes, edits, messages a renter and withdraws', async ({ page, context, browser }, info) => {
+test('owner publishes, edits, messages a renter and withdraws @cross-browser', async ({ page, context, browser }, info) => {
   const blocked: string[] = [];
   await blockOutside(context, blocked);
   const suffix = info.project.name;
