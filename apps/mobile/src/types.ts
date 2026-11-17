@@ -162,3 +162,6 @@ export const DEFAULT_FILTERS: Filters = {
   amenity: "",
   sort: "newest",
 };
+
+export type MediaMime = "image/jpeg" | "image/png" | "image/webp";
+export type MediaAsset = { id: string; state: "pending" | "ready" | "rejected" | "deleted"; description: string; display_url: string | null; thumbnail_url: string | null };

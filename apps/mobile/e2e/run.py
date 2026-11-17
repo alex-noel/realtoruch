@@ -45,6 +45,8 @@ env.update(PYTHONPATH=str(ROOT / 'backend'), DATABASE_URL=f'sqlite:///{dest}/ren
     EXPO_PUBLIC_MAP_TILE_URL=f'http://127.0.0.1:{web}/tile.png',
     CORS_ORIGINS=f'http://127.0.0.1:{web}', AUTH_SERVICE_URL=f'http://127.0.0.1:{auth}',
     API_BASE_URL=f'http://127.0.0.1:{api}', PUBLIC_WEB_URL=f'http://127.0.0.1:{web}',
+    MEDIA_STORAGE_BACKEND='local', MEDIA_DIRECTORY=str(dest / 'media'),
+    MEDIA_PUBLIC_BASE_URL=f'http://127.0.0.1:{api}', MEDIA_GCS_BUCKET='',
     E2E_WEB_URL=f'http://127.0.0.1:{web}', E2E_AUTH_URL=f'http://127.0.0.1:{auth}', E2E_API_URL=f'http://127.0.0.1:{api}', E2E_ALLOWED_PORTS=f'{web},{api},{auth}',
     E2E_OUTPUT_DIR=str(dest / 'playwright'), E2E_MAIL_DIR=str(dest / 'mail'),
     E2E_SUMMARY_FILE=str(dest / 'summary.json'))

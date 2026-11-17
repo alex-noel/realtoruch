@@ -11,7 +11,7 @@ import { ReviewDesk } from "./ReviewDesk";
 
 type Mode = "adverts" | "messages" | "review";
 type Contact = NonNullable<Listing["contact_adverts"]>[number];
-export type ExitGuard = { dirty: () => boolean; canSave: () => boolean; save: () => Promise<boolean>; focus: () => void; discard?: () => void };
+export type ExitGuard = { dirty: () => boolean; canSave: () => boolean; save: () => Promise<boolean>; focus: () => void; discard?: () => void; isBusy?: () => boolean };
 export type RegisterExitGuard = (guard: ExitGuard | null) => void;
 export type RequestExit = (action: () => void) => void;
 export default function MarketplaceDialog({
@@ -39,8 +39,9 @@ export default function MarketplaceDialog({
   const promptRef = useRef<React.ComponentRef<typeof View>>(null);
   const registerExitGuard = useCallback<RegisterExitGuard>((value) => { guard.current = value; }, []);
   const requestExit: RequestExit = (action) => {
-    if (busy || pendingRef.current) return;
+    if (busy || pendingRef.current || guard.current?.isBusy?.()) return;
     if (!guard.current?.dirty()) { action(); return; }
+    setError("");
     if (Platform.OS === "web" && document.activeElement instanceof HTMLElement) previousFocus.current = document.activeElement;
     pendingRef.current = action;
     setPendingExit(() => action);
@@ -70,6 +71,8 @@ export default function MarketplaceDialog({
       savingLeave.current = false;
       if (saved && mounted.current && pendingRef.current === action) {
         pendingRef.current = null; setPendingExit(null); action();
+      } else if (!saved && mounted.current && pendingRef.current === action) {
+        setError(current => current || "Could not finish saving. Keep editing to review the details.");
       }
     } finally { savingLeave.current = false; }
   }
