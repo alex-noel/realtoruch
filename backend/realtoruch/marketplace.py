@@ -223,7 +223,29 @@ def my_adverts(user_id=Depends(require_user), session=Depends(get_session)):
             )
         )
     )
-    return {"items": [{**advert_data(row), "hidden": row.listing_id in hidden} for row in rows]}
+    own_reports = session.scalars(
+        select(Report).where(
+            Report.user_id == user_id,
+            Report.listing_id.in_([row.listing_id for row in rows if row.listing_id]),
+        )
+    ).all()
+    pending = {report.listing_id for report in own_reports if report.status == "pending"}
+    resolved = {
+        report.listing_id
+        for report in own_reports
+        if report.status == "reviewed" and report.reason.startswith("Appeal: ")
+    }
+    return {
+        "items": [
+            {
+                **advert_data(row),
+                "hidden": row.listing_id in hidden,
+                "appeal_status": "pending" if row.listing_id in pending
+                else "resolved" if row.listing_id in resolved else None,
+            }
+            for row in rows
+        ]
+    }
 
 
 def validate_media(session, user_id, body):
