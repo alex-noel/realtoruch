@@ -449,4 +449,3 @@ describe("owner upload queue", () => {
     expect(transport.remove).not.toHaveBeenCalled();
   });
 });
-
