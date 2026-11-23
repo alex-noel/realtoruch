@@ -173,6 +173,7 @@ test('draw and save a filtered search against a synthetic baseline @cross-browse
   await page.screenshot({ path: info.outputPath('q22-email-disabled.png'), fullPage: true });
   expect(blocked).toEqual([]);
 
+  await page.getByRole('button', { name: 'Discover homes', exact: true }).click();
   await page.getByRole('button', { name: 'Save search', exact: true }).click();
   await page.getByLabel('SEARCH NAME').fill(`T18 keep ${info.project.name}`);
   await page.getByRole('button', { name: 'Save search', exact: true }).last().click();

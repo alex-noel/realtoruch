@@ -416,7 +416,8 @@ test("Q12 gallery bounds photo loading and keeps keyboard navigation inside its 
   await expect(thumbnails).toHaveCount(5);
   await expect(thumbnail(1)).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => [...requested].sort()).toEqual(urls.slice(0, 5).sort());
-  await expect(thumbnails.last()).toBeInViewport({ ratio: 1 });
+  await thumbnails.last().scrollIntoViewIfNeeded();
+  for (const item of await thumbnails.all()) await expect(item).toBeInViewport({ ratio: 1 });
   if (info.project.name === "mobile")
     await page.screenshot({ path: info.outputPath("q12-gallery-320px.png") });
 
@@ -546,8 +547,10 @@ test("Q17 rent history is readable for empty, single, flat and 24-month samples"
 
   await button(page, "Krowodrza").click();
   await expect(page.getByText("0.0%", { exact: true })).toBeVisible();
-  const flatY = await chart.locator("circle").evaluateAll(nodes => nodes.map(node => node.getAttribute("cy")));
-  expect(new Set(flatY).size).toBe(1);
+  await expect.poll(() => chart.locator("circle").evaluateAll(nodes => ({
+    points: nodes.length,
+    heights: new Set(nodes.map(node => node.getAttribute("cy"))).size,
+  }))).toEqual({ points: 24, heights: 1 });
   await button(page, "Stare Miasto").click();
   await expect(page.getByText(/No observations for this area yet/)).toBeVisible();
   await expect(chart).toHaveCount(0);

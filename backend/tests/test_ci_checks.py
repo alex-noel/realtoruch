@@ -1,4 +1,24 @@
+import subprocess
+
+import pytest
+
+from scripts import ci_checks
 from scripts.ci_checks import audit_findings, compare_findings
+
+
+def test_unavailable_previous_revision_uses_full_snapshot_for_ci_base(monkeypatch):
+    previous = "1" * 40
+
+    def missing_revision(*args):
+        assert args == ("rev-parse", "--verify", "--quiet", f"{previous}^{{commit}}")
+        raise subprocess.CalledProcessError(1, args)
+
+    monkeypatch.setattr(ci_checks, "git", missing_revision)
+    base = ci_checks.compare_base(previous, "master", scan_if_missing=True)
+    assert base == ci_checks.EMPTY_TREE
+    assert ci_checks.compare_base(base, "") == ci_checks.EMPTY_TREE
+    with pytest.raises(subprocess.CalledProcessError):
+        ci_checks.compare_base(previous, "")
 
 
 def test_existing_high_development_advisory_still_requires_an_exception():

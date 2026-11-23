@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 LOCKS = {
     "runtime/requirements.txt": "backend/requirements-runtime.lock",
     "dev/requirements.txt": "backend/requirements-dev.lock",
@@ -62,13 +63,22 @@ def check_boundary(base):
         raise ValueError("Verification connector configuration must keep every source disabled.")
 
 
-def compare_base(before, default_branch):
+def compare_base(before, default_branch, *, scan_if_missing=False):
     # A new branch push uses its fork point with the default branch.
     if before == "0" * 40:
         return git("merge-base", "HEAD", f"refs/remotes/origin/{default_branch}").decode().strip()
     if not re.fullmatch(r"[a-f0-9]{40}", before):
         raise ValueError("Expected a full Git comparison SHA.")
-    return git("rev-parse", "--verify", f"{before}^{{commit}}").decode().strip()
+    if before == EMPTY_TREE:
+        return before
+    try:
+        return git("rev-parse", "--verify", "--quiet", f"{before}^{{commit}}").decode().strip()
+    except subprocess.CalledProcessError as error:
+        if not scan_if_missing or error.returncode != 1:
+            raise
+        # A rewritten branch may leave its previous tip outside the checkout.
+        print("Previous revision is unavailable. Checking the full current tree.", file=sys.stderr)
+        return EMPTY_TREE
 
 
 def sanitized_report(profile, source):
@@ -217,7 +227,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "base":
-            print(compare_base(args.before, args.default_branch))
+            print(compare_base(args.before, args.default_branch, scan_if_missing=True))
         elif args.command == "boundary":
             check_boundary(compare_base(args.base, ""))
         elif args.command == "audit":
