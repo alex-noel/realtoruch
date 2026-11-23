@@ -97,7 +97,7 @@ If commits are part of the assignment, stage only intended changes and use:
 python3 scripts/commit.py --task Q09 -m "Q09 Describe the concrete change"
 ```
 
-Use the commit helper for amendments. Do not push without an explicit instruction.
+Use the helper for amendments. Do not push without an explicit instruction.
 
 ## Handoff and acceptance states
 
