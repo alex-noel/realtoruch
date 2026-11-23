@@ -169,11 +169,12 @@ def test_identity_review_on_versioned_postgres_schema(pg_engine, auth_client, re
             del app.state.validate_claims
 
 
-def test_auth_recovery_on_versioned_postgres_schema(pg_engine, monkeypatch):
+@pytest.fixture
+def pg_auth_client(pg_engine, monkeypatch):
+    import test_accounts
     from fastapi.testclient import TestClient
-    from realtoruch import auth, auth_jobs
-    from test_accounts import test_verification_reset_mail_retry_and_single_use as flow
 
+    from realtoruch import auth, auth_jobs
     from realtoruch.migrations import apply_postgres
     with pg_engine.begin() as connection:
         apply_postgres(connection, "auth")
@@ -181,12 +182,21 @@ def test_auth_recovery_on_versioned_postgres_schema(pg_engine, monkeypatch):
     monkeypatch.setattr(auth, "auth_engine", pg_engine)
     monkeypatch.setattr(auth, "AuthSession", factory)
     monkeypatch.setattr(auth_jobs, "AuthSession", factory)
-    # The reused behavioral test imports its factory directly.
-    import test_accounts
-
     monkeypatch.setattr(test_accounts, "AuthSession", factory)
     with TestClient(auth.app) as client:
-        flow(client, monkeypatch)
+        yield client
+
+
+def test_auth_recovery_on_versioned_postgres_schema(pg_auth_client, monkeypatch):
+    from test_accounts import test_verification_reset_mail_retry_and_single_use as flow
+
+    flow(pg_auth_client, monkeypatch)
+
+
+def test_auth_credential_changes_on_versioned_postgres_schema(pg_auth_client, monkeypatch):
+    from test_accounts import test_password_reset_rejects_sign_in_with_stale_credentials as flow
+
+    flow(pg_auth_client, monkeypatch)
 
 
 def test_registry_rejects_checksum_drift_and_rolls_back(pg_engine):

@@ -235,7 +235,7 @@ describe("incoming link delivery lifecycle", () => {
     const { lifecycle, handlers, setTime } = lifecycleFixture();
     const source = sourceFixture();
     const stop = subscribeToLinks(source.source, (url) =>
-      lifecycle.receive(parseIncomingLink(url, settings), "guest"),
+      lifecycle.receive(parseIncomingLink(url, settings), "authenticated"),
     );
     const coldUrl = `https://homes.example.test/#verify_account=${fixtureToken}`;
     source.initial.resolve(coldUrl);
@@ -406,6 +406,23 @@ describe("incoming link delivery lifecycle", () => {
     expect(handlers.consume).toHaveBeenCalledTimes(2);
   });
 
+  it("waits for session restore and sign-in before verifying an account email", async () => {
+    const { lifecycle, handlers } = lifecycleFixture();
+    const action = { type: "verify-account", token: fixtureToken } as const;
+    lifecycle.receive(action, "restoring");
+    expect(handlers.showLogin).not.toHaveBeenCalled();
+    expect(handlers.consume).not.toHaveBeenCalled();
+    lifecycle.resolveSession(false);
+    expect(handlers.showLogin).toHaveBeenCalledOnce();
+    expect(handlers.consume).not.toHaveBeenCalled();
+    lifecycle.resolveSession(true);
+    await vi.waitFor(() =>
+      expect(handlers.feedback).toHaveBeenLastCalledWith({ message: "Link applied." }),
+    );
+    lifecycle.receive(action, "authenticated");
+    expect(handlers.consume).toHaveBeenCalledExactlyOnceWith(action);
+  });
+
   it("fences an earlier navigation when a newer invalid link arrives", async () => {
     const { lifecycle, handlers } = lifecycleFixture();
     const pending = barrier<void>();
@@ -531,7 +548,6 @@ describe("link token requests", () => {
   }
 
   it.each([
-    ["verify-account", "/v1/auth/verify-email"],
     ["confirm-email", "/v1/notifications/email/confirm"],
     ["unsubscribe-email", "/v1/notifications/email/unsubscribe"],
   ] as const)("completes %s once after native session invalidation", async (type, path) => {
@@ -542,10 +558,8 @@ describe("link token requests", () => {
     const rejectRestore = await startRevokedRestore(restoreToken, linkFetch);
     let consumed: Promise<string> | undefined;
     handlers.consume.mockImplementation(({ type, token }) => {
-      const result = type === "verify-account"
-        ? api.verifyAccount(token)
-        : api.emailAlertLink(type, token);
-      return consumed = result.then(({ message }) => message);
+      if (type === "verify-account") throw new Error("Expected an alert link");
+      return consumed = api.emailAlertLink(type, token).then(({ message }) => message);
     });
 
     const action = { type, token: fixtureToken };
@@ -625,7 +639,7 @@ describe("link token requests", () => {
     let count = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => {
+      vi.fn(async (url: string, init: RequestInit) => {
         if (++count === 1)
           return response({
             access_token: "signed-in",
@@ -636,7 +650,9 @@ describe("link token requests", () => {
               email_verified: true,
             },
           });
-        return response({ detail: fixtureToken }, 401);
+        const verification = new URL(url).pathname === "/v1/auth/verify-email";
+        expect(new Headers(init.headers).get("Authorization")).toBe(verification ? "Bearer signed-in" : null);
+        return response({ detail: fixtureToken }, verification ? 400 : 401);
       }),
     );
     await api.signIn("fixture@example.test", "fixture-login-password", false);

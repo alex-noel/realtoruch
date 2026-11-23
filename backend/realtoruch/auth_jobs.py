@@ -59,8 +59,13 @@ def process_jobs(*, limit=20, sender=send_email, eraser=erase_rental_data):
                 message["Date"] = format_datetime(now())
                 action = "reset_password" if job.kind == "reset" else "verify_account"
                 message["Subject"] = ("Reset your Realtoruch password" if job.kind == "reset" else "Verify your Realtoruch email")
+                sign_in_note = (
+                    "Sign in to the account that requested this link to verify your email. "
+                    if job.kind == "verify" else ""
+                )
                 message.set_content(
                     f"{message['Subject']}:\n\n{settings.public_web_url.rstrip('/')}/#{action}={job.secret}\n\n"
+                    f"{sign_in_note}"
                     f"This link expires in {'30 minutes' if job.kind == 'reset' else 'one hour'}. "
                     "If you did not request this, ignore this email.\n"
                 )

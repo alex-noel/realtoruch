@@ -45,7 +45,7 @@ CI installs packages from public registries and pulls the public service test im
 
 The browser runner implements `test:e2e` and `make verify-web`. It expects Chromium via the locked Playwright CLI. It can pass the optional `VERIFY_BROWSER_ARTIFACTS_DIR` through the runner and stage synthetic failure screenshots at `screenshots/*.png` and synthetic traces at `traces/*.zip`. These files must come from isolated fixtures with synthetic credentials and data. Keep mail, databases, browser storage state, unfiltered network captures and raw test output outside those directories.
 
-### Runtime dependency audit
+### Dependency audit
 
 Use the workflow-pinned [OSV-Scanner v2.7.1 release](https://github.com/google/osv-scanner/releases/tag/v2.7.1) for the local audit. Download the asset for your platform, verify its SHA-256 against the upstream release, and pass its executable path to the helper.
 
@@ -53,7 +53,7 @@ Use the workflow-pinned [OSV-Scanner v2.7.1 release](https://github.com/google/o
 .venv/bin/python scripts/ci_checks.py audit "$BASE" "$OSV_SCANNER" "$AUDIT_REPORT"
 ```
 
-The scanner queries public advisories for the committed Python runtime and npm locks at both comparison revisions. The gate excludes npm development-only entries and matches findings by ecosystem, package, resolved version and advisory ID. New findings with CVSS ≥7 or an advisory severity of high or critical fail the check. Existing findings and findings with lower or unknown severity remain visible in the report. A scan error fails the job. The audit is limited to advisories available from its database at scan time.
+Pass `--working-tree` to audit local lock changes before committing. The scanner queries public advisories for the Python runtime, development, cloud, and Dataflow locks and the npm lock, including npm development dependencies. The report matches findings by ecosystem, package, resolved version, and advisory ID to indicate whether they are new relative to the base revision. Any current finding with CVSS ≥7 or an advisory severity of high or critical fails the check unless covered by a valid exception. A scan error or a lockfile that fails to yield packages also fails the job. The audit covers advisories available from its database at scan time.
 
 The repository maintainer reviews changes to `config/ci-audit-exceptions.json`. Each accepted exception names the exact `ecosystem`, `package`, `version`, and `advisory`, an accountable `owner`, an `expires` date in UTC (YYYY-MM-DD, inclusive), and a `reason`. An expired or invalid exception fails the audit. Remove exceptions after remediation. There are no approved exceptions at the introduction of this policy.
 

@@ -31,7 +31,8 @@ spec:
             - { name: xpack.security.http.ssl.key, value: certs/tls.key }
             - { name: xpack.security.http.ssl.certificate, value: certs/tls.crt }
             - { name: node.store.allow_mmap, value: "false" }
-            - { name: ES_JAVA_OPTS, value: "-Xms1g -Xmx1g" }
+            # Mitigate CVE-2026-114938 until the bundled JDK is patched.
+            - { name: ES_JAVA_OPTS, value: "-Xms1g -Xmx1g -XX:-UseBASE64Intrinsics" }
             - name: ELASTIC_PASSWORD
               valueFrom: { secretKeyRef: { name: elasticsearch-bootstrap, key: password } }
           ports: [{ name: http, containerPort: 9200 }]

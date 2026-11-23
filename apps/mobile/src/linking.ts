@@ -36,8 +36,9 @@ export type LinkDestination =
 type ProtectedDestination =
   | { type: "saved-listing"; id: string }
   | { type: "notifications" };
-export type AutomaticTokenLink = {
-  type: "verify-account" | "confirm-email" | "unsubscribe-email";
+type VerificationLink = { type: "verify-account"; token: string };
+export type AutomaticTokenLink = VerificationLink | {
+  type: "confirm-email" | "unsubscribe-email";
   token: string;
 };
 type TokenLink = AutomaticTokenLink | { type: "reset-password"; token: string };
@@ -245,7 +246,7 @@ type LinkHandlers = {
 export function createLinkLifecycle(handlers: LinkHandlers) {
   let active = true;
   let generation = 0;
-  let pendingDestination: ProtectedDestination | null = null;
+  let pendingAction: ProtectedDestination | VerificationLink | null = null;
   let lastDestination: { key: string; time: number } | null = null;
   let currentToken: string | null = null;
   const inFlightTokens = new Set<string>();
@@ -292,6 +293,27 @@ export function createLinkLifecycle(handlers: LinkHandlers) {
     );
   }
 
+  function consume(action: AutomaticTokenLink, intent: number) {
+    const key = `${action.type}:${action.token}`;
+    run(
+      async () => {
+        inFlightTokens.add(key);
+        try {
+          const message = await handlers.consume(action);
+          if (active) completedTokens.add(key);
+          return message;
+        } catch (error) {
+          if (action.type === "verify-account" && currentToken === key) currentToken = null;
+          throw error;
+        } finally {
+          inFlightTokens.delete(key);
+        }
+      },
+      (message) => handlers.feedback({ message }),
+      () => active && intent === generation,
+    );
+  }
+
   function receive(
     action: IncomingLink,
     auth: "restoring" | "guest" | "authenticated",
@@ -300,7 +322,7 @@ export function createLinkLifecycle(handlers: LinkHandlers) {
     if (action.type === "invalid") {
       ++generation;
       currentToken = null;
-      pendingDestination = null;
+      pendingAction = null;
       lastDestination = null;
       handlers.reset(null);
       handlers.feedback({ message: "This link is invalid or unsupported." });
@@ -316,25 +338,13 @@ export function createLinkLifecycle(handlers: LinkHandlers) {
         return;
       currentToken = key;
       const intent = ++generation;
-      pendingDestination = null;
+      pendingAction = null;
       handlers.feedback(null);
       handlers.reset(action.type === "reset-password" ? action.token : null);
-      if (action.type !== "reset-password") {
-        run(
-          async () => {
-            inFlightTokens.add(key);
-            try {
-              const message = await handlers.consume(action);
-              if (active) completedTokens.add(key);
-              return message;
-            } finally {
-              inFlightTokens.delete(key);
-            }
-          },
-          (message) => handlers.feedback({ message }),
-          () => active && intent === generation,
-        );
-      }
+      if (action.type === "verify-account" && auth !== "authenticated") {
+        pendingAction = action;
+        if (auth === "guest") handlers.showLogin();
+      } else if (action.type !== "reset-password") consume(action, intent);
       return;
     }
     const key = "id" in action ? `${action.type}:${action.id}` : action.type;
@@ -350,28 +360,29 @@ export function createLinkLifecycle(handlers: LinkHandlers) {
     handlers.reset(null);
     handlers.feedback(null);
     if (protectedDestination(action) && auth !== "authenticated") {
-      pendingDestination = action;
+      pendingAction = action;
       if (auth === "guest") handlers.showLogin();
       return;
     }
-    pendingDestination = null;
+    pendingAction = null;
     navigate(action, intent);
   }
 
   function resolveSession(authenticated: boolean) {
-    if (!active || !pendingDestination) return;
+    if (!active || !pendingAction) return;
     if (!authenticated) {
       handlers.showLogin();
       return;
     }
-    const destination = pendingDestination;
-    pendingDestination = null;
-    navigate(destination, ++generation);
+    const action = pendingAction;
+    pendingAction = null;
+    if (action.type === "verify-account") consume(action, ++generation);
+    else navigate(action, ++generation);
   }
 
   function close() {
     active = false;
-    pendingDestination = null;
+    pendingAction = null;
     currentToken = null;
     inFlightTokens.clear();
     completedTokens.clear();
@@ -394,7 +405,8 @@ export function createLinkLifecycle(handlers: LinkHandlers) {
   }
 
   function clearPending() {
-    pendingDestination = null;
+    if (pendingAction?.type === "verify-account") currentToken = null;
+    pendingAction = null;
   }
 
   return { receive, resolveSession, clearPending, finishReset, finishResetForSession, resetTicket: () => generation, close };

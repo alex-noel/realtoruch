@@ -1,7 +1,10 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from threading import Event
 
 from sqlalchemy import select
 
+from realtoruch import auth
 from realtoruch.auth import AccountToken, AuthJob, AuthSession, LoginSession, RefreshToken, User, digest
 from realtoruch.models import Favorite, now
 from realtoruch.settings import get_settings
@@ -92,8 +95,8 @@ def test_verification_reset_mail_retry_and_single_use(auth_client, monkeypatch):
     assert not auth_client.get("/v1/auth/me", headers=headers).json()["email_verified"]
     with AuthSession() as session:
         verify = session.scalar(select(AuthJob).where(AuthJob.kind == "verify")).secret
-    assert auth_client.post("/v1/auth/verify-email", json={"token": verify}).status_code == 200
-    assert auth_client.post("/v1/auth/verify-email", json={"token": verify}).status_code == 400
+    assert auth_client.post("/v1/auth/verify-email", headers=headers, json={"token": verify}).status_code == 200
+    assert auth_client.post("/v1/auth/verify-email", headers=headers, json={"token": verify}).status_code == 400
     assert auth_client.get("/v1/auth/me", headers=headers).json()["email_verified"]
     known = auth_client.post("/v1/auth/request-password-reset", json={"email": CREDENTIALS["email"]})
     unknown = auth_client.post("/v1/auth/request-password-reset", json={"email": "absent@example.test"})
@@ -128,6 +131,59 @@ def test_verification_reset_mail_retry_and_single_use(auth_client, monkeypatch):
         auth_client.post("/v1/auth/login", json={**CREDENTIALS, "password": changed["password"]}).status_code
         == 200
     )
+
+
+def test_email_verification_requires_the_matching_account(auth_client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "email_delivery_mode", "file")
+    account, owner = signup(auth_client)
+    _, other = signup(auth_client, email="other@example.test")
+    with AuthSession() as session:
+        token = session.scalar(select(AuthJob.secret).where(
+            AuthJob.kind == "verify", AuthJob.user_id == account["user"]["id"]
+        ))
+
+    body = {"token": token}
+    assert auth_client.post("/v1/auth/verify-email", json=body).status_code == 401
+    rejected = auth_client.post("/v1/auth/verify-email", json=body, headers=other)
+    assert rejected.status_code == 400
+    assert rejected.json()["detail"] == "This link is invalid or has expired"
+    assert not auth_client.get("/v1/auth/me", headers=owner).json()["email_verified"]
+    assert auth_client.post("/v1/auth/verify-email", json=body, headers=owner).status_code == 200
+    assert auth_client.get("/v1/auth/me", headers=owner).json()["email_verified"]
+
+
+def test_password_reset_rejects_sign_in_with_stale_credentials(auth_client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "email_delivery_mode", "file")
+    _, existing = signup(auth_client)
+    assert auth_client.post("/v1/auth/request-password-reset", json={
+        "email": CREDENTIALS["email"],
+    }).status_code == 202
+    with AuthSession() as session:
+        token = session.scalar(select(AuthJob.secret).where(AuthJob.kind == "reset"))
+
+    checked, resume = Event(), Event()
+    check_password = auth.check_password
+
+    def pause_after_check(user, password):
+        check_password(user, password)
+        checked.set()
+        assert resume.wait(10)
+
+    monkeypatch.setattr(auth, "check_password", pause_after_check)
+    password = "new-long-account-test-password"
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(auth_client.post, "/v1/auth/login", json=CREDENTIALS)
+        try:
+            assert checked.wait(10)
+            reset = auth_client.post("/v1/auth/reset-password", json={"token": token, "password": password})
+            assert reset.status_code == 200
+        finally:
+            resume.set()
+        assert pending.result(timeout=10).status_code == 401
+
+    monkeypatch.setattr(auth, "check_password", check_password)
+    assert auth_client.get("/v1/auth/me", headers=existing).status_code == 401
+    assert auth_client.post("/v1/auth/login", json={**CREDENTIALS, "password": password}).status_code == 200
 
 
 def test_expired_reset_link_cannot_change_password(auth_client, monkeypatch):

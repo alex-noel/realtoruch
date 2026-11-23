@@ -317,6 +317,7 @@ test("account link errors are safe and retryable, with token fragments removed",
 
   await page.route(`${AUTH_URL}/v1/auth/verify-email`, (route) => {
     if (route.request().method() !== "POST") return route.fallback();
+    expect(route.request().headers().authorization?.startsWith("Bearer ")).toBe(true);
     expect(route.request().postDataJSON().token === verifyToken).toBe(true);
     verifyAttempts++;
     return verifyAttempts === 1

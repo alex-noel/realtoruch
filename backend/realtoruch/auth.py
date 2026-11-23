@@ -5,7 +5,7 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 
 import jwt
 from argon2 import PasswordHasher
@@ -351,8 +351,17 @@ def login(body: Credentials, request: Request, response: Response):
     with AuthSession() as session:
         user = session.scalar(select(User).where(User.email == body.email))
         check_password(user, body.password)
-        if hasher.check_needs_rehash(user.password_hash):
-            user.password_hash = hasher.hash(body.password)
+        previous_hash = user.password_hash
+        password_hash = hasher.hash(body.password) if hasher.check_needs_rehash(previous_hash) else previous_hash
+        # Hold the credential row until the session commits. A reset that has
+        # already changed the hash must never let this sign-in create a session.
+        matched = session.execute(
+            update(User)
+            .where(User.id == user.id, User.deleted_at.is_(None), User.password_hash == previous_hash)
+            .values(password_hash=password_hash)
+        ).rowcount
+        if not matched:
+            raise HTTPException(401, "Email or password is incorrect")
         return begin_session(session, user, body, request, response)
 
 
@@ -472,10 +481,17 @@ def request_reset(body: EmailBody):
     return {"message": "If this account exists, a password reset email will arrive shortly."}
 
 
-def consume_link(session, value, kind):
+def consume_link(session, value, kind, *, expected_user_id=None):
     row = session.get(AccountToken, digest(value))
-    user = session.get(User, row.user_id) if row else None
-    if not row or row.kind != kind or row.expires_at <= now() or not user or user.deleted_at:
+    if (
+        not row
+        or row.kind != kind
+        or row.expires_at <= now()
+        or (expected_user_id is not None and row.user_id != expected_user_id)
+    ):
+        raise HTTPException(400, "This link is invalid or has expired")
+    user = session.get(User, row.user_id)
+    if not user or user.deleted_at:
         raise HTTPException(400, "This link is invalid or has expired")
     consumed = session.execute(
         update(AccountToken)
@@ -491,9 +507,9 @@ def consume_link(session, value, kind):
 
 
 @app.post("/v1/auth/verify-email")
-def verify(body: TokenBody):
+def verify(body: TokenBody, user_id: Annotated[str, Depends(require_user)]):
     with AuthSession.begin() as session:
-        user = consume_link(session, body.token, "verify")
+        user = consume_link(session, body.token, "verify", expected_user_id=user_id)
         user.verified_at = now()
     return {"message": "Email verified. You can return to your account."}
 
@@ -503,6 +519,7 @@ def reset_password(body: ResetBody, response: Response):
     with AuthSession.begin() as session:
         user = consume_link(session, body.token, "reset")
         user.password_hash = hasher.hash(body.password)
+        session.flush()
         session.execute(update(LoginSession).where(LoginSession.user_id == user.id).values(revoked_at=now()))
         session.execute(
             update(AccountToken)

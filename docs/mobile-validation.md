@@ -12,7 +12,7 @@ Use the public HTTPS app origin for web links. The matching native custom scheme
 | `?advert=<id>` | Public owner advert, resolved to its canonical rental detail. |
 | `?saved_listing=<id>` | Saved rental detail after sign-in and a check that the canonical home is saved by that account. Delisted favorites remain available here. |
 | `?notifications=1` | Notifications after sign-in. |
-| `#verify_account=<token>` | Verify the account email. |
+| `#verify_account=<token>` | Verify the account email after signing in to the account that requested the link. |
 | `#reset_password=<token>` | Open the new-password form. |
 | `#confirm_email=<token>` | Confirm email alerts and show Notifications. |
 | `#unsubscribe_email=<token>` | Turn off email alerts and show Notifications. |

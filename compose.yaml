@@ -31,7 +31,7 @@ x-service: &service
   networks: [private]
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.16-alpine
     environment:
       POSTGRES_USER: rentals
       POSTGRES_PASSWORD: local-development-only
@@ -45,11 +45,12 @@ services:
       retries: 20
     networks: [private]
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.6
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.25
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
-      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      # Mitigate CVE-2026-114938 until the bundled JDK is patched.
+      ES_JAVA_OPTS: -Xms512m -Xmx512m -XX:-UseBASE64Intrinsics
     volumes: ["elasticsearch:/usr/share/elasticsearch/data"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health > /dev/null"]

@@ -80,8 +80,8 @@ def main():
     try:
         report['platform']['node'] = command(['node', '--version']).stdout.strip()
         node_version = re.fullmatch(r'v24\.(\d+)\.(\d+)', report['platform']['node'])
-        if sys.version_info[:2] != (3, 12) or not node_version or int(node_version.group(1)) < 3:
-            raise RuntimeError('Python 3.12 and Node 24 are required')
+        if sys.version_info[:2] != (3, 12) or not node_version or tuple(map(int, node_version.groups())) < (22, 3):
+            raise RuntimeError('Python 3.12 and Node 24.22.3 or newer in the Node 24 line are required')
         report['platform']['git_revision'] = command(['git', 'rev-parse', 'HEAD']).stdout.strip()
         report['platform']['worktree_dirty'] = bool(command(['git', 'status', '--porcelain', '--untracked-files=no']).stdout.strip())
         if args.profile == 'web':
@@ -103,9 +103,11 @@ def main():
             return 0
         if args.profile == 'services':
             database = 'r_' + args.run_id.replace('-', '_')
+            # Mitigate CVE-2026-114938 until the bundled JDK is patched.
+            elasticsearch_mitigation = '-XX:-UseBASE64Intrinsics'
             for suffix, image, port, options in [
-                ('pg', 'postgres:16-alpine', '5432', ['-e', 'POSTGRES_PASSWORD=verification', '-e', 'POSTGRES_USER=rentals', '-e', 'POSTGRES_DB=' + database]),
-                ('es', 'docker.elastic.co/elasticsearch/elasticsearch:8.19.6', '9200', ['-e', 'discovery.type=single-node', '-e', 'xpack.security.enabled=false', '-e', 'ES_JAVA_OPTS=-Xms512m -Xmx512m'])]:
+                ('pg', 'postgres:16.16-alpine', '5432', ['-e', 'POSTGRES_PASSWORD=verification', '-e', 'POSTGRES_USER=rentals', '-e', 'POSTGRES_DB=' + database]),
+                ('es', 'docker.elastic.co/elasticsearch/elasticsearch:8.19.25', '9200', ['-e', 'discovery.type=single-node', '-e', 'xpack.security.enabled=false', '-e', f'ES_JAVA_OPTS=-Xms512m -Xmx512m {elasticsearch_mitigation}'])]:
                 name = 'realtoruch-t01-' + args.run_id + '-' + suffix
                 # --pull never keeps verification offline; names are claimed atomically by Docker.
                 containers.append(name)
@@ -134,6 +136,10 @@ def main():
                 time.sleep(1)
             else:
                 raise RuntimeError('Services did not become ready within 120 seconds')
+            with urllib.request.urlopen(env['TEST_ELASTICSEARCH_URL'] + '/_nodes/jvm', timeout=5) as response:
+                nodes = json.load(response)['nodes'].values()
+            if not nodes or any(elasticsearch_mitigation not in node['jvm']['input_arguments'] for node in nodes):
+                raise RuntimeError('Elasticsearch Java4Shell mitigation is missing')
         xml = dest / 'results.xml'
         suites = ['backend/tests/test_infra_contract.py', 'backend/tests/test_service_integration.py', 'backend/tests/test_delivery_races.py',
                   'backend/tests/test_market_history.py', 'backend/tests/test_metrics.py',

@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -38,16 +39,13 @@ def main():
     )
     selected = xcode.stdout.strip() if xcode else ""
     public = ("EXPO_PUBLIC_API_URL", "EXPO_PUBLIC_AUTH_URL")
-    numbers = (
-        tuple(int(part) for part in version.lstrip("v").split(".")[:2])
-        if node
-        else (0, 0)
-    )
-    major, minor = numbers
+    node_version = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", version)
+    numbers = tuple(map(int, node_version.groups())) if node_version else (0, 0, 0)
+    major = numbers[0]
     checks = {
-        "supported_node": (major == 22 and minor >= 13)
-        or (major == 24 and minor >= 3)
-        or major >= 26,
+        "supported_node": (major == 22 and numbers >= (22, 23, 5))
+        or (major == 24 and numbers >= (24, 22, 3))
+        or numbers >= (26, 13, 1),
         "xcode_selected": selected.endswith("Xcode.app/Contents/Developer"),
         "cocoapods_available": bool(shutil.which("pod")),
         "android_sdk_platform_tools": (sdk / "platform-tools/adb").is_file(),

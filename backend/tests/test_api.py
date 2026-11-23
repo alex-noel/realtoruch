@@ -1,6 +1,11 @@
+import anyio
+import httpx
 import pytest
+from fastapi import FastAPI
+
 from realtoruch.ingest import ingest
 from realtoruch.models import Listing
+from realtoruch.security import install_http
 
 
 def test_public_search_filters_and_fee_unknowns(session, record, client):
@@ -100,3 +105,32 @@ def test_public_cache_headers_and_metrics(client):
     response = client.get("/healthz")
     assert response.headers["x-content-type-options"] == "nosniff"
     assert client.get("/metrics").status_code == 403
+
+
+def test_json_body_limit_applies_to_streams_without_a_length():
+    app = FastAPI()
+    install_http(app)
+
+    @app.post("/")
+    def echo(payload: dict[str, str]):
+        return len(payload["value"])
+
+    async def chunks(size):
+        yield b'{"value":"'
+        yield b"x" * 500_000
+        yield b"x" * (size - 500_000)
+        yield b'"}'
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            headers = {"Content-Type": "application/json"}
+            value_at_limit = 1_000_000 - len(b'{"value":""}')
+            accepted = await client.post("/", headers=headers, content=chunks(value_at_limit))
+            assert accepted.status_code == 200
+            assert accepted.json() == value_at_limit
+            rejected = await client.post("/", headers=headers, content=chunks(value_at_limit + 1))
+            assert rejected.status_code == 413
+            assert rejected.json() == {"detail": "Request too large"}
+            assert rejected.headers["x-content-type-options"] == "nosniff"
+
+    anyio.run(check)

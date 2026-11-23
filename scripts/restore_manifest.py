@@ -219,7 +219,7 @@ class Postgres:
                                 '--cidfile', str(cid), '--label', 'realtoruch.verification=true',
                                 '--label', f'realtoruch.owner={self.run.owner}',
                                 '--publish', '127.0.0.1::5432', '--tmpfs', '/var/lib/postgresql/data',
-                                '-e', f'POSTGRES_PASSWORD={self.password}', 'postgres:16-alpine').decode().strip()
+                                '-e', f'POSTGRES_PASSWORD={self.password}', 'postgres:16.16-alpine').decode().strip()
         self.run.update(postgres_container=self.container)
         for _ in range(80):
             try:

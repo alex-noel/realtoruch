@@ -6,7 +6,7 @@ A Polish rental discovery app with a Python backend, shared React Native / web f
 
 ## Run locally
 
-Requires Python 3.12 and Node 24 (see `.nvmrc`).
+Use Python 3.12.16 and Node 24.22.3 (see `.nvmrc`).
 
 ```sh
 make install

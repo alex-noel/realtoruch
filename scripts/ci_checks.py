@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check proposed changes, audit runtime locks and select safe CI reports."""
+"""Check proposed changes, audit dependency locks and select safe CI reports."""
 
 import argparse
 import json
@@ -12,8 +12,11 @@ from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCKS = {
-    "requirements.txt": "backend/requirements-runtime.lock",
-    "package-lock.json": "apps/mobile/package-lock.json",
+    "runtime/requirements.txt": "backend/requirements-runtime.lock",
+    "dev/requirements.txt": "backend/requirements-dev.lock",
+    "cloud/requirements.txt": "backend/requirements-cloud.lock",
+    "dataflow/requirements.txt": "backend/requirements-gcp.lock",
+    "mobile/package-lock.json": "apps/mobile/package-lock.json",
 }
 PRIVATE_PATH = re.compile(
     r"(^|/)(?:\.local|captures?|credentials?|secrets?)(?:/|$)"
@@ -92,30 +95,40 @@ def write_report(path, report):
 
 def audit_locks(scanner, locks):
     with TemporaryDirectory(prefix="realtoruch-audit-") as directory:
-        root = Path(directory)
+        root = Path(directory).resolve()
         paths = []
+        expected = {}
         for name, contents in locks.items():
-            (root / name).write_bytes(contents)
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(contents)
             paths.extend(("--lockfile", name))
+            expected[path] = "npm" if path.name == "package-lock.json" else "PyPI"
         run = subprocess.run(
             [scanner, "scan", "source", "--format=json", "--all-packages", "--no-resolve", *paths],
             cwd=root, capture_output=True, timeout=120, check=False,
         )
-    if run.returncode not in (0, 1):
-        raise ValueError(f"OSV-Scanner failed with exit {run.returncode}.")
-    return audit_findings(json.loads(run.stdout))
+        if run.returncode not in (0, 1):
+            raise ValueError(f"OSV-Scanner failed with exit {run.returncode}.")
+        report = json.loads(run.stdout)
+        scanned = {
+            (root / source["source"]["path"]).resolve(): {
+                entry["package"]["ecosystem"] for entry in source["packages"]
+            }
+            for source in report["results"]
+        }
+        missing = [str(path.relative_to(root)) for path, ecosystem in expected.items()
+                   if ecosystem not in scanned.get(path, set())]
+        if missing:
+            raise ValueError(f"OSV-Scanner did not report packages for {', '.join(missing)}.")
+        return audit_findings(report)
 
 
 def audit_findings(report):
-    ecosystems = set()
-    findings = {}
+    scores = {}
     for source in report["results"]:
         for entry in source["packages"]:
             package = entry["package"]
-            ecosystem = package["ecosystem"]
-            ecosystems.add(ecosystem)
-            if "dev" in entry.get("dependency_groups", []):
-                continue
             for group in entry.get("groups", []):
                 ids = group["ids"]
                 advisories = (
@@ -124,15 +137,13 @@ def audit_findings(report):
                 )
                 label_score = max((SEVERITY_FLOORS.get(label.upper(), 0) for label in advisories), default=0)
                 score = max(float(group["max_severity"] or 0), label_score)
-                severity = next(
-                    (rating for floor, rating in SEVERITY_LEVELS if score >= floor), "unknown"
-                )
                 for advisory in ids:
-                    key = (ecosystem, package["name"], package["version"], advisory)
-                    findings[key] = severity
-    if not {"npm", "PyPI"} <= ecosystems:
-        raise ValueError("OSV-Scanner did not report both locked runtime ecosystems.")
-    return findings
+                    key = (package["ecosystem"], package["name"], package["version"], advisory)
+                    scores[key] = max(scores.get(key, 0), score)
+    return {
+        key: next((rating for floor, rating in SEVERITY_LEVELS if score >= floor), "unknown")
+        for key, score in scores.items()
+    }
 
 
 def audit_exceptions(path, today):
@@ -154,7 +165,7 @@ def compare_findings(base, current, exceptions):
     for key, severity in sorted(current.items()):
         is_new = key not in base or (severity in severe and base[key] not in severe)
         exception = exceptions.get(key)
-        blocked = is_new and severity in severe and exception is None
+        blocked = severity in severe and exception is None
         findings.append({
             **dict(zip(("ecosystem", "package", "version", "advisory"), key)),
             "severity": severity, "new": is_new, "blocked": blocked, "exception": exception,
@@ -162,20 +173,27 @@ def compare_findings(base, current, exceptions):
     return findings
 
 
-def dependency_audit(base, scanner, output):
+def dependency_audit(base, scanner, output, *, working_tree=False):
     try:
         exceptions = audit_exceptions(ROOT / "config/ci-audit-exceptions.json", datetime.now(timezone.utc).date())
-        current_locks = {name: git("show", f"HEAD:{path}") for name, path in LOCKS.items()}
-        base_locks = {name: git("show", f"{base}:{path}") for name, path in LOCKS.items()}
+        current_locks = {
+            name: (ROOT / path).read_bytes() if working_tree else git("show", f"HEAD:{path}")
+            for name, path in LOCKS.items()
+        }
+        base_paths = git("ls-tree", "-r", "-z", "--name-only", base, "--", *LOCKS.values()).split(b"\0")
+        base_locks = {name: git("show", f"{base}:{path}") for name, path in LOCKS.items()
+                      if path.encode() in base_paths}
         current = audit_locks(scanner, current_locks)
-        baseline = current if base_locks == current_locks else audit_locks(scanner, base_locks)
+        baseline = current
+        if base_locks != current_locks:
+            baseline = audit_locks(scanner, base_locks) if base_locks else {}
         findings = compare_findings(baseline, current, exceptions)
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
         write_report(output, {"status": "ERROR", "error_type": type(exc).__name__})
         raise
     blocked = sum(finding["blocked"] for finding in findings)
     write_report(output, {"status": "FAIL" if blocked else "PASS", "findings": findings})
-    print(f"Runtime advisory audit: {len(findings)} findings, {blocked} new high/critical findings without exceptions.")
+    print(f"Dependency audit: {len(findings)} findings, {blocked} high/critical findings without exceptions.")
     return int(bool(blocked))
 
 
@@ -191,6 +209,7 @@ def main():
     audit.add_argument("base")
     audit.add_argument("scanner", type=lambda path: str(Path(path).resolve()))
     audit.add_argument("output", type=Path)
+    audit.add_argument("--working-tree", action="store_true", help="audit local lock files instead of HEAD")
     report = commands.add_parser("report")
     report.add_argument("profile", choices=("offline", "services", "web"))
     report.add_argument("source", type=Path)
@@ -202,7 +221,9 @@ def main():
         elif args.command == "boundary":
             check_boundary(compare_base(args.base, ""))
         elif args.command == "audit":
-            return dependency_audit(compare_base(args.base, ""), args.scanner, args.output)
+            return dependency_audit(
+                compare_base(args.base, ""), args.scanner, args.output, working_tree=args.working_tree
+            )
         elif args.command == "report":
             write_report(args.output, sanitized_report(args.profile, args.source))
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:

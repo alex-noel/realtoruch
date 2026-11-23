@@ -11,7 +11,7 @@ services:
   auth: { module: realtoruch.auth, memory: 384Mi, cpu: 100m }
   search: { module: realtoruch.search, memory: 256Mi, cpu: 100m }
 elasticsearch:
-  image: docker.elastic.co/elasticsearch/elasticsearch:8.19.6
+  image: docker.elastic.co/elasticsearch/elasticsearch:8.19.25
   storage: 20Gi
 collector:
   schedule: "0 */6 * * *"

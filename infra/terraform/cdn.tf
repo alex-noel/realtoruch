@@ -23,6 +23,13 @@ resource "google_compute_backend_bucket" "web" {
   name        = "${var.name}-web"
   bucket_name = google_storage_bucket.web.name
   enable_cdn  = true
+  custom_response_headers = [
+    "Strict-Transport-Security: max-age=31536000",
+    "Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
+    "X-Frame-Options: DENY",
+    "X-Content-Type-Options: nosniff",
+    "Referrer-Policy: no-referrer",
+  ]
   cdn_policy {
     cache_mode  = "USE_ORIGIN_HEADERS"
     client_ttl  = 3600

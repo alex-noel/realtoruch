@@ -1,12 +1,53 @@
 import time
 from collections import OrderedDict, deque
 
-import jwt
 import httpx
+import jwt
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.datastructures import Headers
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .settings import get_settings
+
+
+class LimitRequestBody:
+    def __init__(self, app: ASGIApp, *, media_upload: bool):
+        self.app = app
+        self.media_upload = media_upload
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or (
+            self.media_upload and scope["method"] == "POST" and scope["path"] == "/v1/me/media"
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        limit = 1_000_000
+        lengths = Headers(scope=scope).getlist("content-length")
+        try:
+            length = int(lengths[0]) if lengths else 0
+        except ValueError:
+            length = -1
+        if len(lengths) > 1 or length < 0:
+            await JSONResponse({"detail": "Invalid Content-Length"}, 400)(scope, receive, send)
+            return
+        if length > limit:
+            await JSONResponse({"detail": "Request too large"}, 413)(scope, receive, send)
+            return
+
+        received = 0
+
+        async def bounded_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    raise HTTPException(413, "Request too large")
+            return message
+
+        await self.app(scope, bounded_receive, send)
 
 
 def require_claims(request: Request):
@@ -55,6 +96,7 @@ def install_http(app, *, auth=False, media_upload=False):
     from fastapi.middleware.cors import CORSMiddleware
 
     settings = get_settings()
+    app.add_middleware(LimitRequestBody, media_upload=media_upload)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins.split(","),
@@ -91,14 +133,6 @@ def install_http(app, *, auth=False, media_upload=False):
             window.append(current)
             if len(windows) > 10000:
                 windows.popitem(last=False)
-        is_media_upload = media_upload and request.method == "POST" and request.url.path == "/v1/me/media"
-        if not is_media_upload:
-            try:
-                length = int(request.headers.get("content-length", "0") or 0)
-            except ValueError:
-                return JSONResponse({"detail": "Invalid Content-Length"}, 400)
-            if length > 1_000_000:
-                return JSONResponse({"detail": "Request too large"}, 413)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"

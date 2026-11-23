@@ -134,10 +134,11 @@ def seed(backend, monkeypatch, directory):
         accounts = [request(identity, 'POST', '/v1/auth/register', 201, json={'email': address, 'password': PASSWORD})
                     for address in (KEEP, ERASE)]
         assert auth_jobs.process_jobs() == 2
-        for address in (KEEP, ERASE):
-            request(identity, 'POST', '/v1/auth/verify-email', json={'token': link(directory, address, 'verify_account')})
         keep_id, erased_id = [account['user']['id'] for account in accounts]
         keep, erased = [{'Authorization': 'Bearer ' + account['access_token']} for account in accounts]
+        for address, headers in ((KEEP, keep), (ERASE, erased)):
+            request(identity, 'POST', '/v1/auth/verify-email', headers=headers,
+                    json={'token': link(directory, address, 'verify_account')})
         assert request(identity, 'GET', '/v1/auth/me', headers=erased)['id'] == erased_id
         get_settings().moderator_user_ids = keep_id
         adverts = []

@@ -271,7 +271,7 @@ function requestFeedback(path: string, status: number, data: unknown): { code: R
 function linkValidationMessage(path: string, status: number, data: unknown) {
   if (status !== 400 && status !== 401 && status !== 403) return null;
   const detail = (data as { detail?: unknown } | null)?.detail;
-  if (path === "/v1/auth/verify-email" || path === "/v1/auth/reset-password") {
+  if ((path === "/v1/auth/verify-email" && status === 400) || path === "/v1/auth/reset-password") {
     return detail === "This link has already been used"
       ? "This link has already been used."
       : "This link is invalid or has expired.";
@@ -508,10 +508,8 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify({ token }),
-        anonymous: true,
       },
       true,
-      false,
     ),
   emailAlertLink: (action: "confirm-email" | "unsubscribe-email", token: string) =>
     request<{ message: string }>(
